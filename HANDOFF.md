@@ -6,19 +6,27 @@
 - Local Relay v0.2.1: current loopback runtime base.
 - Reconciliation pipeline v0.2.1: handler-first, assignee-aware, checkpointed/idempotent reconciliation integrated at `25c8e913a658298954e2c447c84be675e4639d99`.
 
-## CASE_FEED correction contract
+## CASE_FEED accepted runtime input
 
-Use `docs/contracts/CASE_FEED_V1.md`.
+Contract: `docs/contracts/CASE_FEED_V1.md`.
 
-Current exact artifact proved remarks fidelity but is not yet a confirmed-case feed because it contains control/incomplete rows, every caseStatus is null, and every sourceTicketKey is null.
+Accepted exact artifact:
 
-Observed deterministic extraction against the exact 321-row artifact:
-- 102 rows have exactly one valid one-hyphen external-ticket candidate;
-- 219 rows have none;
-- 0 rows have multiple candidates under the frozen grammar.
-After excluding 10 EMPTY_PLACEHOLDER, 4 CHECKPOINT_MARKER and 4 INCOMPLETE rows, 303 confirmed-like rows remain. Under configured-person handler-first filtering, 267 remain in-scope; 93 of those have one deterministic sourceTicketKey candidate and 174 have none.
+```text
+SHA256=41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8
+EXPORTED_CONFIRMED_CASE_COUNT=252
+SOURCE_TABLE_COUNT=39
+EXTERNAL_SOURCE_TICKET_KEY_COUNT=86
+SOURCE_TICKET_KEY_NULL_COUNT=166
+AMBIGUOUS_KEY_COUNT=0
+PEOPLE_COMPAT=PASS
+METADATA_COMPAT=PASS
+CANONICAL_SEMANTIC_FIDELITY=PASS
+```
 
-A previous verified ONES inventory is useful only as regression evidence: 58 current rows / 42 unique extracted keys intersected that stale snapshot. It must not be used to classify current missing tickets.
+The exact-artifact audit found no control/incomplete rows in `cases[]`, no YF display-ID leakage, and no deterministic extractor mismatch under the frozen ASCII-boundary rule. Case-feed schema/extractor work is closed unless contradictory exact evidence appears.
+
+Historical ONES inventory snapshots remain regression evidence only. Missing-ticket decisions require a fresh completeness-verified inventory.
 
 ## Transport clarification
 
@@ -39,9 +47,9 @@ The Windows Agent receives/persists the snapshot automatically and returns bound
 Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Run Windows Chrome runtime acceptance for Browser Bridge v0.4.0 against Local Relay v0.2.1.
-2. Manually trigger the existing Big-circle task using the already accepted downstream reconciliation semantics.
-3. Pair the resulting current case feed with a fresh completeness-verified ONES inventory snapshot.
-4. Run the integrated v0.2.1 person-aware reconciliation and exact-input NOOP behavior.
+2. Use the accepted case-feed snapshot SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`; do not rebuild it for this acceptance run.
+3. Capture a fresh completeness-verified ONES inventory snapshot through Browser Bridge v0.4.0 + Local Relay v0.2.1.
+4. Run the integrated v0.2.1 person-aware reconciliation against those exact two inputs and verify exact-input NOOP behavior.
 5. Validate handler-primary / duty-fallback / ONES-assignee outcomes against current data.
 6. Structure the existing Big-circle remarks into CONFIRMED / PROVISIONAL / ABSENT / CONFLICT root-cause evidence.
 7. Only after the read-only runtime gate closes, freeze the bounded root-cause write-plan/runtime acceptance before enabling any ONES mutation.
