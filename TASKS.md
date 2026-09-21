@@ -156,7 +156,7 @@ Contract: `docs/contracts/ROOT_CAUSE_SYNC_V1.md`.
 
 ## P1d — 2-hour periodic read-only alignment
 
-`LANE_STATE=RUNTIME_ACCEPTANCE`
+`LANE_STATE=RUNTIME_PASS_SCHEDULER_PENDING`
 
 Goal: keep the two changing datasets approximately aligned without adding a new architecture layer.
 
@@ -179,7 +179,7 @@ Do not add apiVersion/kind/resourceVersion, LIST/WATCH protocol, generic control
 
 Implementation integrated by PR #15 / merge `2eb36fd44ee24971eca8f85562e7828637e45514`.
 
-Next gate: run the Windows wrapper once against the user's existing Local Relay v0.2.1, Browser Bridge v0.4.1, reconciliation v0.2.1 and newest valid local CASE_FEED. Only after that passes may the approximately-2-hour Windows Task Scheduler registration be added.
+Windows runtime acceptance passed on 2026-09-21: run-once returned `RECONCILIATION_VERIFIED` with fresh verified inventory and preserved the existing read-only boundary. Next gate is a bounded Windows Task Scheduler registration for approximately every 2 hours, followed by one manual task trigger/readback.
 
 Tracked by Issue #14 (closed after code integration).
 
