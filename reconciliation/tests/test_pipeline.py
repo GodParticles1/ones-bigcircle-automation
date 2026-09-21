@@ -20,7 +20,7 @@ def inv():
         "visiblePageTotal": 1,
         "unkeyedCount": 0,
         "tickets": [
-            {"sourceTicketKey": "ABC-1", "onesDisplayId": "YF-1", "onesTaskUuid": "t1"}
+            {"sourceTicketKey": "ABC-1", "onesDisplayId": "YF-1", "onesTaskUuid": "t1", "assignee": {"uuid": "user-a", "name": "Engineer-A"}}
         ],
     }
 
@@ -71,7 +71,7 @@ def main():
 
         first = run_pipeline(cases_path, inv_path, state_dir, out_dir)
         assert first["status"] == "RECONCILIATION_VERIFIED"
-        assert first["totals"] == {"MATCHED": 1, "ONES_MISSING_CASE": 1, "AMBIGUOUS": 0}
+        assert first["totals"] == {"MATCHED": 1, "ONES_MISSING_CASE": 1, "PERSON_SCOPE_MISMATCH": 0, "AMBIGUOUS": 0}
         assert first["uniqueMissingSourceTicketKeyCount"] == 1
         checkpoint_before = (state_dir / "reconciliation-checkpoint.json").read_bytes()
         latest_before = (out_dir / "reconciliation-latest.json").read_bytes()
