@@ -2,7 +2,7 @@
 
 ## Integrated bases
 
-- Browser Bridge v0.4.0: integrated on main by merge `4cb9d265ad566e4d30ef00141df82f4ec1ce7694`.
+- Browser Bridge v0.4.1: integrated on main by merge `89c131d56e156c2977889670ee844392d7eef3f4`; Issue #12 setup-draft persistence correction is closed.
 - Local Relay v0.2.1: current loopback runtime base.
 - Reconciliation pipeline v0.2.1: handler-first, assignee-aware, checkpointed/idempotent reconciliation integrated at `25c8e913a658298954e2c447c84be675e4639d99`.
 
@@ -65,7 +65,7 @@ Current unfinished work is intentionally split so a new Lead does not mix runtim
 Status: `ACTIVE`
 
 Use:
-- Browser Bridge v0.4.0
+- Browser Bridge v0.4.1
 - Local Relay v0.2.1
 - current logged-in Windows Chrome
 
@@ -187,9 +187,9 @@ Frozen support boundary remains read-only until a later explicit write gate.
 
 Do not wait for the scheduled 19:30 Big-circle run.
 
-1. Run Windows Chrome runtime acceptance for Browser Bridge v0.4.0 against Local Relay v0.2.1.
+1. Run Windows Chrome runtime acceptance for Browser Bridge v0.4.1 against Local Relay v0.2.1.
 2. Use the accepted case-feed snapshot SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`; do not rebuild it for this acceptance run.
-3. Capture a fresh completeness-verified ONES inventory snapshot through Browser Bridge v0.4.0 + Local Relay v0.2.1.
+3. Capture a fresh completeness-verified ONES inventory snapshot through Browser Bridge v0.4.1 + Local Relay v0.2.1.
 4. Run the integrated v0.2.1 person-aware reconciliation against those exact two inputs and verify exact-input NOOP behavior.
 5. Validate handler-primary / duty-fallback / ONES-assignee outcomes against current data.
 6. Structure the existing Big-circle remarks into CONFIRMED / PROVISIONAL / ABSENT / CONFLICT root-cause evidence.
