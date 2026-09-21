@@ -32,15 +32,28 @@ The current known example is intentionally asymmetric:
 - the historical 143 local confirmed cases represented one engineer's actual handled cases;
 - the historical 128 ONES inventory rows represented a shared multi-engineer ONES scope.
 
-Therefore reconciliation is key-based, not raw-count-difference based.
+Therefore reconciliation is population-aware and identity-aware, not raw-count-difference based.
 
-Authoritative local attribution remains the Big-circle case feed's duty/handler fields. ONES assignee is useful metadata but is not the local attribution truth.
+Person fields are first-class alignment data:
+
+- Big-circle `dutyPersons` / `handlerPersons` identify the local people involved in the case;
+- ONES `assignee.name` identifies the ONES-side person partition for the ticket;
+- configured person/alias mappings are runtime configuration and are never hardcoded into public source.
+
+The case identity signal remains deterministic. An exact sourceTicketKey is the strongest current identity key. Person name alone does not prove that two rows are the same case, but it determines which person's population a row belongs to and is required before automatic field synchronization.
 
 The actionable missing direction is:
 
-`confirmed local case sourceTicketKey -> completeness-verified shared ONES inventory -> exact key absent => ONES_MISSING_CASE`
+`confirmed local case -> local person scope -> exact sourceTicketKey lookup in complete shared ONES inventory`
 
-Extra ONES rows outside the selected local population do not by themselves imply a local missing case.
+Outcomes:
+
+- exact key absent from the complete shared inventory -> `ONES_MISSING_CASE`;
+- exact key exists and ONES person scope aligns -> `MATCHED`;
+- exact key exists but ONES person scope differs -> `PERSON_SCOPE_MISMATCH` / review, not a missing ticket;
+- ambiguous person or identity evidence -> `AMBIGUOUS`.
+
+Extra ONES rows belonging to other configured people are expected and do not count as local discrepancies.
 
 ## Dynamic snapshot rule
 
