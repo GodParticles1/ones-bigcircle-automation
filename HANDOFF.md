@@ -42,6 +42,20 @@ The production interaction target is:
 
 The Windows Agent receives/persists the snapshot automatically and returns bounded results/checkpoints automatically. Manual file movement is temporary test scaffolding only. Local Relay remains loopback-only, and no Remote Queue provider is selected yet.
 
+## Scheduled-task delta
+
+Do not change the existing workday scan cadence or stages.
+
+Only align the post-SCAN_COMPLETE lane to the integrated state:
+- accepted CASE_FEED_V1;
+- fresh verified inventory gate;
+- reconciliation v0.2.1;
+- MATCHED / ONES_MISSING_CASE / PERSON_SCOPE_MISMATCH / AMBIGUOUS;
+- exact-input idempotency;
+- WAIT/BLOCK does not affect the scan checkpoint.
+
+Until automatic transport is accepted, a scheduled run with no fresh Windows inventory must stop at RECONCILE_WAIT_LOCAL_INVENTORY. Manual file movement is acceptance scaffolding, not the production transport.
+
 ## Immediate continuation
 
 Do not wait for the scheduled 19:30 Big-circle run.
