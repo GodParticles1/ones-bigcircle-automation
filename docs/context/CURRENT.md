@@ -110,3 +110,25 @@ Current integrated runtime support remains read-only with respect to ONES. Remot
 `CASE_FEED_CANONICAL_SEMANTIC_FIDELITY=BLOCKED`
 
 The current correction is bounded by `docs/contracts/CASE_FEED_V1.md`. Runtime reconciliation remains blocked until the feed excludes control/incomplete rows, carries deterministic local sourceTicketKey values where available, marks emitted cases as confirmed, and provides the compatibility metadata envelope expected by the integrated v0.2.1 reconciler.
+
+
+## Artifact versus transport boundary
+
+The canonical Big-circle case feed is a durable data contract and snapshot artifact, not the intended long-term human-mediated transport mechanism.
+
+Current runtime acceptance may use an exported JSON file to isolate and verify:
+- Big-circle scan/feed semantics;
+- Windows inventory capture;
+- reconciliation/idempotency.
+
+Production target:
+`Big-circle -> transport adapter -> Windows Agent -> reconciliation/Relay/Browser Bridge`
+
+The Windows Agent should receive the same logical case-feed snapshot automatically, persist an exact local copy for audit/replay/hash binding, and return bounded result/checkpoint envelopes automatically.
+
+Therefore:
+- the case-feed schema remains part of the production design;
+- manual download/upload/copy of the file is temporary acceptance scaffolding;
+- transport selection remains separate from business semantics;
+- Local Relay stays loopback-only;
+- no Remote Queue provider is opened until the transport-neutral contract is accepted.
