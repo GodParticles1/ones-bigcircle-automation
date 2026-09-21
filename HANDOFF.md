@@ -183,7 +183,7 @@ Manual JSON transfer is acceptance scaffolding only.
 
 ### Gate E — root-cause evidence extraction
 
-Status: `INTEGRATED_PENDING_RUNTIME_ACCEPTANCE`
+Status: `PASS`
 Control: Issue #9
 
 Use existing Big-circle `remarks` as the source. Derive:
@@ -195,11 +195,11 @@ No new manual root-cause field and no ONES mutation.
 
 Integrated source: PR #16 / merge `ae4becddc8c11d265b331ca62db1e573dc04ee6a`.
 
-Exact next action: run `root-cause/extract.py` against the accepted CASE_FEED SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`, verify remarks preservation and audit representative four-state outputs. Do not advance Gate F until this runtime acceptance is closed.
+Accepted exact-feed runtime audit: 252 rows -> CONFIRMED 70 / PROVISIONAL 17 / ABSENT 165 / CONFLICT 0; remarks preservation mismatches 0; report SHA256 `602eddfe58805d1cc524b5c973db12ec32cc8a46664b09c91c2edd833889a594`. The zero CONFLICT count is snapshot-specific; synthetic tests cover that branch.
 
 ### Gate F — bounded root-cause synchronization
 
-Status: `QUEUED_AFTER_GATE_E_AND_READ_ONLY_RUNTIME`
+Status: `ACTIVE_DESIGN_ONLY`
 Control: Issue #6
 
 Only exact `MATCHED` + compatible person scope + confirmed local root cause may enter the write-plan lane.
@@ -246,8 +246,8 @@ Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
 2. Gate D1 periodic alignment is PASS and retired; do not reopen without contradictory runtime evidence.
-3. Issue #9 code is integrated; exact next action is root-cause extractor runtime acceptance against the accepted CASE_FEED.
-4. Keep transport-provider selection, Remote Queue and ONES mutation closed.
+3. Gate E root-cause extraction is PASS and retired.
+4. Exact next lane: Issue #6 bounded root-cause synchronization planning/read-before-write logic only. Keep transport-provider selection, Remote Queue and production ONES mutation closed.
 
 ## Product outcome model
 
