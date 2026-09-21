@@ -32,6 +32,7 @@ for forbidden in [
 ]:
     assert forbidden not in script, forbidden
 
+assert '-Recurse' in script
 assert "Sort-Object LastWriteTimeUtc, FullName -Descending" in script
 assert 'ticketCount' in script and 'serverTotalCount' in script and 'visiblePageTotal' in script
 assert '127.0.0.1:18731' in script
