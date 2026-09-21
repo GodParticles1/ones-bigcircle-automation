@@ -146,28 +146,27 @@ Accepted Gate-C readback:
 - existing workday 19:30 cadence and scan stages preserved.
 
 
-### Gate D1 — dynamic resource alignment controller
+### Gate D1 — small periodic read-only alignment
 
 Status: `ACTIVE`
+Control: Issue #14
 
-Contract:
-`docs/contracts/DYNAMIC_RESOURCE_RECONCILIATION_V1.md`
+Keep this deliberately small.
 
-Implement provider-neutral synthetic-watch semantics:
-- authoritative full LIST of both resources;
-- opaque resourceVersion + exact content hash comparison;
-- unchanged exact pair -> ALIGNMENT_NOOP;
-- changed pair -> existing v0.2.1 reconciliation -> atomic ALIGNMENT_VERIFIED checkpoint;
-- WAIT/BLOCK/RESYNC preserve the previous verified checkpoint;
-- default policy target approximately every 2 hours;
-- existing 19:30 Big-circle scan remains unchanged;
-- watch/event hints are optional triggers only and never replace LIST/resync.
+Approximately every 2 hours:
+- rebuild/read latest valid CASE_FEED_V1 from maintained weekly tables;
+- obtain a fresh completeness-verified ONES inventory;
+- run the existing reconciliation v0.2.1;
+- rely on the existing exact hash/runKey/checkpoint idempotency;
+- WAIT/BLOCK preserves prior scan and reconciliation checkpoints.
 
-No Remote Queue provider is selected in this gate. No ONES mutation is enabled.
+Do not add a generic dynamic-resource API, resourceVersion/generation, LIST/WATCH event protocol, controller subsystem, Remote Queue or ONES mutation.
+
+The existing workday 19:30 Big-circle scan remains unchanged.
 
 ### Gate D2 — Big-circle <-> Windows Agent automatic transport
 
-Status: `QUEUED_AFTER_D1`
+Status: `QUEUED`
 
 Replace manual artifact movement with automatic transport while preserving the exact case-feed/inventory/result contracts.
 
@@ -180,7 +179,7 @@ Manual JSON transfer is acceptance scaffolding only.
 
 ### Gate E — root-cause evidence extraction
 
-Status: `QUEUED_AFTER_D1`
+Status: `ACTIVE`
 Control: Issue #9
 
 Use existing Big-circle `remarks` as the source. Derive:
@@ -238,9 +237,9 @@ Frozen support boundary remains read-only until a later explicit write gate.
 Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
-2. Exact next action: implement the provider-neutral dynamic alignment controller defined by DYNAMIC_RESOURCE_RECONCILIATION_V1.
-3. Keep actual cross-environment transport provider selection queued until the controller contract/implementation is accepted; do not open a Remote Queue.
-4. Issue #9 root-cause extraction is temporarily queued behind this user-prioritized controller improvement. Issue #6 remains write-disabled.
+2. Keep Issue #14 bounded to the smallest approximately-2-hour read-only alignment loop using existing CASE_FEED / inventory / reconciliation/checkpoint machinery.
+3. Issue #9 root-cause extraction remains active in parallel because the periodic-alignment change does not justify blocking it.
+4. Keep transport-provider selection, Remote Queue and ONES mutation closed.
 
 ## Product outcome model
 
