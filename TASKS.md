@@ -78,6 +78,8 @@ Validate that reconciliation WAIT/BLOCK never rolls back `last_successful_scan_t
 
 ## P1c — Big-circle scheduled-task v0.2.1 alignment
 
+Canonical multi-person template: `docs/templates/BIGCIRCLE_PERSON_SCHEDULED_TASK_TEMPLATE_V1.md`.
+
 `LANE_STATE=ACTIVE`
 
 Keep the existing scan/schedule unchanged. Align only the downstream post-SCAN_COMPLETE stage:
