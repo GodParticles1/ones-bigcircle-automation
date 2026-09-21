@@ -12,7 +12,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 - `local-relay/`: accepted v0.2.1 source lineage.
 - `browser-bridge/`: public-safe v0.4.1 integrated on main at merge `89c131d56e156c2977889670ee844392d7eef3f4`. v0.4.1 preserves unsaved first-time setup draft across popup close/reopen while keeping committed token/status handling non-echoing. Private origin/tenant identifiers and historical bounded-write surfaces remain absent; environment scope is runtime configuration.
 - `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; Windows run-once and approximately-2-hour Task Scheduler registration/runtime acceptance are PASS.
-- `root-cause/`: deterministic fail-closed remarks extraction integrated at `ae4becddc8c11d265b331ca62db1e573dc04ee6a`; exact accepted CASE_FEED runtime acceptance is pending.
+- `root-cause/`: deterministic fail-closed remarks extraction integrated at `ae4becddc8c11d265b331ca62db1e573dc04ee6a`; exact accepted CASE_FEED runtime acceptance PASS.
 
 ## Current operational gate
 
@@ -34,7 +34,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `ROOT_CAUSE_EXTRACTION_INTEGRATION=PASS`
 
-`ROOT_CAUSE_EXTRACTION_RUNTIME_ACCEPTANCE=PENDING`
+`ROOT_CAUSE_EXTRACTION_RUNTIME_ACCEPTANCE=PASS`
 
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
@@ -248,7 +248,6 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- exact accepted CASE_FEED runtime acceptance of the integrated root-cause extractor;
 - automatic Big-circle <-> Windows Agent transport;
 - Issue #6 bounded root-cause synchronization;
 - Windows Agent consolidation and Browser UI productization.
@@ -303,3 +302,30 @@ Accepted Windows Task Scheduler evidence:
 - reconciliation runKey: `8167b1bb86d62db0bf70da3821f93a077a0304ae71825307ae6afb6605e05479`.
 
 The task is intentionally interactive because Browser Bridge depends on the logged-in Chrome user session. The Windows task policy currently does not start on battery power; this is an operating-system scheduling policy, not a reconciliation semantic rule.
+
+
+## Root-cause extraction runtime acceptance
+
+`ROOT_CAUSE_EXTRACTION_RUNTIME_ACCEPTANCE=PASS`
+
+Accepted exact input:
+- CASE_FEED SHA256: `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`
+- inputCaseCount: 252 confirmed cases
+
+Merged extractor:
+- PR #16
+- merge: `ae4becddc8c11d265b331ca62db1e573dc04ee6a`
+- CI run: `35588154792` PASS
+
+Exact-feed audit:
+- CONFIRMED=70
+- PROVISIONAL=17
+- ABSENT=165
+- CONFLICT=0
+- remarks preservation mismatches=0
+- CONFIRMED rows retaining known uncertainty cues=0
+- extracted report SHA256: `602eddfe58805d1cc524b5c973db12ec32cc8a46664b09c91c2edd833889a594`
+
+The zero CONFLICT count is only for this accepted snapshot; the CONFLICT branch is covered by synthetic tests and is not assumed impossible in future feeds.
+
+Gate E is closed. Gate F may proceed only as bounded planning/read-before-write logic. Production ONES mutation remains disabled.
