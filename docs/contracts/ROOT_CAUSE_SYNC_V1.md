@@ -12,7 +12,9 @@ This contract does not authorize production mutation by itself.
 
 Local case scope and ONES inventory scope may differ.
 
-- local attribution is derived from confirmed Big-circle duty/handler person fields;
+- local attribution uses confirmed Big-circle `handlerPersons` as primary;
+- only when handler is empty/unresolved, `dutyPersons` is used as fallback;
+- duty and handler are not blindly unioned when a valid handler exists;
 - ONES inventory may contain tickets for a broader configured multi-engineer population;
 - ONES assignee name is a first-class ONES-side population field;
 - configured person/alias mappings are runtime configuration and must not be hardcoded in public source;
@@ -27,7 +29,7 @@ Missing detection is directional: a confirmed local sourceTicketKey absent from 
 A root-cause write plan may be produced only when all are true:
 
 - reconciliation result is exactly one identity `MATCHED` ONES ticket;
-- configured person/alias mapping resolves local duty/handler people and ONES assignee to a compatible person scope;
+- configured person/alias mapping resolves the effective local person (handler primary, duty fallback) and ONES assignee to a compatible person scope;
 - the local case has stable provenance and case identity;
 - local root cause is non-empty;
 - local root cause is explicitly confirmed;
