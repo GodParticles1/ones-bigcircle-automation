@@ -37,7 +37,7 @@ assert "assigneeDepartmentUuid" in worker
 assert "inventoryPageUrl" in worker
 
 # No fixed HTTPS production origin is allowed in the browser implementation.
-assert not re.search(r"https://[^*\\s\"']+", worker)
-assert not re.search(r"https://[^*\\s\"']+", popup)
+assert not re.search(r"https://[^*\s\"']+", worker)
+assert not re.search(r"https://[^*\s\"']+", popup)
 
 print("BROWSER_BRIDGE_PUBLIC_V041_STATIC_PASS")
