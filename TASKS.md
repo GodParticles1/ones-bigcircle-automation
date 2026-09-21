@@ -2,7 +2,7 @@
 
 ## P0 — Windows Chrome runtime acceptance for Browser Bridge v0.4.1
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=RETIRED_PASS`
 
 Use the integrated public-safe Browser Bridge v0.4.1 with Local Relay v0.2.1 on the user's Windows/Chrome environment. v0.4.1 includes the accepted transient setup-draft persistence correction from Issue #12.
 
@@ -17,7 +17,7 @@ Required evidence:
 - exact current `ticketCount == serverTotalCount == visiblePageTotal`;
 - no ONES write path exists or executes.
 
-This gate may be run manually now; do not wait for the scheduled Big-circle task.
+Runtime acceptance passed on 2026-09-21 with a fresh completeness-verified inventory snapshot: 131 rows for that capture only, SHA256 `b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30`. The cardinality is dynamic and is not a future invariant.
 
 ## P1 — Person-aware reconciliation correction
 
