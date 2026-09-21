@@ -44,6 +44,22 @@ Required outcomes:
 
 Add targeted tests for handler precedence, duty fallback, wrong-assignee mismatch and existing exact-key behavior.
 
+## P1a — CASE_FEED_BUILD semantic correction
+
+`LANE_STATE=ACTIVE`
+
+Contract: `docs/contracts/CASE_FEED_V1.md`
+
+Do not rescan enterprise chat and do not move the scan checkpoint.
+
+Rebuild only from maintained weekly tables:
+- exclude EMPTY_PLACEHOLDER / CHECKPOINT_MARKER / INCOMPLETE rows;
+- emit only CONFIRMED_REAL_CASE rows;
+- preserve remarks exactly;
+- derive sourceTicketKey independently and deterministically from explicit trusted key or one unique valid external-ticket token in groupChatName;
+- never infer a key from current ONES inventory;
+- emit people + nested metadata compatibility fields for v0.2.1.
+
 ## P1b — Big-circle reconciliation runtime acceptance
 
 `LANE_STATE=ACTIVE`
