@@ -35,7 +35,7 @@ function Get-ValidCaseFeed {
     }
 
     $candidates = @()
-    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter "*.json" -File -ErrorAction SilentlyContinue) {
+    foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter "*.json" -File -Recurse -ErrorAction SilentlyContinue) {
         try {
             $doc = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($doc.schema -ne "bigcircle.confirmed-case-export/v1alpha1") { continue }
@@ -115,7 +115,6 @@ try {
     $freshThreshold = [DateTime]::UtcNow.AddSeconds(-1 * $ExecutorFreshSeconds)
     $executor = @($stats.executors) |
         Where-Object {
-            $_.onesTabCount -gt 0 -and
             @($_.capabilities) -contains "ONES_INVENTORY_READ" -and
             ([DateTime]$_.lastSeenAt).ToUniversalTime() -ge $freshThreshold
         } |
