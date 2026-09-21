@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ONES Browser Bridge</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main>
+    <h1>ONES Browser Bridge</h1>
+    <p class="hint">Read-only inventory executor. Environment scope is local configuration and is never hardcoded in source.</p>
+
+    <label>ONES origin<input id="onesOrigin" placeholder="https://ones.example.internal:8443" /></label>
+    <label>Team UUID<input id="teamUuid" /></label>
+    <label>Project UUID<input id="projectUuid" /></label>
+    <label>Issue type UUID<input id="issueTypeUuid" /></label>
+    <label>Department UUID<input id="assigneeDepartmentUuid" /></label>
+    <label>Relay URL<input id="relayUrl" value="http://127.0.0.1:18731" /></label>
+    <label>Relay token<input id="relayToken" type="password" autocomplete="off" /></label>
+    <label class="toggle"><input id="relayEnabled" type="checkbox" /> Enable background polling</label>
+
+    <div class="row">
+      <button id="saveConfig">Save + grant origin</button>
+      <button id="bindInventory">Bind current inventory page</button>
+    </div>
+    <div class="row">
+      <button id="testRelay">Test Relay</button>
+      <button id="pollNow">Poll now</button>
+    </div>
+
+    <div id="inventoryPage" class="state">Inventory page: not bound</div>
+    <div id="runtime" class="state">Runtime: unknown</div>
+    <pre id="output">{}</pre>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
