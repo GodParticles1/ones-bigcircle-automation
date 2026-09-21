@@ -98,7 +98,11 @@ def normalize_claim(value):
 
 def uncertainty_cues(value):
     text = str(value or "")
-    return sorted({cue for cue in PROVISIONAL_CUES if cue in text})
+    found = {cue for cue in PROVISIONAL_CUES if cue in text}
+    for name, pattern in UNCERTAINTY_PATTERNS:
+        if pattern.search(text):
+            found.add(name)
+    return sorted(found)
 
 
 def extract_sections(remarks):
