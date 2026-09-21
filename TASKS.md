@@ -4,7 +4,9 @@
 
 `LANE_STATE=ACTIVE`
 
-Goal: replace internal origin/tenant IDs and historical bounded-acceptance target constants with explicit configuration while preserving the accepted read-only inventory behavior and loopback relay contract.
+Goal: review and accept the v0.4.0 public projection that replaces internal origin/tenant IDs and historical bounded-acceptance target constants with explicit configuration while preserving the accepted read-only inventory behavior and loopback relay contract.
+
+Writer branch: `migration/browser-bridge-public-v040`
 
 Required before integration:
 

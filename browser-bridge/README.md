@@ -1,13 +1,16 @@
-# Browser Bridge — public migration lane
+# Browser Bridge v0.4.0 public projection
 
-The accepted internal v0.3.36 runtime is **not copied verbatim** into this public repository because the source contains private origin/tenant identifiers and historical bounded-acceptance target identifiers.
+This is a configuration-driven, read-only projection of the previously accepted internal browser inventory/relay lane.
 
-The public migration must first make environment identity explicit configuration while preserving:
+Key differences from the internal lineage:
 
-- same-origin execution in an already authenticated browser session;
-- loopback-only Relay polling;
-- `RELAY_PING` and completeness-verified `ONES_INVENTORY_READ`;
-- no browser credential export;
-- no unattended ONES write capability.
+- no private ONES origin in source;
+- no team/project/issue-type/department identifiers in source;
+- no historical bounded-acceptance ticket IDs;
+- no ONES write UI or write handlers;
+- exact ONES origin permission is requested at runtime from a user gesture;
+- current capabilities remain `RELAY_PING` and `ONES_INVENTORY_READ`.
 
-Track this as the current P0 writer lane. Do not paste private constants into public source as a shortcut.
+The extension still relies on the user's already authenticated browser session. It does not export Cookie/Authorization/password material to the Relay.
+
+Runtime acceptance of this public projection is still required before it can supersede the accepted internal v0.3.36 executor.

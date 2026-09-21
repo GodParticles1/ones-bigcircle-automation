@@ -20,6 +20,9 @@ jobs:
       - run: python reconciliation/tests/test_reconciliation.py
       - run: python reconciliation/tests/test_pipeline.py
       - run: python local-relay/tests/test_relay.py
+      - run: node --check browser-bridge/service-worker.js
+      - run: node --check browser-bridge/popup.js
+      - run: python browser-bridge/tests/static_test.py
       - run: python scripts/repo_guard.py .
 
   windows-relay:
