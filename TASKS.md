@@ -46,7 +46,11 @@ Add targeted tests for handler precedence, duty fallback, wrong-assignee mismatc
 
 ## P1a — CASE_FEED_BUILD semantic correction
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=RETIRED`
+
+Accepted exact artifact: `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`.
+
+Acceptance summary: 252 confirmed cases, 39 source tables, 86 deterministic external sourceTicketKeys, 166 null external keys, zero ambiguous keys, and compatible people/metadata envelope. Do not reopen schema/extractor work without contradictory exact evidence.
 
 Contract: `docs/contracts/CASE_FEED_V1.md`
 
@@ -64,9 +68,9 @@ Rebuild only from maintained weekly tables:
 
 `LANE_STATE=ACTIVE`
 
-The Big-circle scan and case-feed build may be triggered manually now, but do not accept v0.2.0 reconciliation classification as the final production result until P1 is integrated.
+The canonical case feed is now accepted. Use its exact bytes/hash as the local input snapshot for the next runtime gate.
 
-After P1 integration, execute:
+Execute:
 
 `SCAN_COMPLETE -> CASE_FEED_BUILD -> INVENTORY_GATE -> PERSON_AWARE_RECONCILIATION -> MISSING_REPORT -> RECONCILIATION_CHECKPOINT`
 
