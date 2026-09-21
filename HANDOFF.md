@@ -4,7 +4,7 @@
 
 - Browser Bridge v0.4.0: integrated on main by merge `4cb9d265ad566e4d30ef00141df82f4ec1ce7694`.
 - Local Relay v0.2.1: current loopback runtime base.
-- Reconciliation pipeline v0.2.0: current checkpointed/idempotent reconciliation base.
+- Reconciliation pipeline v0.2.1: handler-first, assignee-aware, checkpointed/idempotent reconciliation integrated at `25c8e913a658298954e2c447c84be675e4639d99`.
 
 ## Immediate continuation
 
@@ -13,10 +13,10 @@ Do not wait for the scheduled 19:30 Big-circle run.
 1. Run Windows Chrome runtime acceptance for Browser Bridge v0.4.0 against Local Relay v0.2.1.
 2. Manually trigger the existing Big-circle task using the already accepted downstream reconciliation semantics.
 3. Pair the resulting current case feed with a fresh completeness-verified ONES inventory snapshot.
-4. Do not treat the existing v0.2.0 reconciliation classification as final acceptance: it currently unions duty + handler and does not enforce ONES assignee scope.
-5. Integrate the person-aware correction: handler primary, duty fallback only when handler is empty/unresolved, ONES assignee as the remote person scope.
-6. Re-run reconciliation and exact-input NOOP behavior with the corrected implementation.
-7. After the read-only gates close, freeze the bounded root-cause synchronization runtime contract before enabling any ONES mutation.
+4. Run the integrated v0.2.1 person-aware reconciliation and exact-input NOOP behavior.
+5. Validate handler-primary / duty-fallback / ONES-assignee outcomes against current data.
+6. Structure the existing Big-circle remarks into CONFIRMED / PROVISIONAL / ABSENT / CONFLICT root-cause evidence.
+7. Only after the read-only runtime gate closes, freeze the bounded root-cause write-plan/runtime acceptance before enabling any ONES mutation.
 8. Then advance the transport-neutral Big-circle <-> Relay lane.
 
 ## Product outcome model
