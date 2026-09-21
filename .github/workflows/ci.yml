@@ -26,6 +26,7 @@ jobs:
       - run: node --check browser-bridge/popup.js
       - run: python browser-bridge/tests/static_test.py
       - run: python periodic-alignment/tests/static_test.py
+      - run: python root-cause/tests/test_extract.py
       - run: python scripts/repo_guard.py .
 
   windows-relay:
