@@ -10,13 +10,13 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 - `reconciliation/`: v0.2.1 handler-first person-aware reconciliation integrated on main at merge `25c8e913a658298954e2c447c84be675e4639d99`.
 - `local-relay/`: accepted v0.2.1 source lineage.
-- `browser-bridge/`: public-safe v0.4.0 integrated on main at merge `4cb9d265ad566e4d30ef00141df82f4ec1ce7694`. Private origin/tenant identifiers and historical bounded-write surfaces are removed; environment scope is runtime configuration.
+- `browser-bridge/`: public-safe v0.4.1 integrated on main at merge `89c131d56e156c2977889670ee844392d7eef3f4`. v0.4.1 preserves unsaved first-time setup draft across popup close/reopen while keeping committed token/status handling non-echoing. Private origin/tenant identifiers and historical bounded-write surfaces remain absent; environment scope is runtime configuration.
 
 ## Current operational gate
 
 `BIGCIRCLE_TASK_PROMPT_WIRING=PASS`
 
-`BROWSER_BRIDGE_V040_INTEGRATION=PASS`
+`BROWSER_BRIDGE_V041_INTEGRATION=PASS`
 
 `WINDOWS_CHROME_RUNTIME_ACCEPTANCE=PENDING`
 
@@ -150,7 +150,7 @@ The data contracts are connected, but the automatic cross-environment transport 
 
 Current accepted split:
 - Big-circle weekly tables -> CASE_FEED_V1: PASS;
-- Browser/Relay -> ONES inventory: historically accepted on the previous runtime lineage; v0.4.0 Windows runtime acceptance remains pending;
+- Browser/Relay -> ONES inventory: historically accepted on the previous runtime lineage; v0.4.1 Windows runtime acceptance remains pending;
 - case feed + inventory -> reconciliation v0.2.1: integrated, pending fresh exact-input runtime acceptance;
 - Big-circle -> Windows automatic transport: not yet implemented/accepted.
 
@@ -160,14 +160,14 @@ The existing workday scheduled scan remains unchanged. Its post-SCAN_COMPLETE st
 ## Lead handoff checkpoint
 
 Current accepted/retired:
-- Browser Bridge public-safe v0.4.0 integrated;
+- Browser Bridge public-safe v0.4.1 integrated; Issue #12 setup-draft persistence correction closed;
 - Local Relay v0.2.1 accepted base;
 - person-aware reconciliation v0.2.1 integrated;
 - CASE_FEED_V1 exact artifact accepted at SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`;
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- Windows Chrome v0.4.0 read-only runtime acceptance;
+- Windows Chrome v0.4.1 read-only runtime acceptance;
 - fresh inventory + v0.2.1 reconciliation + exact-input NOOP runtime acceptance;
 - Issue #11 scheduled-task definition alignment/readback;
 - automatic Big-circle <-> Windows Agent transport;
