@@ -183,7 +183,7 @@ Manual JSON transfer is acceptance scaffolding only.
 
 ### Gate E — root-cause evidence extraction
 
-Status: `ACTIVE`
+Status: `INTEGRATED_PENDING_RUNTIME_ACCEPTANCE`
 Control: Issue #9
 
 Use existing Big-circle `remarks` as the source. Derive:
@@ -192,6 +192,10 @@ Use existing Big-circle `remarks` as the source. Derive:
 - `rootCauseEvidenceSummary`.
 
 No new manual root-cause field and no ONES mutation.
+
+Integrated source: PR #16 / merge `ae4becddc8c11d265b331ca62db1e573dc04ee6a`.
+
+Exact next action: run `root-cause/extract.py` against the accepted CASE_FEED SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`, verify remarks preservation and audit representative four-state outputs. Do not advance Gate F until this runtime acceptance is closed.
 
 ### Gate F — bounded root-cause synchronization
 
@@ -242,7 +246,7 @@ Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
 2. Gate D1 periodic alignment is PASS and retired; do not reopen without contradictory runtime evidence.
-3. Exact next active lane: Issue #9 root-cause extraction from existing remarks.
+3. Issue #9 code is integrated; exact next action is root-cause extractor runtime acceptance against the accepted CASE_FEED.
 4. Keep transport-provider selection, Remote Queue and ONES mutation closed.
 
 ## Product outcome model
