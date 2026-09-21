@@ -20,7 +20,9 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `WINDOWS_CHROME_RUNTIME_ACCEPTANCE=PENDING`
 
-`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=PENDING`
+`PERSON_AWARE_RECONCILIATION_CORRECTION=ACTIVE`
+
+`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=HOLD_PENDING_PERSON_AWARE_CORRECTION`
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
 
@@ -34,13 +36,15 @@ The current known example is intentionally asymmetric:
 
 Therefore reconciliation is population-aware and identity-aware, not raw-count-difference based.
 
-Person fields are first-class alignment data:
+Person fields are first-class alignment data, with an explicit local precedence rule:
 
-- Big-circle `dutyPersons` / `handlerPersons` identify the local people involved in the case;
-- ONES `assignee.name` identifies the ONES-side person partition for the ticket;
+- Big-circle `handlerPersons` is primary and represents the person who actually handled the case;
+- only when `handlerPersons` is empty/unresolved, Big-circle `dutyPersons` is used as a fallback inclusion source;
+- duty and handler are not blindly unioned when a valid handler exists;
+- ONES `assignee.name` identifies the ONES-side owner partition for the ticket;
 - configured person/alias mappings are runtime configuration and are never hardcoded into public source.
 
-The case identity signal remains deterministic. An exact sourceTicketKey is the strongest current identity key. Person name alone does not prove that two rows are the same case, but it determines which person's population a row belongs to and is required before automatic field synchronization.
+The case identity signal remains deterministic. An exact sourceTicketKey is the strongest current identity key. Person scope determines whose case it is; sourceTicketKey determines which case it is.
 
 The actionable missing direction is:
 
