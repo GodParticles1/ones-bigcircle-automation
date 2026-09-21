@@ -19,6 +19,20 @@ INITIAL_SCAN_START={{INITIAL_SCAN_START}}
 
 Public source must not hardcode real people or private ONES identifiers.
 
+## Parameter meanings
+
+- `TASK_KEY`: this person's scheduled-task identity. It is used to distinguish the task itself, its runtime state/checkpoints and later audit records. Keep it stable after the task is created. Recommended example: `bigcircle-zxd-daily`.
+- `TARGET_PERSON`: the canonical display identity for the person this task manages. It defines the per-person scope used by weekly-table maintenance, case-feed `configuredPeopleScope`, and reconciliation filtering. Recommended value: the person's actual stable display name used by the current Big-circle/ONES workflow.
+- `TARGET_PERSON_ALIASES`: optional equivalent names/legacy display names/user-name variants that should resolve to `TARGET_PERSON`. Use only confirmed aliases. Leave empty when there is no alias; do not use fuzzy matching.
+- `TABLE_PREFIX`: the stable prefix used to name this person's natural-week tables. It is only a namespace/prefix, not a person-matching rule. Example: `ZXD` produces tables such as `ZXD260629-260705`.
+- `INITIAL_SCAN_START`: the earliest time this person's task is allowed to scan when no `last_successful_scan_time` exists yet. Normally use the person's confirmed onboarding/start date or the agreed backfill boundary. After the first successful run, normal execution uses the saved checkpoint instead of this value.
+
+Management notes:
+- `TASK_KEY`, `TABLE_PREFIX`, scan checkpoint and reconciliation checkpoint must be unique per person.
+- `TARGET_PERSON` / aliases define identity scope; `TABLE_PREFIX` does not.
+- Changing `INITIAL_SCAN_START` after a checkpoint exists must not silently rewind the checkpoint.
+- Changing `TARGET_PERSON` or aliases after production use should be treated as a controlled configuration change because it can change reconciliation population.
+
 ## Full scheduled-task prompt
 
 ```text
