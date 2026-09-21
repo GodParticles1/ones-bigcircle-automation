@@ -1,10 +1,10 @@
 # Tasks
 
-## P0 — Windows Chrome runtime acceptance for Browser Bridge v0.4.0
+## P0 — Windows Chrome runtime acceptance for Browser Bridge v0.4.1
 
 `LANE_STATE=ACTIVE`
 
-Use the integrated public-safe Browser Bridge v0.4.0 with Local Relay v0.2.1 on the user's Windows/Chrome environment.
+Use the integrated public-safe Browser Bridge v0.4.1 with Local Relay v0.2.1 on the user's Windows/Chrome environment. v0.4.1 includes the accepted transient setup-draft persistence correction from Issue #12.
 
 Required evidence:
 
