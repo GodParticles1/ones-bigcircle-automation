@@ -6,6 +6,20 @@
 - Local Relay v0.2.1: current loopback runtime base.
 - Reconciliation pipeline v0.2.1: handler-first, assignee-aware, checkpointed/idempotent reconciliation integrated at `25c8e913a658298954e2c447c84be675e4639d99`.
 
+## CASE_FEED correction contract
+
+Use `docs/contracts/CASE_FEED_V1.md`.
+
+Current exact artifact proved remarks fidelity but is not yet a confirmed-case feed because it contains control/incomplete rows, every caseStatus is null, and every sourceTicketKey is null.
+
+Observed deterministic extraction against the exact 321-row artifact:
+- 102 rows have exactly one valid one-hyphen external-ticket candidate;
+- 219 rows have none;
+- 0 rows have multiple candidates under the frozen grammar.
+After excluding 10 EMPTY_PLACEHOLDER, 4 CHECKPOINT_MARKER and 4 INCOMPLETE rows, 303 confirmed-like rows remain. Under configured-person handler-first filtering, 267 remain in-scope; 93 of those have one deterministic sourceTicketKey candidate and 174 have none.
+
+A previous verified ONES inventory is useful only as regression evidence: 58 current rows / 42 unique extracted keys intersected that stale snapshot. It must not be used to classify current missing tickets.
+
 ## Immediate continuation
 
 Do not wait for the scheduled 19:30 Big-circle run.
