@@ -71,6 +71,18 @@ PROVISIONAL_SECTION_RE = re.compile(
     r"(?P<text>[^；;\n。]+)"
 )
 
+
+UNCERTAINTY_PATTERNS = (
+    (
+        "UNRESOLVED_CAUSE",
+        re.compile(
+            r"(?:无法|不能|尚未|暂未|未能).{0,16}(?:确定|确认|解释|定位).{0,16}(?:根因|原因)|"
+            r"(?:根因|原因).{0,16}(?:无法|不能|尚未|暂未|未能).{0,16}(?:确定|确认|解释|定位)|"
+            r"无法对.{0,24}进行确定性分析|还没解释|未解释清楚"
+        ),
+    ),
+)
+
 STRONG_CAUSE_PATTERNS = (
     (
         "FINAL_CAUSAL_WORDING",
