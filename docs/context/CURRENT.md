@@ -24,6 +24,8 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=ACTIVE`
 
+`BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=REQUIRED`
+
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
 
 ## Population semantics
@@ -140,3 +142,16 @@ Therefore:
 - transport selection remains separate from business semantics;
 - Local Relay stays loopback-only;
 - no Remote Queue provider is opened until the transport-neutral contract is accepted.
+
+
+## Scheduled-task alignment
+
+The data contracts are connected, but the automatic cross-environment transport is not yet connected end-to-end.
+
+Current accepted split:
+- Big-circle weekly tables -> CASE_FEED_V1: PASS;
+- Browser/Relay -> ONES inventory: historically accepted on the previous runtime lineage; v0.4.0 Windows runtime acceptance remains pending;
+- case feed + inventory -> reconciliation v0.2.1: integrated, pending fresh exact-input runtime acceptance;
+- Big-circle -> Windows automatic transport: not yet implemented/accepted.
+
+The existing workday scheduled scan remains unchanged. Its post-SCAN_COMPLETE stage must now use v0.2.1 outcome semantics, including PERSON_SCOPE_MISMATCH, and CASE_FEED_V1. Until transport is accepted, lack of a fresh Windows inventory must result only in RECONCILE_WAIT_LOCAL_INVENTORY.
