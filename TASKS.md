@@ -156,7 +156,7 @@ Contract: `docs/contracts/ROOT_CAUSE_SYNC_V1.md`.
 
 ## P1d — 2-hour periodic read-only alignment
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=RUNTIME_ACCEPTANCE`
 
 Goal: keep the two changing datasets approximately aligned without adding a new architecture layer.
 
@@ -177,7 +177,11 @@ Per cycle:
 
 Do not add apiVersion/kind/resourceVersion, LIST/WATCH protocol, generic controller subsystem, Remote Queue, provider selection or ONES mutation.
 
-Tracked by Issue #14.
+Implementation integrated by PR #15 / merge `2eb36fd44ee24971eca8f85562e7828637e45514`.
+
+Next gate: run the Windows wrapper once against the user's existing Local Relay v0.2.1, Browser Bridge v0.4.1, reconciliation v0.2.1 and newest valid local CASE_FEED. Only after that passes may the approximately-2-hour Windows Task Scheduler registration be added.
+
+Tracked by Issue #14 (closed after code integration).
 
 ## P4 — Big-circle <-> Windows Agent transport abstraction
 
