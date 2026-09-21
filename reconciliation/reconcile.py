@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 SCHEMA_VERSION = "ones.bigcircle-reconciliation/v1alpha1"
-IMPLEMENTATION_VERSION = "0.2.0"
+IMPLEMENTATION_VERSION = "0.2.1"
 MIN_DATE = date(2026, 6, 1)
 FINAL_WRITE_STATES = {
     "WRITE_VERIFIED": "writeVerified",
@@ -106,6 +106,43 @@ def first(case, names, default=None):
     return default
 
 
+def normalize_person_name(value):
+    if value is None:
+        return None
+    text = re.sub(r"\s+", "", str(value)).strip().casefold()
+    return text or None
+
+
+def derive_effective_persons(handlers, duty):
+    handler_people = [p for p in handlers if normalize_person_name(p)]
+    if handler_people:
+        return sorted(set(handler_people)), "HANDLER_PRIMARY"
+    duty_people = [p for p in duty if normalize_person_name(p)]
+    if duty_people:
+        return sorted(set(duty_people)), "DUTY_FALLBACK"
+    return [], "PERSON_UNRESOLVED"
+
+
+def ticket_assignee(ticket):
+    assignee = ticket.get("assignee")
+    if not isinstance(assignee, dict):
+        return None
+    name = assignee.get("name")
+    if not normalize_person_name(name):
+        return None
+    return {
+        "uuid": assignee.get("uuid"),
+        "name": str(name).strip(),
+    }
+
+
+def person_scope_compatible(local_people, assignee):
+    assignee_name = normalize_person_name((assignee or {}).get("name"))
+    if not assignee_name:
+        return False
+    return assignee_name in {normalize_person_name(p) for p in local_people if normalize_person_name(p)}
+
+
 def normalize_case(raw, index):
     group_name = first(raw, ["groupChatName", "groupName", "chatName", "群聊名称"], "")
     explicit_key = first(raw, ["sourceTicketKey", "sourceTicketNo", "source_ticket_key"])
@@ -115,6 +152,7 @@ def normalize_case(raw, index):
     handlers = listify(first(raw, ["handlerPersons", "handlerPerson", "处理人"]))
     contacts = listify(first(raw, ["contactPersons", "contactPerson", "对接人"]))
     engineers = sorted(set(duty + handlers))
+    effective_people, attribution_source = derive_effective_persons(handlers, duty)
     execution_status = str(first(raw, ["executionStatus", "writeStatus", "relayStatus"], "")).strip().upper() or None
     root_confirmed = first(raw, ["rootCauseConfirmed", "root_cause_confirmed"])
     if root_confirmed is not None:
@@ -130,6 +168,8 @@ def normalize_case(raw, index):
         "handlerPersons": handlers,
         "contactPersons": contacts,
         "engineers": engineers,
+        "effectiveLocalPersons": effective_people,
+        "attributionSource": attribution_source,
         "summary": str(first(raw, ["summary", "remarks", "note", "备注"], "") or ""),
         "remarks": str(first(raw, ["remarks", "note", "备注"], "") or ""),
         "rootCauseConfirmed": root_confirmed,
@@ -278,7 +318,7 @@ def aggregate_missing_keys(rows):
         q = row.get("quarter")
         if q and q not in g["quarters"]:
             g["quarters"].append(q)
-        for person in row.get("engineers") or []:
+        for person in row.get("effectiveLocalPersons") or []:
             if person not in g["engineers"]:
                 g["engineers"].append(person)
         name = row.get("groupChatName") or ""
@@ -313,7 +353,7 @@ def reconcile(inventory, cases_doc, configured_people=None):
         if d is None or d < MIN_DATE:
             excluded_prebaseline += 1
             continue
-        if people and not set(c["engineers"]).intersection(people):
+        if people and not set(c["effectiveLocalPersons"]).intersection(people):
             excluded_people += 1
             continue
         included.append(c)
@@ -325,13 +365,27 @@ def reconcile(inventory, cases_doc, configured_people=None):
         row["sourceTicketKey"] = resolved_key
         row["matchedOnesDisplayId"] = None
         row["matchedOnesTaskUuid"] = None
+        row["matchedOnesAssignee"] = None
         row["reason"] = reason
         if status == "MATCHED":
             matches = ones_by_key.get(resolved_key, [])
             if len(matches) == 1:
-                row["matchStatus"] = "MATCHED"
-                row["matchedOnesDisplayId"] = matches[0].get("onesDisplayId")
-                row["matchedOnesTaskUuid"] = matches[0].get("onesTaskUuid")
+                ticket = matches[0]
+                row["matchedOnesDisplayId"] = ticket.get("onesDisplayId")
+                row["matchedOnesTaskUuid"] = ticket.get("onesTaskUuid")
+                assignee = ticket_assignee(ticket)
+                row["matchedOnesAssignee"] = assignee
+                if not row.get("effectiveLocalPersons"):
+                    row["matchStatus"] = "AMBIGUOUS"
+                    row["reason"] = "LOCAL_PERSON_UNRESOLVED"
+                elif assignee is None:
+                    row["matchStatus"] = "AMBIGUOUS"
+                    row["reason"] = "ONES_ASSIGNEE_UNRESOLVED"
+                elif person_scope_compatible(row["effectiveLocalPersons"], assignee):
+                    row["matchStatus"] = "MATCHED"
+                else:
+                    row["matchStatus"] = "PERSON_SCOPE_MISMATCH"
+                    row["reason"] = "ONES_ASSIGNEE_PERSON_SCOPE_MISMATCH"
             else:
                 row["matchStatus"] = "AMBIGUOUS"
                 row["reason"] = "EXACT_EMBEDDED_KEY_NOT_UNIQUE"
@@ -339,6 +393,9 @@ def reconcile(inventory, cases_doc, configured_people=None):
             if unkeyed_count:
                 row["matchStatus"] = "AMBIGUOUS"
                 row["reason"] = "INVENTORY_CONTAINS_UNKEYED_TICKETS"
+            elif not row.get("effectiveLocalPersons"):
+                row["matchStatus"] = "AMBIGUOUS"
+                row["reason"] = "LOCAL_PERSON_UNRESOLVED"
             else:
                 row["matchStatus"] = "ONES_MISSING_CASE"
         else:
@@ -352,6 +409,7 @@ def reconcile(inventory, cases_doc, configured_people=None):
             "confirmedRealCases": 0,
             "matched": 0,
             "onesMissing": 0,
+            "personScopeMismatch": 0,
             "ambiguous": 0,
             "rootCauseConfirmed": 0,
             "rootCauseUnconfirmed": 0,
@@ -366,6 +424,8 @@ def reconcile(inventory, cases_doc, configured_people=None):
             m["matched"] += 1
         elif r["matchStatus"] == "ONES_MISSING_CASE":
             m["onesMissing"] += 1
+        elif r["matchStatus"] == "PERSON_SCOPE_MISMATCH":
+            m["personScopeMismatch"] += 1
         else:
             m["ambiguous"] += 1
         if r["rootCauseConfirmed"] is True:
@@ -379,6 +439,7 @@ def reconcile(inventory, cases_doc, configured_people=None):
             m[FINAL_WRITE_STATES[status]] += 1
 
     missing = [r for r in results if r["matchStatus"] == "ONES_MISSING_CASE"]
+    person_scope_mismatches = [r for r in results if r["matchStatus"] == "PERSON_SCOPE_MISMATCH"]
     ambiguous = [r for r in results if r["matchStatus"] == "AMBIGUOUS"]
     matched = [r for r in results if r["matchStatus"] == "MATCHED"]
     missing_keys = aggregate_missing_keys(missing)
@@ -411,6 +472,7 @@ def reconcile(inventory, cases_doc, configured_people=None):
         "totals": {
             "MATCHED": len(matched),
             "ONES_MISSING_CASE": len(missing),
+            "PERSON_SCOPE_MISMATCH": len(person_scope_mismatches),
             "AMBIGUOUS": len(ambiguous),
         },
         "uniqueMissingSourceTicketKeyCount": len(missing_keys),
@@ -418,6 +480,7 @@ def reconcile(inventory, cases_doc, configured_people=None):
         "quarterMetrics": quarter_metrics,
         "missingExternalTicketKeys": missing_keys,
         "missingExternalTickets": missing,
+        "personScopeMismatches": person_scope_mismatches,
         "ambiguousCases": ambiguous,
         "matchedCases": matched,
         "results": results,
