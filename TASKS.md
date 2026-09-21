@@ -113,11 +113,15 @@ Required semantics:
 
 Contract: `docs/contracts/ROOT_CAUSE_SYNC_V1.md`.
 
-## P4 — Big-circle <-> Relay transport abstraction
+## P4 — Big-circle <-> Windows Agent transport abstraction
 
 `LANE_STATE=QUEUED`
 
-Goal: define a transport-neutral job/result envelope so the cloud Big-circle control plane can eventually exchange bounded work with the Windows agent without coupling business semantics to one provider.
+Goal: replace the current manual case-feed file handoff with automatic transport while preserving the exact same canonical snapshot contract.
+
+The JSON case feed remains the logical payload/audit snapshot, but the user must not need to download/copy/upload it during normal operation.
+
+Define a transport-neutral job/result envelope so the cloud Big-circle control plane can exchange bounded work with the Windows agent without coupling business semantics to one provider.
 
 Current restriction: do not select or open a Remote Queue implementation yet.
 
