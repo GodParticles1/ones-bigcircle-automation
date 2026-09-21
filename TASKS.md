@@ -115,7 +115,7 @@ Issue #11 may be closed.
 
 ## P2 — Remarks -> structured root-cause extraction
 
-`LANE_STATE=INTEGRATED_PENDING_RUNTIME_ACCEPTANCE`
+`LANE_STATE=RETIRED_PASS`
 
 Goal: derive confirmed root-cause evidence from the existing Big-circle `remarks` field without changing the current daily data-entry workflow.
 
@@ -131,11 +131,11 @@ Required semantics:
 
 Implementation integrated by PR #16 / merge `ae4becddc8c11d265b331ca62db1e573dc04ee6a`.
 
-Next gate: execute the merged extractor against the accepted CASE_FEED exact input and audit the four-state distribution plus representative CONFIRMED / PROVISIONAL / ABSENT rows. No write-plan or ONES mutation is enabled by this gate.
+Exact accepted-feed runtime audit PASS: 252 rows -> CONFIRMED 70 / PROVISIONAL 17 / ABSENT 165 / CONFLICT 0; remarks preservation mismatches 0; accepted report SHA256 `602eddfe58805d1cc524b5c973db12ec32cc8a46664b09c91c2edd833889a594`. This lane is retired PASS. No ONES mutation is enabled by this acceptance.
 
 ## P3 — Population-aware root-cause synchronization contract
 
-`LANE_STATE=QUEUED`
+`LANE_STATE=ACTIVE_DESIGN_ONLY`
 
 Goal: extend exact-match reconciliation into a bounded write-plan lane for confirmed technical fields, with root cause as P0.
 
