@@ -56,6 +56,133 @@ Only align the post-SCAN_COMPLETE lane to the integrated state:
 
 Until automatic transport is accepted, a scheduled run with no fresh Windows inventory must stop at RECONCILE_WAIT_LOCAL_INVENTORY. Manual file movement is acceptance scaffolding, not the production transport.
 
+## Open work DAG — exact continuation order
+
+Current unfinished work is intentionally split so a new Lead does not mix runtime acceptance, transport, and write enablement.
+
+### Gate A — Windows read-only runtime acceptance
+
+Status: `ACTIVE`
+
+Use:
+- Browser Bridge v0.4.0
+- Local Relay v0.2.1
+- current logged-in Windows Chrome
+
+Required:
+- runtime config succeeds;
+- loopback Relay heartbeat / `RELAY_PING` succeeds;
+- fresh `ONES_INVENTORY_READ` returns `INVENTORY_VERIFIED`;
+- `ticketCount == serverTotalCount == visiblePageTotal == len(tickets)`;
+- no ONES mutation path executes.
+
+This is the exact next runtime action.
+
+### Gate B — person-aware reconciliation runtime acceptance
+
+Status: `ACTIVE_AFTER_GATE_A`
+
+Use the accepted case-feed exact input:
+
+```text
+SHA256=41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8
+```
+
+Pair it only with the fresh Gate-A inventory and run integrated reconciliation v0.2.1.
+
+Required:
+- first exact pair -> `RECONCILIATION_VERIFIED`;
+- immediate exact rerun -> `RECONCILIATION_NOOP_VERIFIED`;
+- inspect `MATCHED / ONES_MISSING_CASE / PERSON_SCOPE_MISMATCH / AMBIGUOUS`;
+- verify handler-primary / duty-fallback / ONES-assignee behavior on real data.
+
+### Gate C — scheduled-task alignment
+
+Status: `ACTIVE`
+Control: Issue #11
+
+The existing workday 19:30 scan remains unchanged.
+
+Only align the post-`SCAN_COMPLETE` lane to:
+- accepted CASE_FEED_V1;
+- fresh verified inventory gate;
+- reconciliation v0.2.1;
+- `PERSON_SCOPE_MISMATCH`;
+- independent reconciliation checkpoint.
+
+Canonical per-person template:
+`docs/templates/BIGCIRCLE_PERSON_SCHEDULED_TASK_TEMPLATE_V1.md`
+
+Issue #11 closes only after task-definition readback confirms this alignment. Do not close it merely because the template exists.
+
+### Gate D — Big-circle <-> Windows Agent automatic transport
+
+Status: `QUEUED_AFTER_READ_ONLY_RUNTIME`
+
+Replace manual artifact movement with automatic transport while preserving the exact case-feed/inventory/result contracts.
+
+Do not select/open a Remote Queue provider until a transport-neutral contract is accepted.
+
+Target:
+`Big-circle -> transport adapter -> Windows Agent -> Local Relay/Browser Bridge/reconciliation -> result/checkpoint -> Big-circle`
+
+Manual JSON transfer is acceptance scaffolding only.
+
+### Gate E — root-cause evidence extraction
+
+Status: `QUEUED`
+Control: Issue #9
+
+Use existing Big-circle `remarks` as the source. Derive:
+- `rootCauseText`;
+- `rootCauseState = CONFIRMED | PROVISIONAL | ABSENT | CONFLICT`;
+- `rootCauseEvidenceSummary`.
+
+No new manual root-cause field and no ONES mutation.
+
+### Gate F — bounded root-cause synchronization
+
+Status: `QUEUED_AFTER_GATE_E_AND_READ_ONLY_RUNTIME`
+Control: Issue #6
+
+Only exact `MATCHED` + compatible person scope + confirmed local root cause may enter the write-plan lane.
+
+Still frozen:
+- production ONES root-cause write;
+- automatic ONES create/import;
+- owner/status/project/priority/delete mutation.
+
+### Productization tail
+
+Queued after the control/runtime lanes above:
+- Windows Agent consolidation;
+- Browser UI productization using compact product-card hierarchy;
+- Chrome extension remains the logged-in same-origin browser executor.
+
+## New-conversation takeover instructions
+
+A new conversation taking Lead / Integration responsibility must:
+
+1. bootstrap live `GodParticles1/chat-memory` and `GodParticles1/xrocket-product-knowledge` per project rules;
+2. refresh live main of this repository;
+3. read:
+   - `AGENTS.md`
+   - `docs/context/CURRENT.md`
+   - `TASKS.md`
+   - `HANDOFF.md`
+   - `docs/governance/LEAD_RESPONSIBILITY.md`
+   - `docs/governance/MULTI_AGENT.md`
+   - `docs/governance/DELIVERY_GATES.md`
+   - `docs/contracts/CASE_FEED_V1.md`
+   - `docs/contracts/RECONCILIATION_V1.md`
+   - `docs/contracts/ROOT_CAUSE_SYNC_V1.md`
+   - `docs/templates/BIGCIRCLE_PERSON_SCHEDULED_TASK_TEMPLATE_V1.md`
+4. read current Issue #1, Issue #11, Issue #9 and Issue #6;
+5. do not reopen retired CASE_FEED/schema work without contradictory exact evidence;
+6. continue from Gate A above rather than redesigning architecture.
+
+Frozen support boundary remains read-only until a later explicit write gate.
+
 ## Immediate continuation
 
 Do not wait for the scheduled 19:30 Big-circle run.
