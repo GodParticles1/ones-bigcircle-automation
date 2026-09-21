@@ -81,6 +81,17 @@ assert_state(
     "请求过多可能导致队列阻塞",
 )
 
+assert_state(
+    "根因：现象与网络切换相关，但受限于证据，无法对宕机根因进行确定性分析。",
+    "PROVISIONAL",
+)
+
+assert_state(
+    "最终定位为网络设备故障，但高负载现象还没解释。",
+    "PROVISIONAL",
+    "网络设备故障，但高负载现象还没解释",
+)
+
 remarks = "现象：A\n根因：B；处理：C。"
 feed = {
     "schema": "bigcircle.confirmed-case-export/v1alpha1",
