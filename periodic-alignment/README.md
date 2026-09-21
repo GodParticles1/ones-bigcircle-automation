@@ -6,7 +6,7 @@ It does not introduce a controller framework, LIST/WATCH protocol, Remote Queue,
 
 Each invocation:
 
-1. selects the newest valid CASE_FEED_V1 JSON from a configured directory;
+1. recursively selects the newest valid CASE_FEED_V1 JSON from a configured directory, so month subdirectories and numbered duplicate filenames do not need special handling;
 2. verifies a live Local Relay and a fresh read-only Browser Bridge executor;
 3. enqueues one ONES_INVENTORY_READ job;
 4. waits for INVENTORY_VERIFIED and checks completeness counts;
