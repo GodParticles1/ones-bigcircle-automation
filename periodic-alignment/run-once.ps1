@@ -231,10 +231,19 @@ try {
         } -ExitCode 2
     }
 
-    $reconLines = @(
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runStage             -Inventory $inventoryPath             -Cases $caseFeed.FullName             -StateDir $stateDir             -OutputDir $outputDir 2>&1
-    )
-    $reconExit = $LASTEXITCODE
+    Push-Location $ReconciliationDir
+    try {
+        $reconLines = @(
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runStage `
+                -Inventory $inventoryPath `
+                -Cases $caseFeed.FullName `
+                -StateDir $stateDir `
+                -OutputDir $outputDir 2>&1
+        )
+        $reconExit = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
     $lastLine = $reconLines | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Last 1
 
     if ($reconExit -ne 0 -or $null -eq $lastLine) {
