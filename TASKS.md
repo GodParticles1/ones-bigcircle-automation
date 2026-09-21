@@ -21,7 +21,7 @@ This gate may be run manually now; do not wait for the scheduled Big-circle task
 
 ## P1 — Person-aware reconciliation correction
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=RETIRED`
 
 Correct reconciliation before declaring production runtime acceptance.
 
@@ -46,7 +46,7 @@ Add targeted tests for handler precedence, duty fallback, wrong-assignee mismatc
 
 ## P1b — Big-circle reconciliation runtime acceptance
 
-`LANE_STATE=HOLD`
+`LANE_STATE=ACTIVE`
 
 The Big-circle scan and case-feed build may be triggered manually now, but do not accept v0.2.0 reconciliation classification as the final production result until P1 is integrated.
 
@@ -56,7 +56,23 @@ After P1 integration, execute:
 
 Validate that reconciliation WAIT/BLOCK never rolls back `last_successful_scan_time`, weekly-table writes, or prior verified reconciliation state.
 
-## P2 — Population-aware root-cause synchronization contract
+## P2 — Remarks -> structured root-cause extraction
+
+`LANE_STATE=QUEUED`
+
+Goal: derive confirmed root-cause evidence from the existing Big-circle `remarks` field without changing the current daily data-entry workflow.
+
+Required semantics:
+- preserve the original remarks text unchanged;
+- derive `rootCauseText`, `rootCauseState`, `rootCauseEvidenceSummary`;
+- distinguish confirmed root cause from symptom, current judgment/suspicion, recovery action and next step;
+- do not promote provisional language to CONFIRMED;
+- conflicting root-cause statements -> CONFLICT;
+- no root-cause evidence -> ABSENT;
+- only CONFIRMED may feed the write-plan lane;
+- public tests use synthetic remarks only.
+
+## P3 — Population-aware root-cause synchronization contract
 
 `LANE_STATE=QUEUED`
 
@@ -81,7 +97,7 @@ Required semantics:
 
 Contract: `docs/contracts/ROOT_CAUSE_SYNC_V1.md`.
 
-## P3 — Big-circle <-> Relay transport abstraction
+## P4 — Big-circle <-> Relay transport abstraction
 
 `LANE_STATE=QUEUED`
 
@@ -91,13 +107,13 @@ Current restriction: do not select or open a Remote Queue implementation yet.
 
 The transport contract must be able to carry both read-only inventory jobs and future accepted write-plan jobs without granting new capabilities by default.
 
-## P4 — Windows agent consolidation
+## P5 — Windows agent consolidation
 
 `LANE_STATE=QUEUED`
 
 Future packaging target: one Windows-side ONES Big-circle Agent that owns Local Relay, reconciliation runner, state/checkpoints, config/status UI and Browser Bridge setup guidance. Chrome extension remains a browser component.
 
-## P5 — Browser UI productization
+## P6 — Browser UI productization
 
 `LANE_STATE=QUEUED`
 
