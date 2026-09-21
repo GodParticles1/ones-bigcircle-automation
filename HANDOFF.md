@@ -146,9 +146,28 @@ Accepted Gate-C readback:
 - existing workday 19:30 cadence and scan stages preserved.
 
 
-### Gate D — Big-circle <-> Windows Agent automatic transport
+### Gate D1 — dynamic resource alignment controller
 
-Status: `QUEUED_AFTER_READ_ONLY_RUNTIME`
+Status: `ACTIVE`
+
+Contract:
+`docs/contracts/DYNAMIC_RESOURCE_RECONCILIATION_V1.md`
+
+Implement provider-neutral synthetic-watch semantics:
+- authoritative full LIST of both resources;
+- opaque resourceVersion + exact content hash comparison;
+- unchanged exact pair -> ALIGNMENT_NOOP;
+- changed pair -> existing v0.2.1 reconciliation -> atomic ALIGNMENT_VERIFIED checkpoint;
+- WAIT/BLOCK/RESYNC preserve the previous verified checkpoint;
+- default policy target approximately every 2 hours;
+- existing 19:30 Big-circle scan remains unchanged;
+- watch/event hints are optional triggers only and never replace LIST/resync.
+
+No Remote Queue provider is selected in this gate. No ONES mutation is enabled.
+
+### Gate D2 — Big-circle <-> Windows Agent automatic transport
+
+Status: `QUEUED_AFTER_D1`
 
 Replace manual artifact movement with automatic transport while preserving the exact case-feed/inventory/result contracts.
 
@@ -161,7 +180,7 @@ Manual JSON transfer is acceptance scaffolding only.
 
 ### Gate E — root-cause evidence extraction
 
-Status: `ACTIVE`
+Status: `QUEUED_AFTER_D1`
 Control: Issue #9
 
 Use existing Big-circle `remarks` as the source. Derive:
@@ -219,9 +238,9 @@ Frozen support boundary remains read-only until a later explicit write gate.
 Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
-2. Exact next action: execute Issue #9 root-cause evidence extraction against the accepted CASE_FEED_V1 remarks while preserving original remarks verbatim.
-3. Keep the transport-neutral Big-circle <-> Windows Agent lane queued separately; do not select or open a Remote Queue provider yet.
-4. Issue #6 remains design-only/queued until Issue #9 produces accepted CONFIRMED / PROVISIONAL / ABSENT / CONFLICT evidence semantics. Production ONES mutation remains disabled.
+2. Exact next action: implement the provider-neutral dynamic alignment controller defined by DYNAMIC_RESOURCE_RECONCILIATION_V1.
+3. Keep actual cross-environment transport provider selection queued until the controller contract/implementation is accepted; do not open a Remote Queue.
+4. Issue #9 root-cause extraction is temporarily queued behind this user-prioritized controller improvement. Issue #6 remains write-disabled.
 
 ## Product outcome model
 
