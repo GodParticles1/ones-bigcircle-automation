@@ -62,7 +62,7 @@ Current unfinished work is intentionally split so a new Lead does not mix runtim
 
 ### Gate A — Windows read-only runtime acceptance
 
-Status: `ACTIVE`
+Status: `PASS`
 
 Use:
 - Browser Bridge v0.4.1
@@ -76,11 +76,21 @@ Required:
 - `ticketCount == serverTotalCount == visiblePageTotal == len(tickets)`;
 - no ONES mutation path executes.
 
-This is the exact next runtime action.
+Accepted evidence:
+- Browser Bridge v0.4.1 + Local Relay v0.2.1;
+- heartbeat / RELAY_PING PASS;
+- fresh inventory `INVENTORY_VERIFIED`;
+- readOnly=true, inventoryComplete=true, reconciliationAllowed=true;
+- ticketCount=serverTotalCount=visiblePageTotal=len(tickets)=131 for this snapshot only;
+- pageCount=3;
+- capturedAt=2026-09-21T08:01:43.336Z;
+- saved snapshot SHA256=`b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30`.
+
+131 is not a fixed expected total. Future inventory and case-feed cardinalities may increase; every run is judged by its own completeness/equality and exact input hashes.
 
 ### Gate B — person-aware reconciliation runtime acceptance
 
-Status: `ACTIVE_AFTER_GATE_A`
+Status: `ACTIVE`
 
 Use the accepted case-feed exact input:
 
@@ -187,10 +197,9 @@ Frozen support boundary remains read-only until a later explicit write gate.
 
 Do not wait for the scheduled 19:30 Big-circle run.
 
-1. Run Windows Chrome runtime acceptance for Browser Bridge v0.4.1 against Local Relay v0.2.1.
+1. Gate A is PASS. Freeze the accepted fresh inventory snapshot SHA256 `b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30` for this acceptance pair.
 2. Use the accepted case-feed snapshot SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`; do not rebuild it for this acceptance run.
-3. Capture a fresh completeness-verified ONES inventory snapshot through Browser Bridge v0.4.1 + Local Relay v0.2.1.
-4. Run the integrated v0.2.1 person-aware reconciliation against those exact two inputs and verify exact-input NOOP behavior.
+3. Run the integrated v0.2.1 person-aware reconciliation against those exact two inputs and verify exact-input NOOP behavior.
 5. Validate handler-primary / duty-fallback / ONES-assignee outcomes against current data.
 6. Structure the existing Big-circle remarks into CONFIRMED / PROVISIONAL / ABSENT / CONFLICT root-cause evidence.
 7. Only after the read-only runtime gate closes, freeze the bounded root-cause write-plan/runtime acceptance before enabling any ONES mutation.
