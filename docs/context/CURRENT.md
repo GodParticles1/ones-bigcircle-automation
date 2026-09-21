@@ -24,7 +24,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=PASS`
 
-`BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=REQUIRED`
+`BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=PASS`
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
 
@@ -195,6 +195,25 @@ Real-data semantic audit:
 
 The accepted counts above belong only to this exact input pair. Future case-feed and inventory totals are expected to change.
 
+## Scheduled-task v0.2.1 readback acceptance
+
+`BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=PASS`
+
+Accepted task-definition readback:
+- task definition updated: true;
+- existing scan semantics unchanged: true;
+- reconciliation stage remains downstream of `SCAN_COMPLETE`: true;
+- scan checkpoint independent from reconciliation checkpoint: true;
+- waiting for ONES does not roll back scan state: true;
+- Remote Queue enabled: false;
+- ONES write enabled: false;
+- workday 19:30 cadence preserved;
+- existing five-step scan path preserved;
+- downstream reconciliation semantics use `MATCHED / ONES_MISSING_CASE / PERSON_SCOPE_MISMATCH / AMBIGUOUS`;
+- unavailable Windows inventory maps to `RECONCILE_WAIT_LOCAL_INVENTORY`.
+
+Issue #11 stop condition is satisfied by this task-definition readback. The accepted prompt was compacted only to fit the scheduler prompt-length limit; frozen scan semantics and safety boundaries were retained.
+
 ## Scheduled-task alignment
 
 The data contracts are connected, but the automatic cross-environment transport is not yet connected end-to-end.
@@ -218,9 +237,8 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- Issue #11 scheduled-task definition alignment/readback;
-- automatic Big-circle <-> Windows Agent transport;
 - Issue #9 remarks root-cause extraction;
+- automatic Big-circle <-> Windows Agent transport;
 - Issue #6 bounded root-cause synchronization;
 - Windows Agent consolidation and Browser UI productization.
 
