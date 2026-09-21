@@ -19,17 +19,42 @@ Required evidence:
 
 This gate may be run manually now; do not wait for the scheduled Big-circle task.
 
-## P1 — Big-circle reconciliation runtime acceptance
+## P1 — Person-aware reconciliation correction
 
 `LANE_STATE=ACTIVE`
 
-Trigger the existing Big-circle task manually with the same production-safe prompt semantics already accepted:
+Correct reconciliation before declaring production runtime acceptance.
 
-`SCAN_COMPLETE -> CASE_FEED_BUILD -> INVENTORY_GATE -> RECONCILIATION -> MISSING_REPORT -> RECONCILIATION_CHECKPOINT`
+Local attribution rule:
+
+- use `handlerPersons` when a valid handler is present;
+- only if handler is empty/unresolved, fall back to `dutyPersons`;
+- do not union duty into the effective owner set when handler exists.
+
+ONES-side person scope comes from assignee.
+
+Exact sourceTicketKey remains the primary case identity key.
+
+Required outcomes:
+
+- exact key + compatible person -> `MATCHED`;
+- exact key absent globally -> `ONES_MISSING_CASE`;
+- exact key present under another person -> `PERSON_SCOPE_MISMATCH`;
+- unresolved/ambiguous person or identity -> `AMBIGUOUS`.
+
+Add targeted tests for handler precedence, duty fallback, wrong-assignee mismatch and existing exact-key behavior.
+
+## P1b — Big-circle reconciliation runtime acceptance
+
+`LANE_STATE=HOLD`
+
+The Big-circle scan and case-feed build may be triggered manually now, but do not accept v0.2.0 reconciliation classification as the final production result until P1 is integrated.
+
+After P1 integration, execute:
+
+`SCAN_COMPLETE -> CASE_FEED_BUILD -> INVENTORY_GATE -> PERSON_AWARE_RECONCILIATION -> MISSING_REPORT -> RECONCILIATION_CHECKPOINT`
 
 Validate that reconciliation WAIT/BLOCK never rolls back `last_successful_scan_time`, weekly-table writes, or prior verified reconciliation state.
-
-Population rule: local selected-case count and shared ONES inventory count are not expected to match. Person fields are used to align populations: Big-circle duty/handler people on the local side and ONES assignee name on the ONES side. Exact sourceTicketKey remains the primary identity key. An exact key found under a different ONES person is a person-scope mismatch/review case, not a missing ticket.
 
 ## P2 — Population-aware root-cause synchronization contract
 
@@ -39,10 +64,11 @@ Goal: extend exact-match reconciliation into a bounded write-plan lane for confi
 
 Required semantics:
 
-- Big-circle duty/handler names and ONES assignee name are first-class population-alignment fields;
+- Big-circle handler is the primary local owner; duty is fallback only when handler is empty/unresolved;
+- ONES assignee is the ONES-side owner scope;
 - public code never hardcodes real names; person/alias mappings are runtime configuration;
 - person name alone is not sufficient case identity;
-- exact single identity match plus compatible person scope is required for automatic synchronization;
+- exact single identity match plus compatible effective-person scope is required for automatic synchronization;
 - local root cause must be confirmed and non-empty;
 - current ONES root-cause field is read before any write;
 - ONES blank + confirmed local value -> SET_CANDIDATE;
