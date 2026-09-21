@@ -20,6 +20,20 @@ After excluding 10 EMPTY_PLACEHOLDER, 4 CHECKPOINT_MARKER and 4 INCOMPLETE rows,
 
 A previous verified ONES inventory is useful only as regression evidence: 58 current rows / 42 unique extracted keys intersected that stale snapshot. It must not be used to classify current missing tickets.
 
+## Transport clarification
+
+The manually exported case-feed JSON used during acceptance is not the final transport architecture.
+
+It is retained as:
+- canonical snapshot contract;
+- exact input/hash boundary;
+- audit/replay artifact.
+
+The production interaction target is:
+`Big-circle -> transport adapter -> Windows Agent -> Local Relay/Browser Bridge/reconciliation`
+
+The Windows Agent receives/persists the snapshot automatically and returns bounded results/checkpoints automatically. Manual file movement is temporary test scaffolding only. Local Relay remains loopback-only, and no Remote Queue provider is selected yet.
+
 ## Immediate continuation
 
 Do not wait for the scheduled 19:30 Big-circle run.
