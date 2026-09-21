@@ -13,7 +13,7 @@ Historical internal runtime lineage hashes are recorded in `docs/provenance/PRIV
 
 ## Current active lane
 
-Public-safe browser bridge projection. Do not paste the internal v0.3.36 source directly into this public repository because it contains private origin/tenant IDs and historical bounded-acceptance target identifiers.
+Public-safe browser bridge projection v0.4.0 on `migration/browser-bridge-public-v040-clean`. It externalizes origin/team/project/issue-type/department scope into local configuration and removes all historical write UI/handlers. The candidate requires independent semantic review + exact-head CI, then a local runtime acceptance before it can supersede the internal v0.3.36 executor.
 
 ## Frozen boundaries
 
