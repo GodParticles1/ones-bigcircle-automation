@@ -155,3 +155,24 @@ Current accepted split:
 - Big-circle -> Windows automatic transport: not yet implemented/accepted.
 
 The existing workday scheduled scan remains unchanged. Its post-SCAN_COMPLETE stage must now use v0.2.1 outcome semantics, including PERSON_SCOPE_MISMATCH, and CASE_FEED_V1. Until transport is accepted, lack of a fresh Windows inventory must result only in RECONCILE_WAIT_LOCAL_INVENTORY.
+
+
+## Lead handoff checkpoint
+
+Current accepted/retired:
+- Browser Bridge public-safe v0.4.0 integrated;
+- Local Relay v0.2.1 accepted base;
+- person-aware reconciliation v0.2.1 integrated;
+- CASE_FEED_V1 exact artifact accepted at SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`;
+- CASE_FEED/schema correction lane retired.
+
+Current unfinished:
+- Windows Chrome v0.4.0 read-only runtime acceptance;
+- fresh inventory + v0.2.1 reconciliation + exact-input NOOP runtime acceptance;
+- Issue #11 scheduled-task definition alignment/readback;
+- automatic Big-circle <-> Windows Agent transport;
+- Issue #9 remarks root-cause extraction;
+- Issue #6 bounded root-cause synchronization;
+- Windows Agent consolidation and Browser UI productization.
+
+Exact continuation ordering and new-conversation bootstrap are maintained in `HANDOFF.md`.
