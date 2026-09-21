@@ -12,6 +12,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 - `local-relay/`: accepted v0.2.1 source lineage.
 - `browser-bridge/`: public-safe v0.4.1 integrated on main at merge `89c131d56e156c2977889670ee844392d7eef3f4`. v0.4.1 preserves unsaved first-time setup draft across popup close/reopen while keeping committed token/status handling non-echoing. Private origin/tenant identifiers and historical bounded-write surfaces remain absent; environment scope is runtime configuration.
 - `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; Windows run-once and approximately-2-hour Task Scheduler registration/runtime acceptance are PASS.
+- `root-cause/`: deterministic fail-closed remarks extraction integrated at `ae4becddc8c11d265b331ca62db1e573dc04ee6a`; exact accepted CASE_FEED runtime acceptance is pending.
 
 ## Current operational gate
 
@@ -30,6 +31,10 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 `PERIODIC_ALIGNMENT_WINDOWS_RUNTIME_ACCEPTANCE=PASS`
 
 `PERIODIC_ALIGNMENT_SCHEDULER_ACCEPTANCE=PASS`
+
+`ROOT_CAUSE_EXTRACTION_INTEGRATION=PASS`
+
+`ROOT_CAUSE_EXTRACTION_RUNTIME_ACCEPTANCE=PENDING`
 
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
@@ -243,7 +248,7 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- Issue #9 remarks root-cause extraction;
+- exact accepted CASE_FEED runtime acceptance of the integrated root-cause extractor;
 - automatic Big-circle <-> Windows Agent transport;
 - Issue #6 bounded root-cause synchronization;
 - Windows Agent consolidation and Browser UI productization.
