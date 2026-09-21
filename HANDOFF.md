@@ -14,7 +14,7 @@ Do not wait for the scheduled 19:30 Big-circle run.
 2. Manually trigger the existing Big-circle task using the already accepted downstream reconciliation semantics.
 3. Pair the resulting current case feed with a fresh completeness-verified ONES inventory snapshot.
 4. Verify first-run reconciliation and exact-input NOOP behavior.
-5. Confirm population-aware results: local selected cases and shared ONES inventory are different populations; exact-key membership, not raw count equality, drives missing detection.
+5. Confirm population-aware results: local duty/handler names and ONES assignee names align the per-person populations; exact-key membership identifies the case; raw count equality is never required.
 6. After the read-only gates close, freeze the bounded root-cause synchronization runtime contract before enabling any ONES mutation.
 7. Then advance the transport-neutral Big-circle <-> Relay lane.
 
@@ -25,8 +25,9 @@ Do not wait for the scheduled 19:30 Big-circle run.
 Branches:
 
 - exact key absent from complete inventory -> `ONES_MISSING_CASE` -> human supplementation;
-- exact single match -> candidate for confirmed-field synchronization;
-- ambiguous/non-unique -> review/block.
+- exact key exists + compatible person scope -> `MATCHED` -> candidate for confirmed-field synchronization;
+- exact key exists under a different person scope -> `PERSON_SCOPE_MISMATCH` -> review/block;
+- ambiguous/non-unique identity or person evidence -> review/block.
 
 Root cause is the primary future synchronization field. No blind overwrite: blank may be filled from confirmed local evidence; equal is NOOP; differing non-empty content is CONFLICT_REVIEW.
 
