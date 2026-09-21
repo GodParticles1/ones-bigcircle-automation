@@ -118,7 +118,7 @@ Accepted Gate-B evidence:
 
 ### Gate C — scheduled-task alignment
 
-Status: `ACTIVE`
+Status: `PASS`
 Control: Issue #11
 
 The existing workday 19:30 scan remains unchanged.
@@ -135,6 +135,17 @@ Canonical per-person template:
 
 Issue #11 closes only after task-definition readback confirms this alignment. Do not close it merely because the template exists.
 
+Accepted Gate-C readback:
+- TASK_DEFINITION_UPDATED=true;
+- EXISTING_SCAN_SEMANTICS_UNCHANGED=true;
+- RECONCILIATION_STAGE_DOWNSTREAM_OF_SCAN_COMPLETE=true;
+- SCAN_CHECKPOINT_INDEPENDENT=true;
+- WAITING_FOR_ONES_DOES_NOT_ROLLBACK_SCAN=true;
+- REMOTE_QUEUE_ENABLED=false;
+- ONES_WRITE_ENABLED=false;
+- existing workday 19:30 cadence and scan stages preserved.
+
+
 ### Gate D — Big-circle <-> Windows Agent automatic transport
 
 Status: `QUEUED_AFTER_READ_ONLY_RUNTIME`
@@ -150,7 +161,7 @@ Manual JSON transfer is acceptance scaffolding only.
 
 ### Gate E — root-cause evidence extraction
 
-Status: `QUEUED`
+Status: `ACTIVE`
 Control: Issue #9
 
 Use existing Big-circle `remarks` as the source. Derive:
@@ -207,10 +218,10 @@ Frozen support boundary remains read-only until a later explicit write gate.
 
 Do not wait for the scheduled 19:30 Big-circle run.
 
-1. Gate A and Gate B are PASS; do not rerun the frozen acceptance pair without decision-changing evidence.
-2. Execute Gate C: align/read back the existing workday Big-circle scheduled-task definition against Issue #11 and `docs/templates/BIGCIRCLE_PERSON_SCHEDULED_TASK_TEMPLATE_V1.md`.
-3. Only after task-definition readback confirms the v0.2.1 post-SCAN_COMPLETE lane, close Issue #11.
-4. Then advance the queued read-only follow-on lanes: structured remarks/root-cause evidence extraction and the transport-neutral Big-circle <-> Windows Agent contract. Production ONES mutation remains separately gated.
+1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
+2. Exact next action: execute Issue #9 root-cause evidence extraction against the accepted CASE_FEED_V1 remarks while preserving original remarks verbatim.
+3. Keep the transport-neutral Big-circle <-> Windows Agent lane queued separately; do not select or open a Remote Queue provider yet.
+4. Issue #6 remains design-only/queued until Issue #9 produces accepted CONFIRMED / PROVISIONAL / ABSENT / CONFLICT evidence semantics. Production ONES mutation remains disabled.
 
 ## Product outcome model
 
