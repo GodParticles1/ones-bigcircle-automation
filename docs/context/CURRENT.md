@@ -26,6 +26,10 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=PASS`
 
+`DYNAMIC_RESOURCE_RECONCILIATION_CONTRACT=PASS`
+
+`DYNAMIC_ALIGNMENT_CONTROLLER=ACTIVE`
+
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
 
 ## Population semantics
@@ -60,6 +64,24 @@ Outcomes:
 - ambiguous person or identity evidence -> `AMBIGUOUS`.
 
 Extra ONES rows belonging to other configured people are expected and do not count as local discrepancies.
+
+## Dynamic resource reconciliation
+
+The dynamic-data model is now formalized by `docs/contracts/DYNAMIC_RESOURCE_RECONCILIATION_V1.md`.
+
+Big-circle CASE_FEED and ONES inventory are treated as changing resources with:
+- opaque source-local `resourceVersion`;
+- exact `contentSha256`;
+- observation time;
+- an atomic alignment checkpoint storing the last verified exact pair.
+
+Initial watch semantics are synthetic rather than streaming:
+
+`periodic authoritative LIST -> compare revision/hash -> reconcile only on change`
+
+The default operational target is approximately every 2 hours. The existing workday 19:30 Big-circle scan remains unchanged and independent. A later event/watch path may reduce latency, but event hints never replace periodic authoritative LIST/resync.
+
+Counts are not versions. DELETE events never authorize ONES deletion. Remote Queue remains unopened and ONES mutation remains disabled.
 
 ## Dynamic snapshot rule
 
@@ -237,8 +259,9 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- Issue #9 remarks root-cause extraction;
+- provider-neutral dynamic alignment controller implementation;
 - automatic Big-circle <-> Windows Agent transport;
+- Issue #9 remarks root-cause extraction;
 - Issue #6 bounded root-cause synchronization;
 - Windows Agent consolidation and Browser UI productization.
 
