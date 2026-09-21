@@ -18,7 +18,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `BROWSER_BRIDGE_V041_INTEGRATION=PASS`
 
-`WINDOWS_CHROME_RUNTIME_ACCEPTANCE=PENDING`
+`WINDOWS_CHROME_RUNTIME_ACCEPTANCE=PASS`
 
 `PERSON_AWARE_RECONCILIATION_CORRECTION=PASS`
 
@@ -101,6 +101,28 @@ Only `CONFIRMED` root cause is eligible for the bounded root-cause synchronizati
 Current integrated runtime support remains read-only with respect to ONES. Remote Queue and ONES production writes are not enabled.
 
 
+## Windows runtime acceptance
+
+`WINDOWS_CHROME_RUNTIME_ACCEPTANCE=PASS`
+
+Accepted runtime pair:
+- Browser Bridge: v0.4.1
+- Local Relay: v0.2.1
+- Relay heartbeat: PASS
+- RELAY_PING: PASS
+- executor extensionVersion: 0.4.1
+- capabilities: `RELAY_PING`, `ONES_INVENTORY_READ` only
+- fresh inventory state/status: `INVENTORY_VERIFIED`
+- readOnly: true
+- inventoryComplete: true
+- reconciliationAllowed: true
+- ticketCount = serverTotalCount = visiblePageTotal = len(tickets) = 131 for this snapshot
+- pageCount: 3
+- capturedAt: 2026-09-21T08:01:43.336Z
+- saved Windows snapshot SHA256: `b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30`
+
+The value 131 is not a product invariant. It is only the cardinality of this accepted snapshot. ONES shared inventory and Big-circle confirmed-case feed are both expected to grow over time. Acceptance is based on per-run completeness/equality and exact snapshot hashes, never on preserving a historical count.
+
 ## Case-feed runtime gate
 
 `BIGCIRCLE_SCAN_RUNTIME_ACCEPTANCE=PASS`
@@ -150,7 +172,7 @@ The data contracts are connected, but the automatic cross-environment transport 
 
 Current accepted split:
 - Big-circle weekly tables -> CASE_FEED_V1: PASS;
-- Browser/Relay -> ONES inventory: historically accepted on the previous runtime lineage; v0.4.1 Windows runtime acceptance remains pending;
+- Browser/Relay -> ONES inventory: v0.4.1 + Local Relay v0.2.1 Windows runtime acceptance PASS on a fresh completeness-verified snapshot;
 - case feed + inventory -> reconciliation v0.2.1: integrated, pending fresh exact-input runtime acceptance;
 - Big-circle -> Windows automatic transport: not yet implemented/accepted.
 
@@ -167,7 +189,6 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- Windows Chrome v0.4.1 read-only runtime acceptance;
 - fresh inventory + v0.2.1 reconciliation + exact-input NOOP runtime acceptance;
 - Issue #11 scheduled-task definition alignment/readback;
 - automatic Big-circle <-> Windows Agent transport;
