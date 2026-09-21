@@ -22,7 +22,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `PERSON_AWARE_RECONCILIATION_CORRECTION=PASS`
 
-`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=ACTIVE`
+`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=PASS`
 
 `BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=REQUIRED`
 
@@ -166,6 +166,35 @@ Therefore:
 - no Remote Queue provider is opened until the transport-neutral contract is accepted.
 
 
+## Reconciliation runtime acceptance
+
+`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=PASS`
+
+Accepted exact pair:
+- CASE_FEED raw SHA256: `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`
+- ONES inventory raw SHA256: `b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30`
+- reconcile implementation: 0.2.1
+- pipeline version: 0.2.0
+- first run: `RECONCILIATION_VERIFIED`
+- immediate exact rerun: `RECONCILIATION_NOOP_VERIFIED`
+- runKey: `8e5f22b987ec9cdeaa0bd2781f7c8486d7b3a5d3b6f042a1aa72be5eeb01520b`
+- report SHA256: `79ebd440b411b6d5c0c91b22d005873f8d2ccfbae3b7318c0b9bd67a8649789a`
+- inputCaseCount: 252
+- includedCaseCount: 112
+- excluded pre-baseline/invalid-date: 130
+- excluded outside configured people: 10
+- totals: MATCHED=43, ONES_MISSING_CASE=28, PERSON_SCOPE_MISMATCH=3, AMBIGUOUS=38
+- unique missing sourceTicketKeys: 25
+
+Real-data semantic audit:
+- all 112 included rows were `HANDLER_PRIMARY`; no contradictory duty/handler union was observed;
+- sampled MATCHED rows aligned effectiveLocalPersons with ONES assignee;
+- all three exact-key wrong-assignee rows classified as `PERSON_SCOPE_MISMATCH`, not missing;
+- all 38 AMBIGUOUS rows in this snapshot were fail-closed `SOURCE_TICKET_KEY_MISSING_OR_MALFORMED`;
+- this exact real snapshot did not contain a `DUTY_FALLBACK` row, so that branch was not exercised by production data; the exact integrated v0.2.1 targeted test/CI already covers duty fallback and no runtime evidence contradicts it.
+
+The accepted counts above belong only to this exact input pair. Future case-feed and inventory totals are expected to change.
+
 ## Scheduled-task alignment
 
 The data contracts are connected, but the automatic cross-environment transport is not yet connected end-to-end.
@@ -173,7 +202,7 @@ The data contracts are connected, but the automatic cross-environment transport 
 Current accepted split:
 - Big-circle weekly tables -> CASE_FEED_V1: PASS;
 - Browser/Relay -> ONES inventory: v0.4.1 + Local Relay v0.2.1 Windows runtime acceptance PASS on a fresh completeness-verified snapshot;
-- case feed + inventory -> reconciliation v0.2.1: integrated, pending fresh exact-input runtime acceptance;
+- case feed + inventory -> reconciliation v0.2.1: Windows exact-input runtime acceptance PASS, including immediate exact-input NOOP.
 - Big-circle -> Windows automatic transport: not yet implemented/accepted.
 
 The existing workday scheduled scan remains unchanged. Its post-SCAN_COMPLETE stage must now use v0.2.1 outcome semantics, including PERSON_SCOPE_MISMATCH, and CASE_FEED_V1. Until transport is accepted, lack of a fresh Windows inventory must result only in RECONCILE_WAIT_LOCAL_INVENTORY.
@@ -189,7 +218,6 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- fresh inventory + v0.2.1 reconciliation + exact-input NOOP runtime acceptance;
 - Issue #11 scheduled-task definition alignment/readback;
 - automatic Big-circle <-> Windows Agent transport;
 - Issue #9 remarks root-cause extraction;
