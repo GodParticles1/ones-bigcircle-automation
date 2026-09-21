@@ -88,7 +88,7 @@ The exact production snapshot had only HANDLER_PRIMARY included rows; DUTY_FALLB
 
 Canonical multi-person template: `docs/templates/BIGCIRCLE_PERSON_SCHEDULED_TASK_TEMPLATE_V1.md`.
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=RETIRED_PASS`
 
 Keep the existing scan/schedule unchanged. Align only the downstream post-SCAN_COMPLETE stage:
 
@@ -103,9 +103,19 @@ Keep the existing scan/schedule unchanged. Align only the downstream post-SCAN_C
 
 Tracked by Issue #11.
 
+Task-definition readback accepted:
+- definition updated;
+- existing scan semantics unchanged;
+- reconciliation downstream of SCAN_COMPLETE;
+- independent scan/reconciliation checkpoints;
+- WAIT for ONES does not roll back scan;
+- Remote Queue disabled;
+- ONES write disabled.
+Issue #11 may be closed.
+
 ## P2 — Remarks -> structured root-cause extraction
 
-`LANE_STATE=QUEUED`
+`LANE_STATE=ACTIVE`
 
 Goal: derive confirmed root-cause evidence from the existing Big-circle `remarks` field without changing the current daily data-entry workflow.
 
