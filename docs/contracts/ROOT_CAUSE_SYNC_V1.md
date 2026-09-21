@@ -24,6 +24,22 @@ Person name aligns populations but does not by itself prove case identity. Exact
 
 Missing detection is directional: a confirmed local sourceTicketKey absent from the complete shared ONES inventory may be classified as `ONES_MISSING_CASE`. If the exact key exists under a different ONES person scope, the case is `PERSON_SCOPE_MISMATCH`, not missing.
 
+## Local root-cause source
+
+The local root-cause source is Big-circle `remarks`, not a new manual field.
+
+Remarks may contain mixed content. Before write-plan generation, derive:
+- `rootCauseText`;
+- `rootCauseState = CONFIRMED | PROVISIONAL | ABSENT | CONFLICT`;
+- `rootCauseEvidenceSummary`;
+- `rootCauseSource = remarks`.
+
+Only `CONFIRMED` is write-eligible.
+
+Examples of non-confirmed semantics include symptom-only descriptions, "可能/怀疑/初步判断/当前判断/待确认", recovery actions without causal evidence, or multiple conflicting causes.
+
+The original remarks text remains authoritative evidence and must not be overwritten by the derived fields.
+
 ## Eligibility
 
 A root-cause write plan may be produced only when all are true:
