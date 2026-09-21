@@ -12,18 +12,22 @@ This contract does not authorize production mutation by itself.
 
 Local case scope and ONES inventory scope may differ.
 
-- local attribution truth comes from the confirmed Big-circle case feed;
+- local attribution is derived from confirmed Big-circle duty/handler person fields;
 - ONES inventory may contain tickets for a broader configured multi-engineer population;
-- ONES assignee is metadata, not the authority for local duty/handler attribution;
+- ONES assignee name is a first-class ONES-side population field;
+- configured person/alias mappings are runtime configuration and must not be hardcoded in public source;
 - raw case-count equality is never a reconciliation gate.
 
-Missing detection is directional: a confirmed local sourceTicketKey absent from a completeness-verified shared ONES inventory may be classified as `ONES_MISSING_CASE`.
+Person name aligns populations but does not by itself prove case identity. Exact sourceTicketKey remains the strongest current identity signal.
+
+Missing detection is directional: a confirmed local sourceTicketKey absent from the complete shared ONES inventory may be classified as `ONES_MISSING_CASE`. If the exact key exists under a different ONES person scope, the case is `PERSON_SCOPE_MISMATCH`, not missing.
 
 ## Eligibility
 
 A root-cause write plan may be produced only when all are true:
 
-- reconciliation result is exactly one `MATCHED` ONES ticket;
+- reconciliation result is exactly one identity `MATCHED` ONES ticket;
+- configured person/alias mapping resolves local duty/handler people and ONES assignee to a compatible person scope;
 - the local case has stable provenance and case identity;
 - local root cause is non-empty;
 - local root cause is explicitly confirmed;
@@ -35,7 +39,7 @@ A root-cause write plan may be produced only when all are true:
 - current ONES field blank + confirmed local root cause -> `SET_CANDIDATE`
 - current ONES field semantically equal -> `NOOP`
 - current ONES field non-empty and different -> `CONFLICT_REVIEW`
-- ambiguous/missing ticket, unconfirmed root cause, unreadable current value, missing field config -> `BLOCK`
+- person-scope mismatch, ambiguous/missing ticket, unconfirmed root cause, unreadable current value, missing field config -> `BLOCK`
 
 No blind overwrite.
 
