@@ -27,6 +27,8 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=PASS`
 
+`PERIODIC_ALIGNMENT_WINDOWS_RUNTIME_ACCEPTANCE=PASS`
+
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
 
@@ -246,3 +248,29 @@ Current unfinished:
 - Windows Agent consolidation and Browser UI productization.
 
 Exact continuation ordering and new-conversation bootstrap are maintained in `HANDOFF.md`.
+
+
+## Periodic alignment Windows runtime acceptance
+
+`PERIODIC_ALIGNMENT_WINDOWS_RUNTIME_ACCEPTANCE=PASS`
+
+Integrated source:
+- merge: `2eb36fd44ee24971eca8f85562e7828637e45514`
+- Local Relay: v0.2.1
+- Browser Bridge: v0.4.1
+- reconciliation: v0.2.1
+
+Accepted Windows run-once evidence:
+- relay health: PASS;
+- result: `RECONCILIATION_VERIFIED`;
+- case-feed SHA256: `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`;
+- fresh inventory SHA256: `58b8afdf0bdfc9eada3c7a88d1b6b6da8ecc9d3c244872a2d2ae3de019bf86c6`;
+- inventory capturedAt: `2026-09-21T09:57:35.164Z`;
+- inventory ticketCount: 131 for this snapshot only;
+- reconciliation runKey: `70a933395263bea722e8b1cbadcf91f14a63de4cb52e8513042f78ff48dac10b`;
+- wrapper observedAt: `2026-09-21T09:57:36.2154709Z`.
+
+The successful run proves the integrated Windows read-only path:
+latest local CASE_FEED -> fresh Relay/Browser inventory -> verified inventory snapshot -> reconciliation/checkpoint.
+
+The wrapper does not solve Big-circle-to-Windows transport; case-feed freshness remains limited to the newest valid local CASE_FEED until the separate transport lane is implemented.
