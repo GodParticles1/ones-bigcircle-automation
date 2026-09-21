@@ -115,7 +115,7 @@ Issue #11 may be closed.
 
 ## P2 — Remarks -> structured root-cause extraction
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=INTEGRATED_PENDING_RUNTIME_ACCEPTANCE`
 
 Goal: derive confirmed root-cause evidence from the existing Big-circle `remarks` field without changing the current daily data-entry workflow.
 
@@ -128,6 +128,10 @@ Required semantics:
 - no root-cause evidence -> ABSENT;
 - only CONFIRMED may feed the write-plan lane;
 - public tests use synthetic remarks only.
+
+Implementation integrated by PR #16 / merge `ae4becddc8c11d265b331ca62db1e573dc04ee6a`.
+
+Next gate: execute the merged extractor against the accepted CASE_FEED exact input and audit the four-state distribution plus representative CONFIRMED / PROVISIONAL / ABSENT rows. No write-plan or ONES mutation is enabled by this gate.
 
 ## P3 — Population-aware root-cause synchronization contract
 
