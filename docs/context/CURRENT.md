@@ -97,3 +97,16 @@ Only `CONFIRMED` root cause is eligible for the bounded root-cause synchronizati
 ## Safety
 
 Current integrated runtime support remains read-only with respect to ONES. Remote Queue and ONES production writes are not enabled.
+
+
+## Case-feed runtime gate
+
+`BIGCIRCLE_SCAN_RUNTIME_ACCEPTANCE=PASS`
+
+`BIGCIRCLE_WAIT_LOCAL_INVENTORY_BEHAVIOR=PASS`
+
+`CASE_FEED_REMARKS_FIDELITY=PASS`
+
+`CASE_FEED_CANONICAL_SEMANTIC_FIDELITY=BLOCKED`
+
+The current correction is bounded by `docs/contracts/CASE_FEED_V1.md`. Runtime reconciliation remains blocked until the feed excludes control/incomplete rows, carries deterministic local sourceTicketKey values where available, marks emitted cases as confirmed, and provides the compatibility metadata envelope expected by the integrated v0.2.1 reconciler.
