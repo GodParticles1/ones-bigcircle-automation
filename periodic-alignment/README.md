@@ -12,7 +12,7 @@ Each invocation:
 4. waits for INVENTORY_VERIFIED and checks completeness counts;
 5. persists that exact inventory snapshot locally;
 6. invokes the existing reconciliation/run-stage.ps1;
-7. returns the existing RECONCILIATION_VERIFIED or RECONCILIATION_NOOP_VERIFIED status.
+7. returns the existing RECONCILIATION_VERIFIED or, when the exact input bytes repeat, RECONCILIATION_NOOP_VERIFIED status.
 
 WAIT paths do not invoke reconciliation and therefore do not advance its checkpoint.
 
@@ -28,3 +28,5 @@ Example:
 The approximately-2-hour cadence is an operational policy to be installed only after run-once runtime acceptance. The existing workday 19:30 Big-circle scan remains unchanged.
 
 Runtime paths and private environment identifiers are parameters and must never be committed to the public repository.
+
+A fresh ONES inventory normally contains a new capture timestamp/job provenance, so a later 2-hour capture is expected to produce a new exact input hash and may legitimately return RECONCILIATION_VERIFIED even when the business ticket set is unchanged. This wrapper does not add a semantic-diff layer.
