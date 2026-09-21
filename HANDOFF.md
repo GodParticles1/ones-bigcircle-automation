@@ -148,7 +148,7 @@ Accepted Gate-C readback:
 
 ### Gate D1 — small periodic read-only alignment
 
-Status: `ACTIVE`
+Status: `INTEGRATED_PENDING_WINDOWS_RUNTIME_ACCEPTANCE`
 Control: Issue #14
 
 Keep this deliberately small.
@@ -163,6 +163,10 @@ Approximately every 2 hours:
 Do not add a generic dynamic-resource API, resourceVersion/generation, LIST/WATCH event protocol, controller subsystem, Remote Queue or ONES mutation.
 
 The existing workday 19:30 Big-circle scan remains unchanged.
+
+Integrated source: PR #15 / merge `2eb36fd44ee24971eca8f85562e7828637e45514`.
+
+Exact next action: execute `periodic-alignment/run-once.ps1` once on the accepted Windows environment. If runtime PASS, register a separate approximately-2-hour Windows Task Scheduler job. The wrapper only refreshes ONES automatically; Big-circle freshness still depends on the newest CASE_FEED already present locally until Gate D2 transport exists.
 
 ### Gate D2 — Big-circle <-> Windows Agent automatic transport
 
@@ -237,7 +241,7 @@ Frozen support boundary remains read-only until a later explicit write gate.
 Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
-2. Keep Issue #14 bounded to the smallest approximately-2-hour read-only alignment loop using existing CASE_FEED / inventory / reconciliation/checkpoint machinery.
+2. PR #15 is integrated. Run the Windows periodic-alignment wrapper once against the real environment; only after PASS register the approximately-2-hour local schedule.
 3. Issue #9 root-cause extraction remains active in parallel because the periodic-alignment change does not justify blocking it.
 4. Keep transport-provider selection, Remote Queue and ONES mutation closed.
 
