@@ -11,7 +11,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 - `reconciliation/`: v0.2.1 handler-first person-aware reconciliation integrated on main at merge `25c8e913a658298954e2c447c84be675e4639d99`.
 - `local-relay/`: accepted v0.2.1 source lineage.
 - `browser-bridge/`: public-safe v0.4.1 integrated on main at merge `89c131d56e156c2977889670ee844392d7eef3f4`. v0.4.1 preserves unsaved first-time setup draft across popup close/reopen while keeping committed token/status handling non-echoing. Private origin/tenant identifiers and historical bounded-write surfaces remain absent; environment scope is runtime configuration.
-- `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; production Task Scheduler registration is still pending runtime acceptance.
+- `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; Windows run-once and approximately-2-hour Task Scheduler registration/runtime acceptance are PASS.
 
 ## Current operational gate
 
@@ -28,6 +28,8 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 `BIGCIRCLE_SCHEDULED_TASK_V021_ALIGNMENT=PASS`
 
 `PERIODIC_ALIGNMENT_WINDOWS_RUNTIME_ACCEPTANCE=PASS`
+
+`PERIODIC_ALIGNMENT_SCHEDULER_ACCEPTANCE=PASS`
 
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
@@ -241,7 +243,6 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- Windows runtime acceptance of the integrated periodic-alignment run-once wrapper, then optional approximately-2-hour Task Scheduler registration;
 - Issue #9 remarks root-cause extraction;
 - automatic Big-circle <-> Windows Agent transport;
 - Issue #6 bounded root-cause synchronization;
@@ -274,3 +275,26 @@ The successful run proves the integrated Windows read-only path:
 latest local CASE_FEED -> fresh Relay/Browser inventory -> verified inventory snapshot -> reconciliation/checkpoint.
 
 The wrapper does not solve Big-circle-to-Windows transport; case-feed freshness remains limited to the newest valid local CASE_FEED until the separate transport lane is implemented.
+
+
+## Periodic alignment scheduler acceptance
+
+`PERIODIC_ALIGNMENT_SCHEDULER_ACCEPTANCE=PASS`
+
+Accepted Windows Task Scheduler evidence:
+- task: `ONES-BigCircle-Periodic-Alignment`;
+- cadence: every 2 hours;
+- logon mode: interactive only;
+- run-as user: current interactive Windows user;
+- task state: enabled/ready;
+- first accepted manual trigger: PASS;
+- Last Result after trigger: `0`;
+- next scheduled run observed: 2026-09-21 20:00 local time;
+- wrapper result from scheduled-task execution: `RECONCILIATION_VERIFIED`;
+- scheduled-run case-feed SHA256: `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`;
+- fresh scheduled-run inventory SHA256: `53fefb229784b1dba48df66296f0cf2e053a6b0d3e9c97134a2fed2e1ce5aff9`;
+- inventory capturedAt: `2026-09-21T10:07:34.926Z`;
+- inventory ticketCount: 131 for this snapshot only;
+- reconciliation runKey: `8167b1bb86d62db0bf70da3821f93a077a0304ae71825307ae6afb6605e05479`.
+
+The task is intentionally interactive because Browser Bridge depends on the logged-in Chrome user session. The Windows task policy currently does not start on battery power; this is an operating-system scheduling policy, not a reconciliation semantic rule.
