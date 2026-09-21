@@ -148,7 +148,7 @@ Accepted Gate-C readback:
 
 ### Gate D1 — small periodic read-only alignment
 
-Status: `INTEGRATED_PENDING_WINDOWS_RUNTIME_ACCEPTANCE`
+Status: `RUNTIME_PASS_SCHEDULER_PENDING`
 Control: Issue #14
 
 Keep this deliberately small.
@@ -166,7 +166,7 @@ The existing workday 19:30 Big-circle scan remains unchanged.
 
 Integrated source: PR #15 / merge `2eb36fd44ee24971eca8f85562e7828637e45514`.
 
-Exact next action: execute `periodic-alignment/run-once.ps1` once on the accepted Windows environment. If runtime PASS, register a separate approximately-2-hour Windows Task Scheduler job. The wrapper only refreshes ONES automatically; Big-circle freshness still depends on the newest CASE_FEED already present locally until Gate D2 transport exists.
+Windows run-once acceptance PASS. Exact next action: register a separate approximately-2-hour Windows Task Scheduler job for the accepted wrapper, then manually trigger the task once and read back LastTaskResult / runtime output. The wrapper only refreshes ONES automatically; Big-circle freshness still depends on the newest CASE_FEED already present locally until Gate D2 transport exists.
 
 ### Gate D2 — Big-circle <-> Windows Agent automatic transport
 
