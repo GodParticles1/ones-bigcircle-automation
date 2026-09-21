@@ -8,7 +8,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 ## Current public source state
 
-- `reconciliation/`: accepted v0.2.0 semantic lineage with anonymized public fixtures.
+- `reconciliation/`: v0.2.1 handler-first person-aware reconciliation integrated on main at merge `25c8e913a658298954e2c447c84be675e4639d99`.
 - `local-relay/`: accepted v0.2.1 source lineage.
 - `browser-bridge/`: public-safe v0.4.0 integrated on main at merge `4cb9d265ad566e4d30ef00141df82f4ec1ce7694`. Private origin/tenant identifiers and historical bounded-write surfaces are removed; environment scope is runtime configuration.
 
@@ -20,9 +20,9 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 `WINDOWS_CHROME_RUNTIME_ACCEPTANCE=PENDING`
 
-`PERSON_AWARE_RECONCILIATION_CORRECTION=ACTIVE`
+`PERSON_AWARE_RECONCILIATION_CORRECTION=PASS`
 
-`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=HOLD_PENDING_PERSON_AWARE_CORRECTION`
+`BIGCIRCLE_RECONCILIATION_RUNTIME_ACCEPTANCE=ACTIVE`
 
 The existing Big-circle scan checkpoint and reconciliation checkpoint remain independent. Runtime acceptance may be triggered manually; it does not need to wait for the scheduled 19:30 run.
 
@@ -71,6 +71,28 @@ The automation has two primary outcomes:
 2. for exact matched cases, prepare a bounded synchronization plan for confirmed technical fields, with root cause as the primary write target.
 
 Root-cause synchronization is now a queued product lane, but production ONES mutation remains disabled until its separate contract and runtime acceptance are complete.
+
+## Root-cause source semantics
+
+Big-circle already maintains technical handling evidence in the local `remarks` field. That field is the source for future root-cause extraction; a second data-entry workflow is not required.
+
+However `remarks` may contain mixed evidence such as:
+- confirmed root cause;
+- symptom/phenomenon;
+- current judgment or suspected cause;
+- mitigation/recovery action;
+- result/verification;
+- next step.
+
+Therefore future automation must first structure remarks into evidence state before any ONES write-plan is emitted.
+
+Minimum derived fields:
+- `rootCauseText`;
+- `rootCauseState = CONFIRMED | PROVISIONAL | ABSENT | CONFLICT`;
+- `rootCauseEvidenceSummary`;
+- `rootCauseSource = remarks`.
+
+Only `CONFIRMED` root cause is eligible for the bounded root-cause synchronization lane. Provisional language must not be upgraded to a final root cause.
 
 ## Safety
 
