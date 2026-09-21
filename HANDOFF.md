@@ -90,7 +90,7 @@ Accepted evidence:
 
 ### Gate B — person-aware reconciliation runtime acceptance
 
-Status: `ACTIVE`
+Status: `PASS`
 
 Use the accepted case-feed exact input:
 
@@ -105,6 +105,16 @@ Required:
 - immediate exact rerun -> `RECONCILIATION_NOOP_VERIFIED`;
 - inspect `MATCHED / ONES_MISSING_CASE / PERSON_SCOPE_MISMATCH / AMBIGUOUS`;
 - verify handler-primary / duty-fallback / ONES-assignee behavior on real data.
+
+Accepted Gate-B evidence:
+- runKey `8e5f22b987ec9cdeaa0bd2781f7c8486d7b3a5d3b6f042a1aa72be5eeb01520b`;
+- report SHA256 `79ebd440b411b6d5c0c91b22d005873f8d2ccfbae3b7318c0b9bd67a8649789a`;
+- RECONCILIATION_VERIFIED then exact-input RECONCILIATION_NOOP_VERIFIED;
+- input 252 / included 112 / pre-baseline-or-invalid 130 / outside-configured-people 10;
+- MATCHED 43 / ONES_MISSING_CASE 28 / PERSON_SCOPE_MISMATCH 3 / AMBIGUOUS 38;
+- all 3 mismatch rows had an exact key and a different ONES assignee, so they were not misclassified as missing;
+- sampled matches aligned effective local handler with ONES assignee;
+- all included real rows in this snapshot were HANDLER_PRIMARY. No DUTY_FALLBACK production row existed to exercise; targeted v0.2.1 CI covers that branch and runtime evidence is non-contradictory.
 
 ### Gate C — scheduled-task alignment
 
@@ -197,13 +207,10 @@ Frozen support boundary remains read-only until a later explicit write gate.
 
 Do not wait for the scheduled 19:30 Big-circle run.
 
-1. Gate A is PASS. Freeze the accepted fresh inventory snapshot SHA256 `b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30` for this acceptance pair.
-2. Use the accepted case-feed snapshot SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`; do not rebuild it for this acceptance run.
-3. Run the integrated v0.2.1 person-aware reconciliation against those exact two inputs and verify exact-input NOOP behavior.
-5. Validate handler-primary / duty-fallback / ONES-assignee outcomes against current data.
-6. Structure the existing Big-circle remarks into CONFIRMED / PROVISIONAL / ABSENT / CONFLICT root-cause evidence.
-7. Only after the read-only runtime gate closes, freeze the bounded root-cause write-plan/runtime acceptance before enabling any ONES mutation.
-8. Then advance the transport-neutral Big-circle <-> Relay lane.
+1. Gate A and Gate B are PASS; do not rerun the frozen acceptance pair without decision-changing evidence.
+2. Execute Gate C: align/read back the existing workday Big-circle scheduled-task definition against Issue #11 and `docs/templates/BIGCIRCLE_PERSON_SCHEDULED_TASK_TEMPLATE_V1.md`.
+3. Only after task-definition readback confirms the v0.2.1 post-SCAN_COMPLETE lane, close Issue #11.
+4. Then advance the queued read-only follow-on lanes: structured remarks/root-cause evidence extraction and the transport-neutral Big-circle <-> Windows Agent contract. Production ONES mutation remains separately gated.
 
 ## Product outcome model
 
