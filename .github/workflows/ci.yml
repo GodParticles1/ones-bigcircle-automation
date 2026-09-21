@@ -20,9 +20,12 @@ jobs:
       - run: python reconciliation/tests/test_reconciliation.py
       - run: python reconciliation/tests/test_pipeline.py
       - run: python local-relay/tests/test_relay.py
+      - shell: pwsh
+        run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
       - run: node --check browser-bridge/service-worker.js
       - run: node --check browser-bridge/popup.js
       - run: python browser-bridge/tests/static_test.py
+      - run: python periodic-alignment/tests/static_test.py
       - run: python scripts/repo_guard.py .
 
   windows-relay:
@@ -33,3 +36,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: python local-relay/tests/test_relay.py
+      - shell: powershell
+        run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
