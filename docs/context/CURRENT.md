@@ -11,6 +11,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 - `reconciliation/`: v0.2.1 handler-first person-aware reconciliation integrated on main at merge `25c8e913a658298954e2c447c84be675e4639d99`.
 - `local-relay/`: accepted v0.2.1 source lineage.
 - `browser-bridge/`: public-safe v0.4.1 integrated on main at merge `89c131d56e156c2977889670ee844392d7eef3f4`. v0.4.1 preserves unsaved first-time setup draft across popup close/reopen while keeping committed token/status handling non-echoing. Private origin/tenant identifiers and historical bounded-write surfaces remain absent; environment scope is runtime configuration.
+- `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; production Task Scheduler registration is still pending runtime acceptance.
 
 ## Current operational gate
 
@@ -238,7 +239,7 @@ Current accepted/retired:
 - CASE_FEED/schema correction lane retired.
 
 Current unfinished:
-- small approximately-2-hour read-only alignment loop;
+- Windows runtime acceptance of the integrated periodic-alignment run-once wrapper, then optional approximately-2-hour Task Scheduler registration;
 - Issue #9 remarks root-cause extraction;
 - automatic Big-circle <-> Windows Agent transport;
 - Issue #6 bounded root-cause synchronization;
