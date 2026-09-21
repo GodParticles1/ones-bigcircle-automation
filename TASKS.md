@@ -29,7 +29,7 @@ Trigger the existing Big-circle task manually with the same production-safe prom
 
 Validate that reconciliation WAIT/BLOCK never rolls back `last_successful_scan_time`, weekly-table writes, or prior verified reconciliation state.
 
-Population rule: local selected-case count and shared ONES inventory count are not expected to match. Missing-ticket decisions are made only from exact sourceTicketKey membership in a completeness-verified inventory.
+Population rule: local selected-case count and shared ONES inventory count are not expected to match. Person fields are used to align populations: Big-circle duty/handler people on the local side and ONES assignee name on the ONES side. Exact sourceTicketKey remains the primary identity key. An exact key found under a different ONES person is a person-scope mismatch/review case, not a missing ticket.
 
 ## P2 — Population-aware root-cause synchronization contract
 
@@ -39,15 +39,16 @@ Goal: extend exact-match reconciliation into a bounded write-plan lane for confi
 
 Required semantics:
 
-- local duty/handler attribution remains authoritative;
-- ONES assignee does not redefine local ownership;
-- exact single MATCHED ticket only;
+- Big-circle duty/handler names and ONES assignee name are first-class population-alignment fields;
+- public code never hardcodes real names; person/alias mappings are runtime configuration;
+- person name alone is not sufficient case identity;
+- exact single identity match plus compatible person scope is required for automatic synchronization;
 - local root cause must be confirmed and non-empty;
 - current ONES root-cause field is read before any write;
 - ONES blank + confirmed local value -> SET_CANDIDATE;
 - semantically identical -> NOOP;
 - ONES non-empty and different -> CONFLICT_REVIEW;
-- ambiguous/missing match -> BLOCK;
+- person-scope mismatch, ambiguous identity, or missing match -> BLOCK;
 - missing ONES tickets remain human-supplemented; no automatic create/import;
 - public source uses configuration for field identifiers and never hardcodes private tenant/field IDs;
 - write execution requires a separately accepted bounded runtime gate and post-write readback.
