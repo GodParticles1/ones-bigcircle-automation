@@ -115,7 +115,7 @@ Issue #11 may be closed.
 
 ## P2 — Remarks -> structured root-cause extraction
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=QUEUED`
 
 Goal: derive confirmed root-cause evidence from the existing Big-circle `remarks` field without changing the current daily data-entry workflow.
 
@@ -154,9 +154,33 @@ Required semantics:
 
 Contract: `docs/contracts/ROOT_CAUSE_SYNC_V1.md`.
 
+## P4a — Dynamic resource alignment controller
+
+`LANE_STATE=ACTIVE`
+
+Contract: `docs/contracts/DYNAMIC_RESOURCE_RECONCILIATION_V1.md`.
+
+Goal: implement the transport-neutral controller core before selecting any cross-environment transport provider.
+
+Required behavior:
+- accept validated Big-circle and ONES resource envelopes;
+- compare opaque resourceVersion + exact contentSha256 against the last verified alignment checkpoint;
+- unchanged pair -> ALIGNMENT_NOOP without rerunning reconciliation;
+- either side changed -> run integrated reconciliation on the exact current pair;
+- successful changed pair -> atomic ALIGNMENT_VERIFIED checkpoint;
+- unavailable/invalid Big-circle -> ALIGNMENT_WAIT_BIGCIRCLE;
+- unavailable/incomplete ONES -> ALIGNMENT_WAIT_ONES;
+- uncertain event continuity -> ALIGNMENT_RESYNC_REQUIRED;
+- WAIT/BLOCK/RESYNC never overwrite the last verified checkpoint;
+- no count-as-version logic;
+- no ONES write;
+- no Remote Queue.
+
+The first operational policy target is a separate approximately-2-hour alignment cadence. The existing 19:30 Big-circle scan remains unchanged.
+
 ## P4 — Big-circle <-> Windows Agent transport abstraction
 
-`LANE_STATE=QUEUED`
+`LANE_STATE=QUEUED_AFTER_P4A`
 
 Goal: replace the current manual case-feed file handoff with automatic transport while preserving the exact same canonical snapshot contract.
 
