@@ -107,9 +107,17 @@ Current integrated runtime support remains read-only with respect to ONES. Remot
 
 `CASE_FEED_REMARKS_FIDELITY=PASS`
 
-`CASE_FEED_CANONICAL_SEMANTIC_FIDELITY=BLOCKED`
+`CASE_FEED_CANONICAL_SEMANTIC_FIDELITY=PASS`
 
-The current correction is bounded by `docs/contracts/CASE_FEED_V1.md`. Runtime reconciliation remains blocked until the feed excludes control/incomplete rows, carries deterministic local sourceTicketKey values where available, marks emitted cases as confirmed, and provides the compatibility metadata envelope expected by the integrated v0.2.1 reconciler.
+`CASE_FEED_ACCEPTED_SHA256=41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`
+
+`CASE_FEED_EXPORTED_CONFIRMED_CASE_COUNT=252`
+
+`CASE_FEED_EXTERNAL_SOURCE_TICKET_KEY_COUNT=86`
+
+`CASE_FEED_SOURCE_TICKET_KEY_NULL_COUNT=166`
+
+Exact-artifact review against `docs/contracts/CASE_FEED_V1.md` passed: 252/252 rows are confirmed cases, control/incomplete rows are absent, deterministic external-key extraction exactly matches the frozen rule, YF display IDs are excluded, and people/nested metadata compatibility is valid. Case-feed schema work is frozen. The next gate is a fresh completeness-verified ONES inventory plus integrated v0.2.1 person-aware runtime reconciliation.
 
 
 ## Artifact versus transport boundary
