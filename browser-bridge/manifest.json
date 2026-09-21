@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ONES Browser Bridge - Read-only",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Configuration-driven read-only ONES inventory executor for a loopback Local Relay.",
   "permissions": [
     "activeTab",
