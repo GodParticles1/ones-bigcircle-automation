@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m compileall reconciliation local-relay
+      - run: python reconciliation/tests/test_reconciliation.py
+      - run: python reconciliation/tests/test_pipeline.py
+      - run: python local-relay/tests/test_relay.py
+      - run: python scripts/repo_guard.py .
+
+  windows-relay:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python local-relay/tests/test_relay.py
