@@ -10,7 +10,7 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 
 - `reconciliation/`: migrated from accepted v0.2.0 semantic lineage; fixtures and documentation anonymized.
 - `local-relay/`: migrated from accepted v0.2.1 source lineage.
-- `browser-bridge/`: not yet source-integrated. The accepted internal v0.3.36 implementation contains private environment identifiers, so raw publication is blocked until configuration is externalized.
+- `browser-bridge/`: v0.4.0 public projection candidate prepared from the accepted internal v0.3.36 inventory/relay lineage. Private origin/tenant IDs and historical bounded-acceptance IDs are removed; environment scope is runtime configuration. Candidate is not yet runtime-accepted and does not supersede the internal executor.
 
 ## Current operational gate
 
@@ -23,3 +23,7 @@ The existing Big-circle scan checkpoint and reconciliation checkpoint remain ind
 ## Safety
 
 Current public support is read-only with respect to ONES. Remote transport and ONES writes are not enabled.
+
+## Active code lane
+
+`migration/browser-bridge-public-v040-clean` — configuration-driven read-only Browser Bridge candidate. Static syntax/redaction tests pass locally; independent semantic/CI review is required before integration.
