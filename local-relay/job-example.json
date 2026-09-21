@@ -1,0 +1,8 @@
+{
+  "jobType": "RELAY_PING",
+  "idempotencyKey": "manual-ping-example-001",
+  "payload": {
+    "source": "manual-acceptance",
+    "note": "transport-only; does not touch ONES"
+  }
+}

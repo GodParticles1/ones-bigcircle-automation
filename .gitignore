@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.DS_Store
+
+# Local runtime state / secrets
+data/
+**/data/
+relay-token.txt
+*.sqlite
+*.sqlite3
+*.db
+
+# Production/private exports
+ones-external-ticket-inventory-*.json
+bigcircle-*-confirmed-cases-*.json
+*-reconciliation-*.json
+*.har
+*.log
+
+# Local editor
+.vscode/
+.idea/

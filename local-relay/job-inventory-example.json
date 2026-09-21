@@ -1,0 +1,7 @@
+{
+  "jobType": "ONES_INVENTORY_READ",
+  "idempotencyKey": "manual-inventory-example-001",
+  "payload": {
+    "source": "manual"
+  }
+}
