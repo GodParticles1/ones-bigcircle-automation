@@ -76,6 +76,23 @@ Execute:
 
 Validate that reconciliation WAIT/BLOCK never rolls back `last_successful_scan_time`, weekly-table writes, or prior verified reconciliation state.
 
+## P1c — Big-circle scheduled-task v0.2.1 alignment
+
+`LANE_STATE=ACTIVE`
+
+Keep the existing scan/schedule unchanged. Align only the downstream post-SCAN_COMPLETE stage:
+
+- CASE_FEED_BUILD uses accepted `CASE_FEED_V1`;
+- fresh completeness-verified ONES inventory only;
+- reconciliation implementation v0.2.1;
+- outcomes include `PERSON_SCOPE_MISMATCH`;
+- WAIT/BLOCK remains independent of the scan checkpoint;
+- no direct Big-circle -> Windows localhost call;
+- no Remote Queue;
+- no ONES write.
+
+Tracked by Issue #11.
+
 ## P2 — Remarks -> structured root-cause extraction
 
 `LANE_STATE=QUEUED`
