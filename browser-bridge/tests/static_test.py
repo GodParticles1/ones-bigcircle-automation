@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.4.0"
+assert manifest["version"] == "0.4.1"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -21,6 +21,9 @@ assert "ONES_INVENTORY_READ" in worker
 assert "RELAY_PING" in worker
 assert "validatedOnesScope" in worker
 assert "chrome.permissions.request" in popup
+assert "chrome.storage.session" in popup
+assert "onesRelaySetupDraftV041" in popup
+assert "tokenPresent" in popup
 
 # Public projection must remain read-only and configuration-driven.
 assert "update3" not in worker
@@ -34,7 +37,7 @@ assert "assigneeDepartmentUuid" in worker
 assert "inventoryPageUrl" in worker
 
 # No fixed HTTPS production origin is allowed in the browser implementation.
-assert not re.search(r"https://[^*\s\"']+", worker)
-assert not re.search(r"https://[^*\s\"']+", popup)
+assert not re.search(r"https://[^*\\s\"']+", worker)
+assert not re.search(r"https://[^*\\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V040_STATIC_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V041_STATIC_PASS")
