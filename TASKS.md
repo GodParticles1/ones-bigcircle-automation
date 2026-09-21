@@ -66,7 +66,7 @@ Rebuild only from maintained weekly tables:
 
 ## P1b — Big-circle reconciliation runtime acceptance
 
-`LANE_STATE=ACTIVE`
+`LANE_STATE=RETIRED_PASS`
 
 The canonical case feed is now accepted. Use its exact bytes/hash as the local input snapshot for the next runtime gate.
 
@@ -75,6 +75,14 @@ Execute:
 `SCAN_COMPLETE -> CASE_FEED_BUILD -> INVENTORY_GATE -> PERSON_AWARE_RECONCILIATION -> MISSING_REPORT -> RECONCILIATION_CHECKPOINT`
 
 Validate that reconciliation WAIT/BLOCK never rolls back `last_successful_scan_time`, weekly-table writes, or prior verified reconciliation state.
+
+Runtime acceptance passed on the exact pair:
+- CASE_FEED SHA256 `41dffdcbd731ab55307a9764f35fca6715938d1d096b21beef25156116909fb8`;
+- inventory SHA256 `b78bfbd108c3a967d5d28b7a2850a9277c3b64581bbde6fac29d37c6cc131e30`;
+- first run `RECONCILIATION_VERIFIED`;
+- immediate exact rerun `RECONCILIATION_NOOP_VERIFIED`;
+- runtime outcomes MATCHED=43 / ONES_MISSING_CASE=28 / PERSON_SCOPE_MISMATCH=3 / AMBIGUOUS=38.
+The exact production snapshot had only HANDLER_PRIMARY included rows; DUTY_FALLBACK remains covered by the integrated targeted test/CI and is not inferred from absent real data.
 
 ## P1c — Big-circle scheduled-task v0.2.1 alignment
 
