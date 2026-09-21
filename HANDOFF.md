@@ -148,7 +148,7 @@ Accepted Gate-C readback:
 
 ### Gate D1 — small periodic read-only alignment
 
-Status: `RUNTIME_PASS_SCHEDULER_PENDING`
+Status: `PASS`
 Control: Issue #14
 
 Keep this deliberately small.
@@ -166,7 +166,7 @@ The existing workday 19:30 Big-circle scan remains unchanged.
 
 Integrated source: PR #15 / merge `2eb36fd44ee24971eca8f85562e7828637e45514`.
 
-Windows run-once acceptance PASS. Exact next action: register a separate approximately-2-hour Windows Task Scheduler job for the accepted wrapper, then manually trigger the task once and read back LastTaskResult / runtime output. The wrapper only refreshes ONES automatically; Big-circle freshness still depends on the newest CASE_FEED already present locally until Gate D2 transport exists.
+Windows run-once acceptance PASS. Windows Task Scheduler acceptance PASS: `ONES-BigCircle-Periodic-Alignment`, every 2 hours, interactive-only, manual trigger `Last Result=0`, scheduled wrapper result `RECONCILIATION_VERIFIED`. The wrapper only refreshes ONES automatically; Big-circle freshness still depends on the newest CASE_FEED already present locally until Gate D2 transport exists.
 
 ### Gate D2 — Big-circle <-> Windows Agent automatic transport
 
@@ -241,8 +241,8 @@ Frozen support boundary remains read-only until a later explicit write gate.
 Do not wait for the scheduled 19:30 Big-circle run.
 
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
-2. PR #15 is integrated. Run the Windows periodic-alignment wrapper once against the real environment; only after PASS register the approximately-2-hour local schedule.
-3. Issue #9 root-cause extraction remains active in parallel because the periodic-alignment change does not justify blocking it.
+2. Gate D1 periodic alignment is PASS and retired; do not reopen without contradictory runtime evidence.
+3. Exact next active lane: Issue #9 root-cause extraction from existing remarks.
 4. Keep transport-provider selection, Remote Queue and ONES mutation closed.
 
 ## Product outcome model
