@@ -408,3 +408,34 @@ Boundary:
 
 Next decision boundary:
 the local runtime proof is complete. Any real cross-environment transport provider/security/trust contract is a separate human-authorized boundary. Do not select or open a provider implicitly.
+
+## Gate D2 production provider boundary — 2026-09-22
+
+`PRODUCTION_PROVIDER_DECISION=CLOUDFLARE_WORKER_DO_R2_V1`
+`P4G_REMOTE_CLIENT_INTEGRATION=PASS`
+`P4H_CLOUDFLARE_GATEWAY_INTEGRATION=PASS`
+`P4I_STAGING_BUNDLE_INTEGRATION=PASS`
+`LIVE_CLOUDFLARE_STAGING_RUNTIME=ENVIRONMENT_BLOCKED`
+
+User authorization opened the production cross-environment provider/security/trust boundary after Gate D2 local runtime PASS.
+
+Integrated:
+- P4g Issue #37 / PR #38 / merge `c24f46c87dcd6cd9636c8cb4a225be54a455d84c`; signed endpoint client + frozen `REMOTE_TRANSPORT_PROVIDER_V1` contract.
+- P4h Issue #39 / PR #40 / merge `a69b9ee1492422daddb03e72d234cc3530a89929`; Cloudflare Worker + Durable Object + private R2 provider implementation.
+- P4i Issue #41 / PR #42 / exact accepted head `49ef3c8591a9bc01ea5d0d0817113a7bc40b7d54`, CI run `35698375032`, merge `33d1d5679ad975f8c3bd201932d5dd14a3c9056f`; non-secret staging deployment/preflight/synthetic-smoke bundle.
+
+Provider boundary:
+- exact transport-envelope file bytes are the remote object;
+- independent raw-file SHA256 binds provider storage/transfer;
+- existing envelope payloadSha256/envelopeId/direction rules remain authoritative;
+- Big-circle and Windows use separate role-scoped HMAC secrets;
+- timestamp + durable nonce replay boundary;
+- Windows remains outbound-HTTPS only;
+- endpoint clients do not receive Cloudflare account API tokens;
+- Durable Object owns dedupe/order/lease/ACK coordination;
+- private R2 owns exact raw envelope bytes;
+- at-least-once remote delivery terminates in the existing endpoint spool idempotency boundary.
+
+Live deployment is not claimed. No Cloudflare connector/authenticated execution channel is available in the current Lead environment, so staging resource creation, secret injection, deploy/readback and real HTTPS synthetic smoke remain `ENVIRONMENT_BLOCKED`. The integrated P4i runbook is the exact continuation point.
+
+Production CASE_FEED over the remote provider remains disabled until the real Cloudflare staging deployment and synthetic-only smoke are accepted. Production ONES mutation remains disabled. Issue #20 remains independent.

@@ -197,9 +197,9 @@ Tracked by Issue #14 (closed after code integration).
 
 ## P4 — Big-circle <-> Windows Agent transport abstraction
 
-`LANE_STATE=LOCAL_RUNTIME_PASS_PROVIDER_DECISION_BLOCKED`
+`LANE_STATE=PROVIDER_CODE_PASS_STAGING_RUNTIME_BLOCKED`
 
-P4a-P4f code spine is integrated and Gate D2 Windows local runtime acceptance passed by PR #35 / merge `bd62db2bcf6dedc58e9e0cb3f02b693238895fcf`, exact candidate `dcc8c8ee301adf785911b8607b45a3bde224b6bb`, CI run `35696120564`. The provider-neutral local loop is runtime-accepted with synthetic/non-production artifacts. The next boundary is a separately authorized real cross-environment transport-provider/security/trust contract; do not reopen business semantics.
+P4a-P4f local spine and Windows runtime acceptance are PASS. The user then authorized the production provider/security/trust boundary. P4g-P4i are integrated: signed remote client/contract merge `c24f46c87dcd6cd9636c8cb4a225be54a455d84c`; Cloudflare Worker + Durable Object + private R2 gateway merge `a69b9ee1492422daddb03e72d234cc3530a89929`; staging preflight/synthetic-smoke bundle merge `33d1d5679ad975f8c3bd201932d5dd14a3c9056f`.
 
 Goal: replace the current manual case-feed file handoff with automatic transport while preserving the exact same canonical snapshot contract.
 
@@ -207,7 +207,7 @@ The JSON case feed remains the logical payload/audit snapshot, but the user must
 
 Define a transport-neutral job/result envelope so the cloud Big-circle control plane can exchange bounded work with the Windows agent without coupling business semantics to one provider.
 
-Current restriction: the P4a-P4f Windows local runtime proof is complete. Do not silently select or open a Remote Queue/provider. Any real cross-environment transport provider boundary now requires separate human authorization before selection or implementation.
+Current provider is frozen as `CLOUDFLARE_WORKER_DO_R2_V1`. Source/client/gateway/staging bundle are accepted, but no live Cloudflare staging deployment has been performed. Exact next gate is authenticated staging resource creation + secret injection + deploy/readback + synthetic-only smoke from the integrated P4i runbook. Production payload transport remains disabled until that gate passes.
 
 The transport contract must be able to carry both read-only inventory jobs and future accepted write-plan jobs without granting new capabilities by default.
 
