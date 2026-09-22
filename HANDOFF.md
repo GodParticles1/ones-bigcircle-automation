@@ -170,11 +170,13 @@ Windows run-once acceptance PASS. Windows Task Scheduler acceptance PASS: `ONES-
 
 ### Gate D2 — Big-circle <-> Windows Agent automatic transport
 
-Status: `QUEUED`
+Status: `LOCAL_RUNTIME_PASS / PROVIDER_DECISION_REQUIRES_HUMAN_AUTHORIZATION`
 
-Replace manual artifact movement with automatic transport while preserving the exact case-feed/inventory/result contracts.
+Provider-neutral P4a-P4f local transport/runtime acceptance is PASS on Windows using synthetic/non-production artifacts. Accepted by Issue #34 / PR #35, exact candidate `dcc8c8ee301adf785911b8607b45a3bde224b6bb`, CI run `35696120564`, merge `bd62db2bcf6dedc58e9e0cb3f02b693238895fcf`.
 
-Do not select/open a Remote Queue provider until a transport-neutral contract is accepted.
+The acceptance proved exact CASE_FEED byte/hash preservation, duplicate NOOP, processed/rejected lifecycle, materialization, Windows Agent run-once, VERIFIED + exact-input NOOP reconciliation, RESULT/CHECKPOINT reverse receipts, and fail-closed rejection.
+
+This still does not provide production cross-environment transport. Do not select/open Remote Queue or any real provider without separate human authorization for the provider/security/trust boundary.
 
 Target:
 `Big-circle -> transport adapter -> Windows Agent -> Local Relay/Browser Bridge/reconciliation -> result/checkpoint -> Big-circle`
@@ -251,7 +253,8 @@ Do not wait for the scheduled 19:30 Big-circle run.
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
 2. Gate D1 periodic alignment is PASS and retired; do not reopen without contradictory runtime evidence.
 3. Gate E root-cause extraction is PASS and retired.
-4. Issue #6 planner and Issue #18 read-only field reader are integrated. Exact next lane: Issue #20 Windows runtime acceptance for the read-only field snapshot. Keep transport-provider selection, Remote Queue and production ONES mutation closed.
+4. Gate D2 provider-neutral Windows local runtime acceptance is PASS. The next transport action is a separately authorized production cross-environment provider/security/trust contract; keep provider selection and Remote Queue closed until that authorization.
+5. Issue #6 planner and Issue #18 read-only field reader are integrated; Issue #20 Windows runtime acceptance remains an independent lane and must rotate the Relay token first while preserving `relay.db`. Production ONES mutation stays closed.
 
 ## Product outcome model
 
@@ -304,3 +307,15 @@ Exact next bounded lane:
 
 Lead execution rule:
 do not stop at dispatch/status narration. Same-turn behavior is verify live state -> review -> merge when gates pass -> post-merge fan-out -> continue next bounded slice. Routine exact-head PASS + semantic ACCEPT merges are standing-authorized; fresh human confirmation is reserved for production-write, provider/security/trust-boundary expansion, destructive mutation, repository-admin or roadmap changes.
+
+
+## 2026-09-22 Gate D2 Windows local runtime acceptance closure
+
+Accepted:
+- Issue #34 closed by PR #35;
+- exact candidate: `dcc8c8ee301adf785911b8607b45a3bde224b6bb`;
+- CI run: `35696120564` PASS on Linux + Windows;
+- merge: `bd62db2bcf6dedc58e9e0cb3f02b693238895fcf`;
+- runtime marker: `GATE_D2_WINDOWS_LOCAL_RUNTIME_ACCEPTANCE_PASS`.
+
+This is local provider-neutral runtime acceptance only. Production cross-environment transport remains unselected/unimplemented. Remote Queue/provider stays CLOSED. Issue #20 remains separate.
