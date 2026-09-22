@@ -2,7 +2,7 @@
 
 Windows-local loopback queue for a browser executor.
 
-Current capabilities: `RELAY_PING` and `ONES_INVENTORY_READ` only.
+Current capabilities: `RELAY_PING`, `ONES_INVENTORY_READ`, and read-only `ONES_FIELD_READ`.
 
 Start:
 
