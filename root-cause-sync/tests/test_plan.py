@@ -101,6 +101,9 @@ def decision(plan):
 
 td, plan, _ = build(current=None)
 assert decision(plan)["decision"] == "SET_CANDIDATE"
+assert plan["taskTargetCount"] == 1, plan
+assert plan["taskTotals"]["SET_CANDIDATE"] == 1, plan
+assert plan["taskTargets"][0]["decision"] == "SET_CANDIDATE", plan
 td.cleanup()
 
 td, plan, _ = build(current="  synthetic configuration mismatch\r\n")
@@ -219,5 +222,142 @@ with tempfile.TemporaryDirectory() as td_name:
     row = decision(plan)
     assert row["decision"] == "BLOCK", row
     assert row["reason"] == "FIELD_VALUE_INVALID_TYPE", row
+
+
+def duplicate_task_fixture(root, *, second_state="CONFIRMED", second_root=ROOT_TEXT, current=None):
+    case2 = "CASE-002"
+    key2 = "ABC1-101"
+    remarks2 = "Phenomenon: duplicate local observation; root cause: " + (second_root or "unknown")
+
+    cases = {
+        "schema": "bigcircle.confirmed-case-export/v1alpha1",
+        "complete": True,
+        "exportedCaseCount": 2,
+        "cases": [
+            {
+                "localCaseId": CASE_ID,
+                "sourceTicketKey": KEY,
+                "remarks": REMARKS,
+                "caseStatus": "CONFIRMED_REAL_CASE",
+            },
+            {
+                "localCaseId": case2,
+                "sourceTicketKey": key2,
+                "remarks": remarks2,
+                "caseStatus": "CONFIRMED_REAL_CASE",
+            },
+        ],
+    }
+    cases_path = root / "cases.json"
+    write_json(cases_path, cases)
+    cases_sha = hashlib.sha256(cases_path.read_bytes()).hexdigest()
+
+    recon = {
+        "schemaVersion": "ones.bigcircle-reconciliation/v1alpha1",
+        "implementationVersion": "0.2.1",
+        "pipeline": {"casesRawSha256": cases_sha, "runKey": "run-dup"},
+        "results": [
+            {
+                "caseId": CASE_ID,
+                "sourceTicketKey": KEY,
+                "matchStatus": "MATCHED",
+                "matchedOnesTaskUuid": TASK,
+            },
+            {
+                "caseId": case2,
+                "sourceTicketKey": key2,
+                "matchStatus": "MATCHED",
+                "matchedOnesTaskUuid": TASK,
+            },
+        ],
+    }
+    extraction = {
+        "schema": "bigcircle.root-cause-extraction/v1alpha1",
+        "inputCaseCount": 2,
+        "cases": [
+            {
+                "localCaseId": CASE_ID,
+                "sourceTicketKey": KEY,
+                "remarks": REMARKS,
+                "rootCauseState": "CONFIRMED",
+                "rootCauseText": ROOT_TEXT,
+                "rootCauseEvidenceSummary": "synthetic",
+                "rootCauseSource": "remarks",
+            },
+            {
+                "localCaseId": case2,
+                "sourceTicketKey": key2,
+                "remarks": remarks2,
+                "rootCauseState": second_state,
+                "rootCauseText": second_root if second_state == "CONFIRMED" else None,
+                "rootCauseEvidenceSummary": "synthetic",
+                "rootCauseSource": "remarks",
+            },
+        ],
+    }
+    reads = {
+        "schema": "ones.root-cause-field-read/v1alpha1",
+        "complete": True,
+        "fieldId": FIELD_ID,
+        "capturedAt": "2026-09-22T00:00:00Z",
+        "reads": [{
+            "onesTaskUuid": TASK,
+            "fieldId": FIELD_ID,
+            "status": "READ_VERIFIED",
+            "value": current,
+            "capturedAt": "2026-09-22T00:00:00Z",
+        }],
+    }
+
+    recon_path = root / "reconciliation.json"
+    ext_path = root / "root-cause.json"
+    reads_path = root / "field-reads.json"
+    write_json(recon_path, recon)
+    write_json(ext_path, extraction)
+    write_json(reads_path, reads)
+    return cases_path, recon_path, ext_path, reads_path
+
+
+with tempfile.TemporaryDirectory() as td_name:
+    root = Path(td_name)
+    paths = duplicate_task_fixture(root, second_root="  synthetic configuration mismatch\r\n", current=None)
+    plan = MOD.build_plan(*paths, FIELD_ID)
+    assert plan["taskTargetCount"] == 1, plan
+    target = plan["taskTargets"][0]
+    assert target["decision"] == "SET_CANDIDATE", target
+    assert target["distinctConfirmedRootCauseCount"] == 1, target
+    assert target["confirmedLocalCaseIds"] == ["CASE-001", "CASE-002"], target
+
+with tempfile.TemporaryDirectory() as td_name:
+    root = Path(td_name)
+    paths = duplicate_task_fixture(root, second_root="different confirmed root cause", current=None)
+    plan = MOD.build_plan(*paths, FIELD_ID)
+    assert plan["taskTargetCount"] == 1, plan
+    target = plan["taskTargets"][0]
+    assert target["decision"] == "BLOCK", target
+    assert target["reason"] == "LOCAL_ROOT_CAUSE_MULTI_CASE_CONFLICT", target
+    assert target["distinctConfirmedRootCauseCount"] == 2, target
+
+with tempfile.TemporaryDirectory() as td_name:
+    root = Path(td_name)
+    paths = duplicate_task_fixture(root, second_state="ABSENT", second_root=None, current=None)
+    plan = MOD.build_plan(*paths, FIELD_ID)
+    target = plan["taskTargets"][0]
+    assert target["decision"] == "SET_CANDIDATE", target
+    assert target["confirmedLocalCaseIds"] == ["CASE-001"], target
+
+with tempfile.TemporaryDirectory() as td_name:
+    root = Path(td_name)
+    paths = duplicate_task_fixture(root, second_root="  synthetic configuration mismatch\r\n", current="synthetic configuration mismatch")
+    plan = MOD.build_plan(*paths, FIELD_ID)
+    target = plan["taskTargets"][0]
+    assert target["decision"] == "NOOP", target
+
+with tempfile.TemporaryDirectory() as td_name:
+    root = Path(td_name)
+    paths = duplicate_task_fixture(root, second_root="  synthetic configuration mismatch\r\n", current="different existing cause")
+    plan = MOD.build_plan(*paths, FIELD_ID)
+    target = plan["taskTargets"][0]
+    assert target["decision"] == "CONFLICT_REVIEW", target
 
 print("ROOT_CAUSE_SYNC_PLAN_TEST_PASS")

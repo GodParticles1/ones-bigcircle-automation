@@ -69,3 +69,16 @@ python root-cause-sync/plan.py \
 ```
 
 A future live current-field reader and a future bounded write executor are separate gates. This module does not implement either one.
+
+
+## Unique task-level projection
+
+Case-level `cases[]` remains diagnostic. It is not a safe production-write target list because multiple local Big-circle cases can reconcile to the same ONES task.
+
+The planner therefore also emits:
+- `taskTargetPolicy = UNIQUE_ONES_TASK_ONLY`;
+- `taskTargetCount`;
+- `taskTotals`;
+- `taskTargets[]`, unique by ONES task UUID + configured field ID.
+
+Task-level aggregation uses the same conservative normalized-exact comparison. Multiple distinct confirmed local root-cause values for one ONES task fail closed as `LOCAL_ROOT_CAUSE_MULTI_CASE_CONFLICT`. Future write gates must consume `taskTargets[]`, never raw case-level `SET_CANDIDATE` rows.

@@ -93,6 +93,18 @@ jobs:
           if-no-files-found: error
       - shell: powershell
         run: |
+          [void][scriptblock]::Create((Get-Content release/root-cause-planner-runtime-v0.2.0/run-planner.ps1 -Raw))
+          ./scripts/build-root-cause-planner-runtime-v020.ps1
+          if (-not (Test-Path "dist-root-cause-planner-v020/ones-root-cause-planner-runtime-v0.2.0.zip")) { throw "PLANNER_V020_PACKAGE_MISSING" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ones-root-cause-planner-runtime-v0.2.0
+          path: |
+            dist-root-cause-planner-v020/ones-root-cause-planner-runtime-v0.2.0.zip
+            dist-root-cause-planner-v020/ones-root-cause-planner-runtime-v0.2.0.zip.sha256
+          if-no-files-found: error
+      - shell: powershell
+        run: |
           [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.1/setup.ps1 -Raw))
           [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.1/run-once.ps1 -Raw))
           [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.1/show-status.ps1 -Raw))
