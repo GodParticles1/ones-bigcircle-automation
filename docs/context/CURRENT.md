@@ -9,8 +9,8 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 ## Current public source state
 
 - `reconciliation/`: v0.2.1 handler-first person-aware reconciliation integrated on main at merge `25c8e913a658298954e2c447c84be675e4639d99`.
-- `local-relay/`: accepted v0.2.1 source lineage.
-- `browser-bridge/`: public-safe v0.4.1 integrated on main at merge `89c131d56e156c2977889670ee844392d7eef3f4`. v0.4.1 preserves unsaved first-time setup draft across popup close/reopen while keeping committed token/status handling non-echoing. Private origin/tenant identifiers and historical bounded-write surfaces remain absent; environment scope is runtime configuration.
+- `local-relay/`: read-only v0.2.2 integrated by PR #19 / merge `c5f6c0f01336b2d9179fb34b0ef3306189fa9368`.
+- `browser-bridge/`: public-safe read-only v0.4.2 integrated by PR #19 / merge `c5f6c0f01336b2d9179fb34b0ef3306189fa9368`; adds bounded `ONES_FIELD_READ` while keeping private origin/tenant identifiers and write surfaces absent.
 - `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; Windows run-once and approximately-2-hour Task Scheduler registration/runtime acceptance are PASS.
 - `root-cause/`: deterministic fail-closed remarks extraction integrated at `ae4becddc8c11d265b331ca62db1e573dc04ee6a`; exact accepted CASE_FEED runtime acceptance PASS.
 
@@ -28,10 +28,12 @@ Accepted integration:
 - no Browser/Relay write capability and no ONES mutation.
 
 Exact next lane:
-- Issue #18 / PR #19 candidate;
+- Issue #18 / PR #19 integrated at `c5f6c0f01336b2d9179fb34b0ef3306189fa9368`;
 - Browser Bridge v0.4.2 + Local Relay v0.2.2;
 - bounded read-only `ONES_FIELD_READ` only;
-- runtime acceptance remains blocked on Relay-token rotation + RELAY_PING re-verification.
+- exact next lane is Issue #20 Windows runtime acceptance;
+- runtime acceptance first rotates the exposed Relay token, preserves `relay.db`, updates Browser Bridge token config, and re-verifies `RELAY_PING`.
+- CI/executor orchestration cleanup is deferred to Issue #21 and is explicitly non-blocking.
 
 ## Current operational gate
 
