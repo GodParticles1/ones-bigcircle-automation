@@ -1,0 +1,19 @@
+name = "ones-bigcircle-remote-transport-staging"
+main = "src/index.mjs"
+compatibility_date = "2026-09-22"
+
+[[durable_objects.bindings]]
+name = "TRANSPORT_COORDINATOR"
+class_name = "TransportCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TransportCoordinator"]
+
+[[r2_buckets]]
+binding = "ENVELOPE_BUCKET"
+bucket_name = "REPLACE_WITH_PRIVATE_BUCKET"
+
+[vars]
+AUTH_MAX_SKEW_SECONDS = "300"
+CLAIM_LEASE_SECONDS = "60"
