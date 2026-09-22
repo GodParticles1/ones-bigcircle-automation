@@ -14,6 +14,25 @@ This public repository is the code/governance home for the ONES <-> Big-circle a
 - `periodic-alignment/`: minimal Windows read-only run-once wrapper integrated at `2eb36fd44ee24971eca8f85562e7828637e45514`; Windows run-once and approximately-2-hour Task Scheduler registration/runtime acceptance are PASS.
 - `root-cause/`: deterministic fail-closed remarks extraction integrated at `ae4becddc8c11d265b331ca62db1e573dc04ee6a`; exact accepted CASE_FEED runtime acceptance PASS.
 
+## Root-cause synchronization planner integration
+
+`ROOT_CAUSE_SYNC_PLANNER_INTEGRATION=PASS`
+
+Accepted integration:
+- Issue #6 / PR #17;
+- merge `baabd600ea65e3bffbb3f7b60931acf0a78e8094`;
+- exact candidate `4822464de733fee6251d2a310d70e4e8f0af66cf`;
+- CI run `35682582985` PASS;
+- execution-free planner only;
+- explicit `READ_VERIFIED` current-field snapshot required;
+- no Browser/Relay write capability and no ONES mutation.
+
+Exact next lane:
+- Issue #18 / PR #19 candidate;
+- Browser Bridge v0.4.2 + Local Relay v0.2.2;
+- bounded read-only `ONES_FIELD_READ` only;
+- runtime acceptance remains blocked on Relay-token rotation + RELAY_PING re-verification.
+
 ## Current operational gate
 
 `BIGCIRCLE_TASK_PROMPT_WIRING=PASS`
