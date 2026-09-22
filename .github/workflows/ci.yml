@@ -65,17 +65,17 @@ jobs:
           [void][scriptblock]::Create((Get-Content release/field-read-runtime/upgrade-from-v0.2.1.ps1 -Raw))
           ./scripts/build-field-read-runtime-packages.ps1
           foreach ($zip in @(
-            "dist-field-read/ones-browser-bridge-public-v0.4.2.zip",
+            "dist-field-read/ones-browser-bridge-public-v0.4.3.zip",
             "dist-field-read/ones-local-relay-v0.2.2.zip"
           )) {
             if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw ("PACKAGE_MISSING: " + $zip) }
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: ones-field-read-runtime-v0.4.2-v0.2.2
+          name: ones-field-read-runtime-v0.4.3-v0.2.2
           path: |
-            dist-field-read/ones-browser-bridge-public-v0.4.2.zip
-            dist-field-read/ones-browser-bridge-public-v0.4.2.zip.sha256
+            dist-field-read/ones-browser-bridge-public-v0.4.3.zip
+            dist-field-read/ones-browser-bridge-public-v0.4.3.zip.sha256
             dist-field-read/ones-local-relay-v0.2.2.zip
             dist-field-read/ones-local-relay-v0.2.2.zip.sha256
           if-no-files-found: error
