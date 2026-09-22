@@ -205,6 +205,163 @@ def decide_case(feed_row, ext_row, recon_row, field_reads, field_id):
     }
 
 
+
+def build_task_targets(feed_rows, extraction_index, recon_index, field_reads, field_id):
+    groups = {}
+    for feed_row in feed_rows:
+        case_id = feed_row["localCaseId"]
+        recon_row = recon_index.get(case_id)
+        if not isinstance(recon_row, dict):
+            continue
+        if recon_row.get("matchStatus") != "MATCHED":
+            continue
+        task_uuid = recon_row.get("matchedOnesTaskUuid")
+        if not nonblank(task_uuid):
+            continue
+        groups.setdefault(task_uuid, []).append({
+            "feed": feed_row,
+            "extraction": extraction_index[case_id],
+            "reconciliation": recon_row,
+        })
+
+    targets = []
+    for task_uuid in sorted(groups):
+        rows = groups[task_uuid]
+        local_case_ids = sorted(row["feed"]["localCaseId"] for row in rows)
+        source_ticket_keys = sorted({
+            row["feed"].get("sourceTicketKey")
+            for row in rows
+            if nonblank(row["feed"].get("sourceTicketKey"))
+        })
+
+        identity_drift = any(
+            row["reconciliation"].get("sourceTicketKey") != row["feed"].get("sourceTicketKey")
+            for row in rows
+        )
+        if identity_drift:
+            targets.append({
+                "matchedOnesTaskUuid": task_uuid,
+                "fieldId": field_id,
+                "localCaseIds": local_case_ids,
+                "sourceTicketKeys": source_ticket_keys,
+                "confirmedLocalCaseIds": [],
+                "decision": "BLOCK",
+                "reason": "RECONCILIATION_IDENTITY_DRIFT",
+            })
+            continue
+
+        confirmed = []
+        claims = {}
+        for row in rows:
+            ext = row["extraction"]
+            if ext.get("rootCauseState") != "CONFIRMED" or not nonblank(ext.get("rootCauseText")):
+                continue
+            normalized = normalize_compare_text(ext.get("rootCauseText"))
+            if not normalized:
+                continue
+            confirmed.append(row["feed"]["localCaseId"])
+            claims.setdefault(normalized, []).append({
+                "localCaseId": row["feed"]["localCaseId"],
+                "sourceTicketKey": row["feed"].get("sourceTicketKey"),
+                "raw": ext.get("rootCauseText"),
+            })
+
+        if not claims:
+            targets.append({
+                "matchedOnesTaskUuid": task_uuid,
+                "fieldId": field_id,
+                "localCaseIds": local_case_ids,
+                "sourceTicketKeys": source_ticket_keys,
+                "confirmedLocalCaseIds": sorted(confirmed),
+                "decision": "BLOCK",
+                "reason": "LOCAL_ROOT_CAUSE_NOT_CONFIRMED",
+            })
+            continue
+
+        if len(claims) > 1:
+            targets.append({
+                "matchedOnesTaskUuid": task_uuid,
+                "fieldId": field_id,
+                "localCaseIds": local_case_ids,
+                "sourceTicketKeys": source_ticket_keys,
+                "confirmedLocalCaseIds": sorted(confirmed),
+                "distinctConfirmedRootCauseCount": len(claims),
+                "decision": "BLOCK",
+                "reason": "LOCAL_ROOT_CAUSE_MULTI_CASE_CONFLICT",
+            })
+            continue
+
+        proposed_normalized, provenance = next(iter(claims.items()))
+        proposed_raw = provenance[0]["raw"]
+
+        read_row = field_reads.get((task_uuid, field_id))
+        if read_row is None:
+            targets.append({
+                "matchedOnesTaskUuid": task_uuid,
+                "fieldId": field_id,
+                "localCaseIds": local_case_ids,
+                "sourceTicketKeys": source_ticket_keys,
+                "confirmedLocalCaseIds": sorted(confirmed),
+                "decision": "BLOCK",
+                "reason": "FIELD_READ_MISSING",
+                "proposedValue": proposed_raw,
+            })
+            continue
+        if read_row.get("status") != "READ_VERIFIED":
+            targets.append({
+                "matchedOnesTaskUuid": task_uuid,
+                "fieldId": field_id,
+                "localCaseIds": local_case_ids,
+                "sourceTicketKeys": source_ticket_keys,
+                "confirmedLocalCaseIds": sorted(confirmed),
+                "decision": "BLOCK",
+                "reason": "FIELD_READ_NOT_VERIFIED",
+                "proposedValue": proposed_raw,
+            })
+            continue
+
+        value = read_row.get("value")
+        if value is not None and not isinstance(value, str):
+            targets.append({
+                "matchedOnesTaskUuid": task_uuid,
+                "fieldId": field_id,
+                "localCaseIds": local_case_ids,
+                "sourceTicketKeys": source_ticket_keys,
+                "confirmedLocalCaseIds": sorted(confirmed),
+                "decision": "BLOCK",
+                "reason": "FIELD_VALUE_INVALID_TYPE",
+                "proposedValue": proposed_raw,
+            })
+            continue
+
+        current = normalize_compare_text(value)
+        if current == "":
+            decision = "SET_CANDIDATE"
+        elif current == proposed_normalized:
+            decision = "NOOP"
+        else:
+            decision = "CONFLICT_REVIEW"
+
+        targets.append({
+            "matchedOnesTaskUuid": task_uuid,
+            "fieldId": field_id,
+            "localCaseIds": local_case_ids,
+            "sourceTicketKeys": source_ticket_keys,
+            "confirmedLocalCaseIds": sorted(confirmed),
+            "distinctConfirmedRootCauseCount": 1,
+            "decision": decision,
+            "reason": "UNIQUE_TASK_VERIFIED_CURRENT_VALUE_COMPARISON",
+            "currentValue": value,
+            "proposedValue": proposed_raw,
+            "readCapturedAt": read_row.get("capturedAt"),
+        })
+
+    totals = {name: 0 for name in sorted(DECISIONS)}
+    for row in targets:
+        totals[row["decision"]] += 1
+    return targets, totals
+
+
 def build_plan(cases_path, reconciliation_path, extraction_path, field_reads_path, field_id):
     cases_sha = sha256_file(cases_path)
     case_doc = load_json(cases_path)
@@ -233,6 +390,14 @@ def build_plan(cases_path, reconciliation_path, extraction_path, field_reads_pat
     for row in decisions:
         totals[row["decision"]] += 1
 
+    task_targets, task_totals = build_task_targets(
+        feed_rows,
+        extraction_index,
+        recon_index,
+        field_index,
+        field_id,
+    )
+
     return {
         "schema": PLAN_SCHEMA,
         "status": "PLAN_READY",
@@ -247,6 +412,10 @@ def build_plan(cases_path, reconciliation_path, extraction_path, field_reads_pat
         "totals": totals,
         "caseCount": len(decisions),
         "cases": decisions,
+        "taskTargetPolicy": "UNIQUE_ONES_TASK_ONLY",
+        "taskTargetCount": len(task_targets),
+        "taskTotals": task_totals,
+        "taskTargets": task_targets,
     }
 
 
@@ -279,6 +448,8 @@ def main():
         "status": plan["status"],
         "caseCount": plan["caseCount"],
         "totals": plan["totals"],
+        "taskTargetCount": plan["taskTargetCount"],
+        "taskTotals": plan["taskTotals"],
         "output": str(Path(args.output)),
     }, ensure_ascii=False))
     return 0
