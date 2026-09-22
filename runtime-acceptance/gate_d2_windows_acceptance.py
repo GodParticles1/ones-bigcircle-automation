@@ -226,8 +226,12 @@ def main():
                 break
             if e["envelopeId"] == bad_env["envelopeId"]:
                 break
-        bad_import = EX.import_one(exchange, win_spool, "windows-agent", cleanup=True)
-        assert bad_import["status"] == "IMPORTED"
+        while True:
+            bad_import = EX.import_one(exchange, win_spool, "windows-agent", cleanup=True)
+            assert bad_import["status"] in {"IMPORTED", "IMPORT_NOOP"}
+            if bad_import["envelopeId"] == bad_env["envelopeId"]:
+                assert bad_import["status"] == "IMPORTED"
+                break
 
         blocked_proc, blocked_doc = run_json([
             sys.executable,
