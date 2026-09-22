@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ONES Browser Bridge - Read-only",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Configuration-driven read-only ONES inventory and bounded field reader for a loopback Local Relay.",
   "permissions": [
     "activeTab",
