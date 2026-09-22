@@ -30,7 +30,7 @@ assert "/^field[0-9]{1,6}$/" not in worker
 assert "HwyyVZy8" not in worker  # no private field hardcoding; custom IDs are accepted generically
 assert "normalizeSemanticText" in worker
 assert "ones-editor-text" in worker
-assert "<!--version:" not in worker  # decoder is generic; no runtime marker instance is hardcoded
+assert "replace(/<!--version:[^>]*-->/gi" in worker
 
 # Public projection must remain read-only and configuration-driven.
 assert "update3" not in worker
