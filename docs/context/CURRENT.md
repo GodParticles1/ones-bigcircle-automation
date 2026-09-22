@@ -350,3 +350,26 @@ Exact-feed audit:
 The zero CONFLICT count is only for this accepted snapshot; the CONFLICT branch is covered by synthetic tests and is not assumed impossible in future feeds.
 
 Gate E is closed. Gate F may proceed only as bounded planning/read-before-write logic. Production ONES mutation remains disabled.
+
+
+## Gate D2 transport development — 2026-09-22
+
+`P4A_TRANSPORT_ENVELOPE_INTEGRATION=PASS`
+`P4B_DURABLE_SPOOL_INTEGRATION=PASS`
+`P4C_WINDOWS_CASEFEED_MATERIALIZER_INTEGRATION=PASS`
+`P4D_WINDOWS_RUN_ONCE_PIPELINE_INTEGRATION=PASS`
+`P4E_BIGCIRCLE_RESULT_CONSUMER_INTEGRATION=PASS`
+`P4F_FILESYSTEM_EXCHANGE_INTEGRATION=PASS`
+
+Integrated sequence:
+- P4a PR #23 / merge `4b2a871ea9ff5d0cdfe493522e303780b5a9d9dd`;
+- P4b PR #25 / merge `9076cde28a4a3a6649680f340c592b251f0d4895`;
+- P4c PR #27 / merge `8830f5ffaf2cd8320283296ea94d451e7fd49e9b`;
+- P4d PR #29 / merge `6ebc1e1f59d85ee1aa2335e5858289e67117d602`;
+- P4e PR #31 / merge `451f2d3f6092e345a54e77ba1dfe55326d93a0d8`;
+- P4f PR #33 / merge `d1b07b12bfdaf0fd2a684774afc96b09bf6d7c9a`.
+
+Current mainline now has a complete provider-neutral local transport loop:
+Big-circle outbox -> exchange/BIGCIRCLE_TO_WINDOWS -> Windows inbox -> exact CASE_FEED materialization -> existing periodic reconciliation -> RESULT/CHECKPOINT outbox -> exchange/WINDOWS_TO_BIGCIRCLE -> Big-circle receipt consumer.
+
+This does **not** mean production cross-environment transport is complete. P4f is a filesystem exchange adapter and acceptance scaffold. No network provider / Remote Queue has been selected or opened, and ONES production mutation remains disabled.
