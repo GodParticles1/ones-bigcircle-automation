@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.4.2"
+assert manifest["version"] == "0.4.3"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -25,6 +25,9 @@ assert "chrome.permissions.request" in popup
 assert "chrome.storage.session" in popup
 assert "onesRelaySetupDraftV041" in popup
 assert "tokenPresent" in popup
+assert "if (!validId(fieldId))" in worker
+assert "/^field[0-9]{1,6}$/" not in worker
+assert "HwyyVZy8" not in worker  # no private field hardcoding; custom IDs are accepted generically
 
 # Public projection must remain read-only and configuration-driven.
 assert "update3" not in worker
@@ -41,4 +44,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V042_STATIC_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V043_STATIC_PASS")
