@@ -15,7 +15,7 @@ Supported directions:
 - `BIGCIRCLE_TO_WINDOWS`
 - `WINDOWS_TO_BIGCIRCLE`
 
-The payload is canonical JSON bytes bound by SHA256 and carried as Base64. Envelope identity and idempotency key are deterministic from immutable routing metadata + payload hash, so later adapters can deduplicate/replay safely without reinterpreting business semantics.
+The transport layer preserves the exact input UTF-8 JSON bytes, binds those bytes by SHA256, and carries them as Base64. This keeps the accepted CASE_FEED raw-byte hash boundary intact. The object helper canonicalizes newly constructed JSON objects, but file transport never rewrites accepted payload bytes. Envelope identity and idempotency key are deterministic from immutable routing metadata + payload hash, so later adapters can deduplicate/replay safely without reinterpreting business semantics.
 
 Example:
 
