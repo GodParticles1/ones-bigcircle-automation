@@ -135,7 +135,7 @@ Exact accepted-feed runtime audit PASS: 252 rows -> CONFIRMED 70 / PROVISIONAL 1
 
 ## P3 — Population-aware root-cause synchronization contract
 
-`LANE_STATE=ACTIVE_DESIGN_ONLY`
+`LANE_STATE=PLANNER_INTEGRATED_RUNTIME_READ_PENDING`
 
 Goal: extend exact-match reconciliation into a bounded write-plan lane for confirmed technical fields, with root cause as P0.
 
@@ -157,6 +157,14 @@ Required semantics:
 - write execution requires a separately accepted bounded runtime gate and post-write readback.
 
 Contract: `docs/contracts/ROOT_CAUSE_SYNC_V1.md`.
+
+Execution-free planner integrated by PR #17 / merge `baabd600ea65e3bffbb3f7b60931acf0a78e8094`. Exact-head CI `35682582985` PASS. The planner remains non-mutating and requires explicit `READ_VERIFIED` current-field evidence.
+
+### P3a — read-only current-field snapshot
+
+`LANE_STATE=ACTIVE_CANDIDATE`
+
+Issue #18 / PR #19. Add only `ONES_FIELD_READ` through Browser Bridge + Local Relay. This lane must remain read-only and must not include field mutation. Runtime acceptance requires Relay-token rotation first.
 
 ## P1d — 2-hour periodic read-only alignment
 
