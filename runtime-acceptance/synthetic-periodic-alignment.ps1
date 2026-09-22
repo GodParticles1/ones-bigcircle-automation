@@ -7,6 +7,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-Sha256 {
+    param([Parameter(Mandatory=$true)][string]$Path)
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = $sha.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($bytes)).Replace("-", "").ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Write-ResultAndExit {
     param(
         [Parameter(Mandatory=$true)][string]$Status,
@@ -37,8 +53,8 @@ try {
         Write-ResultAndExit -Status "SYNTHETIC_ALIGNMENT_BLOCKED" -Fields @{ reason = "SYNTHETIC_INVENTORY_NOT_FOUND" } -ExitCode 2
     }
 
-    $caseSha = (Get-FileHash -LiteralPath $caseFeed.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    $inventorySha = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $caseSha = Get-Sha256 -Path $caseFeed.FullName
+    $inventorySha = Get-Sha256 -Path $inventoryPath
 
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
     $stateDir = Join-Path $RuntimeDir "reconciliation-state"
