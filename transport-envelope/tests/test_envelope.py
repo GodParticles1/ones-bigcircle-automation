@@ -18,6 +18,8 @@ def expect_block(fn, expected):
         assert str(exc) == expected, (str(exc), expected)
 
 
+raw_case_feed = b'{\n  "schema": "bigcircle.confirmed-case-export/v1alpha1",\n  "complete": true,\n  "exportedCaseCount": 1,\n  "cases": [{"localCaseId":"CASE-SYNTH-001","sourceTicketKey":"ABC1-001","caseStatus":"CONFIRMED_REAL_CASE","remarks":"Synthetic root cause evidence"}]\n}\n'
+
 case_feed = {
     "schema": "bigcircle.confirmed-case-export/v1alpha1",
     "complete": True,
@@ -51,6 +53,16 @@ assert env1["envelopeId"] == env2["envelopeId"]
 assert env1["idempotencyKey"] == env2["idempotencyKey"]
 assert env1["payloadSha256"] == env2["payloadSha256"]
 assert MOD.decode_and_validate(env1) == case_feed
+
+raw_env = MOD.build_envelope_bytes(
+    raw_case_feed,
+    direction="BIGCIRCLE_TO_WINDOWS",
+    kind="CASE_FEED",
+    producer="bigcircle-control",
+    consumer="windows-agent",
+)
+assert MOD.decode_payload_bytes(raw_env) == raw_case_feed
+assert raw_env["payloadSha256"] == MOD.sha256_hex(raw_case_feed)
 
 result_payload = {
     "status": "RECONCILIATION_VERIFIED",
@@ -96,6 +108,10 @@ expect_block(lambda: MOD.decode_and_validate(bad_schema), "SCHEMA_UNSUPPORTED")
 bad_direction = copy.deepcopy(env1)
 bad_direction["direction"] = "WINDOWS_TO_WINDOWS"
 expect_block(lambda: MOD.decode_and_validate(bad_direction), "DIRECTION_UNSUPPORTED")
+
+bad_route = copy.deepcopy(env1)
+bad_route["direction"] = "WINDOWS_TO_BIGCIRCLE"
+expect_block(lambda: MOD.decode_and_validate(bad_route), "DIRECTION_KIND_MISMATCH")
 
 bad_id = copy.deepcopy(env1)
 bad_id["envelopeId"] = "env-bad"
