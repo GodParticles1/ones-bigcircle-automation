@@ -1,0 +1,10 @@
+{
+  "name": "ones-bigcircle-windows-agent",
+  "version": "0.1.1",
+  "mode": "LOCAL_PROVIDER_NEUTRAL",
+  "sourceBase": "5604432fdcb0aa3ee9b1fb275d1d79b2fe805563",
+  "remoteBaseUrlRequired": false,
+  "cloudflareApiKeyRequired": false,
+  "httpsTransportRequired": false,
+  "onesMutation": false
+}
