@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$bridgeName = "ones-browser-bridge-public-v0.4.2"
+$bridgeName = "ones-browser-bridge-public-v0.4.3"
 $relayName = "ones-local-relay-v0.2.2"
 $bridgeStage = Join-Path $OutputDir $bridgeName
 $relayStage = Join-Path $OutputDir $relayName
@@ -19,7 +19,7 @@ foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","sh
 Copy-Item -LiteralPath (Join-Path $RepoRoot "release\field-read-runtime\upgrade-from-v0.2.1.ps1") -Destination (Join-Path $relayStage "upgrade-from-v0.2.1.ps1") -Force
 
 $bridgeManifest = Get-Content -LiteralPath (Join-Path $bridgeStage "manifest.json") -Raw | ConvertFrom-Json
-if ($bridgeManifest.version -ne "0.4.2") { throw "BRIDGE_VERSION_MISMATCH" }
+if ($bridgeManifest.version -ne "0.4.3") { throw "BRIDGE_VERSION_MISMATCH" }
 $relayText = Get-Content -LiteralPath (Join-Path $relayStage "relay.py") -Raw
 if ($relayText -notmatch 'VERSION = "0\.2\.2"') { throw "RELAY_VERSION_MISMATCH" }
 if ($relayText -notmatch '"ONES_FIELD_READ"') { throw "RELAY_FIELD_READ_MISSING" }
