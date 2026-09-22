@@ -35,6 +35,8 @@ jobs:
       - run: python bigcircle-control/tests/test_consume_result.py
       - run: python filesystem-exchange/tests/test_exchange.py
       - run: python remote-transport/tests/test_client.py
+      - run: node --check cloudflare-remote-gateway/src/index.mjs
+      - run: node cloudflare-remote-gateway/tests/test_gateway.mjs
       - run: python scripts/repo_guard.py .
 
   windows-relay:
@@ -51,6 +53,8 @@ jobs:
       - run: python bigcircle-control/tests/test_consume_result.py
       - run: python filesystem-exchange/tests/test_exchange.py
       - run: python remote-transport/tests/test_client.py
+      - run: node --check cloudflare-remote-gateway/src/index.mjs
+      - run: node cloudflare-remote-gateway/tests/test_gateway.mjs
       - run: python runtime-acceptance/gate_d2_windows_acceptance.py
       - shell: powershell
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
