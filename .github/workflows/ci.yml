@@ -68,7 +68,8 @@ jobs:
           ./scripts/build-windows-agent-package.ps1
           $zip = Get-ChildItem dist/ones-bigcircle-windows-agent-v0.1.0.zip
           if (-not $zip) { throw "PACKAGE_ZIP_MISSING" }
-          $entries = [IO.Compression.ZipFile]::OpenRead($zip.FullName).Entries.FullName
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          try { $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace("\\", "/") }) } finally { $archive.Dispose() }
           foreach ($required in @(
             "ones-bigcircle-windows-agent-v0.1.0/remote-transport/client.py",
             "ones-bigcircle-windows-agent-v0.1.0/windows-agent/run_once.py",
