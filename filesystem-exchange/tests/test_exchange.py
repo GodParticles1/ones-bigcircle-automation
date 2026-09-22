@@ -132,6 +132,10 @@ with tempfile.TemporaryDirectory() as td:
         created_at="2026-09-22T00:00:00Z",
     )
     src.write_text(json.dumps(env) + "\n", encoding="utf-8")
-    assert EX.import_one(exchange, win_spool, "windows-agent")["status"] == "EMPTY"
+    try:
+        EX.import_one(exchange, win_spool, "windows-agent")
+        raise AssertionError("expected wrong-direction block")
+    except Exception as exc:
+        assert str(exc) == "ROLE_DIRECTION_MISMATCH", str(exc)
 
 print("FILESYSTEM_EXCHANGE_V1_TEST_PASS")
