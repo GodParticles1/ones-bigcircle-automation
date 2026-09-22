@@ -3,7 +3,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 PREFLIGHT = ROOT / "cloudflare-remote-gateway" / "deploy" / "preflight.py"
 TEMPLATE = ROOT / "cloudflare-remote-gateway" / "deploy" / "wrangler.staging.example.toml"
 
