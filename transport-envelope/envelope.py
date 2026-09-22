@@ -10,6 +10,11 @@ from pathlib import Path
 SCHEMA = "ones.bigcircle-transport-envelope/v1alpha1"
 SUPPORTED_KINDS = {"CASE_FEED", "RESULT", "CHECKPOINT"}
 SUPPORTED_DIRECTIONS = {"BIGCIRCLE_TO_WINDOWS", "WINDOWS_TO_BIGCIRCLE"}
+KIND_DIRECTIONS = {
+    "CASE_FEED": "BIGCIRCLE_TO_WINDOWS",
+    "RESULT": "WINDOWS_TO_BIGCIRCLE",
+    "CHECKPOINT": "WINDOWS_TO_BIGCIRCLE",
+}
 
 
 class EnvelopeError(ValueError):
@@ -38,6 +43,15 @@ def normalize_text(name, value, max_len=128):
     return text
 
 
+def validate_route(direction, kind):
+    if kind not in SUPPORTED_KINDS:
+        raise EnvelopeError("KIND_UNSUPPORTED")
+    if direction not in SUPPORTED_DIRECTIONS:
+        raise EnvelopeError("DIRECTION_UNSUPPORTED")
+    if KIND_DIRECTIONS[kind] != direction:
+        raise EnvelopeError("DIRECTION_KIND_MISMATCH")
+
+
 def immutable_identity(direction, kind, producer, consumer, payload_sha256):
     seed = {
         "schema": SCHEMA,
@@ -51,17 +65,33 @@ def immutable_identity(direction, kind, producer, consumer, payload_sha256):
     return f"env-{digest}", f"idem-{digest}"
 
 
-def build_envelope(payload, *, direction, kind, producer, consumer, created_at=None):
-    if kind not in SUPPORTED_KINDS:
-        raise EnvelopeError("KIND_UNSUPPORTED")
-    if direction not in SUPPORTED_DIRECTIONS:
-        raise EnvelopeError("DIRECTION_UNSUPPORTED")
-    producer = normalize_text("PRODUCER", producer)
-    consumer = normalize_text("CONSUMER", consumer)
+def validate_json_object_bytes(payload_bytes):
+    if not isinstance(payload_bytes, (bytes, bytearray)) or not payload_bytes:
+        raise EnvelopeError("PAYLOAD_INVALID")
+    try:
+        payload = json.loads(bytes(payload_bytes).decode("utf-8-sig"))
+    except Exception as exc:
+        raise EnvelopeError("PAYLOAD_JSON_INVALID") from exc
     if not isinstance(payload, dict):
         raise EnvelopeError("PAYLOAD_INVALID")
+    return payload
 
-    payload_bytes = canonical_json_bytes(payload)
+
+def build_envelope_bytes(
+    payload_bytes,
+    *,
+    direction,
+    kind,
+    producer,
+    consumer,
+    created_at=None,
+):
+    validate_route(direction, kind)
+    producer = normalize_text("PRODUCER", producer)
+    consumer = normalize_text("CONSUMER", consumer)
+    payload_bytes = bytes(payload_bytes)
+    validate_json_object_bytes(payload_bytes)
+
     payload_sha256 = sha256_hex(payload_bytes)
     envelope_id, idempotency_key = immutable_identity(
         direction, kind, producer, consumer, payload_sha256
@@ -77,13 +107,26 @@ def build_envelope(payload, *, direction, kind, producer, consumer, created_at=N
         "createdAt": created_at,
         "producer": producer,
         "consumer": consumer,
-        "payloadEncoding": "json-canonical-utf8+base64",
+        "payloadEncoding": "json-utf8+base64",
         "payloadSha256": payload_sha256,
         "payloadBase64": base64.b64encode(payload_bytes).decode("ascii"),
     }
 
 
-def decode_and_validate(envelope):
+def build_envelope(payload, *, direction, kind, producer, consumer, created_at=None):
+    if not isinstance(payload, dict):
+        raise EnvelopeError("PAYLOAD_INVALID")
+    return build_envelope_bytes(
+        canonical_json_bytes(payload),
+        direction=direction,
+        kind=kind,
+        producer=producer,
+        consumer=consumer,
+        created_at=created_at,
+    )
+
+
+def decode_payload_bytes(envelope):
     if not isinstance(envelope, dict):
         raise EnvelopeError("ENVELOPE_INVALID")
     if envelope.get("schema") != SCHEMA:
@@ -91,14 +134,11 @@ def decode_and_validate(envelope):
 
     direction = envelope.get("direction")
     kind = envelope.get("kind")
-    if direction not in SUPPORTED_DIRECTIONS:
-        raise EnvelopeError("DIRECTION_UNSUPPORTED")
-    if kind not in SUPPORTED_KINDS:
-        raise EnvelopeError("KIND_UNSUPPORTED")
+    validate_route(direction, kind)
 
     producer = normalize_text("PRODUCER", envelope.get("producer"))
     consumer = normalize_text("CONSUMER", envelope.get("consumer"))
-    if envelope.get("payloadEncoding") != "json-canonical-utf8+base64":
+    if envelope.get("payloadEncoding") != "json-utf8+base64":
         raise EnvelopeError("PAYLOAD_ENCODING_UNSUPPORTED")
 
     payload_b64 = envelope.get("payloadBase64")
@@ -110,8 +150,7 @@ def decode_and_validate(envelope):
         raise EnvelopeError("PAYLOAD_BASE64_INVALID") from exc
 
     actual_sha = sha256_hex(payload_bytes)
-    expected_sha = envelope.get("payloadSha256")
-    if actual_sha != expected_sha:
+    if actual_sha != envelope.get("payloadSha256"):
         raise EnvelopeError("PAYLOAD_SHA256_MISMATCH")
 
     expected_id, expected_idem = immutable_identity(
@@ -122,17 +161,13 @@ def decode_and_validate(envelope):
     if envelope.get("idempotencyKey") != expected_idem:
         raise EnvelopeError("IDEMPOTENCY_KEY_MISMATCH")
 
-    try:
-        payload = json.loads(payload_bytes.decode("utf-8"))
-    except Exception as exc:
-        raise EnvelopeError("PAYLOAD_JSON_INVALID") from exc
-    if not isinstance(payload, dict):
-        raise EnvelopeError("PAYLOAD_INVALID")
+    validate_json_object_bytes(payload_bytes)
+    return payload_bytes
 
-    if canonical_json_bytes(payload) != payload_bytes:
-        raise EnvelopeError("PAYLOAD_NOT_CANONICAL")
 
-    return payload
+def decode_and_validate(envelope):
+    payload_bytes = decode_payload_bytes(envelope)
+    return json.loads(payload_bytes.decode("utf-8-sig"))
 
 
 def main():
@@ -153,9 +188,9 @@ def main():
     args = ap.parse_args()
     try:
         if args.cmd == "build":
-            payload = json.loads(Path(args.payload).read_text(encoding="utf-8-sig"))
-            env = build_envelope(
-                payload,
+            payload_bytes = Path(args.payload).read_bytes()
+            env = build_envelope_bytes(
+                payload_bytes,
                 direction=args.direction,
                 kind=args.kind,
                 producer=args.producer,
