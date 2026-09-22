@@ -197,7 +197,9 @@ Tracked by Issue #14 (closed after code integration).
 
 ## P4 — Big-circle <-> Windows Agent transport abstraction
 
-`LANE_STATE=QUEUED`
+`LANE_STATE=ACTIVE_RUNTIME_NEXT`
+
+P4a-P4f code spine is integrated through main `d1b07b12bfdaf0fd2a684774afc96b09bf6d7c9a`. The provider-neutral local loop now exists; the next bounded action is runtime acceptance / transport-provider decision without reopening business semantics.
 
 Goal: replace the current manual case-feed file handoff with automatic transport while preserving the exact same canonical snapshot contract.
 
@@ -205,7 +207,7 @@ The JSON case feed remains the logical payload/audit snapshot, but the user must
 
 Define a transport-neutral job/result envelope so the cloud Big-circle control plane can exchange bounded work with the Windows agent without coupling business semantics to one provider.
 
-Current restriction: do not select or open a Remote Queue implementation yet.
+Current restriction: do not silently select or open a Remote Queue/provider. The next Lead must first prove the P4a-P4f local loop on the user's Windows runtime, then separately freeze any real cross-environment transport provider boundary.
 
 The transport contract must be able to carry both read-only inventory jobs and future accepted write-plan jobs without granting new capabilities by default.
 
