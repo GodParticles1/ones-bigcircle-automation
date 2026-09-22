@@ -278,3 +278,29 @@ Historical counts are regression references only. ONES tickets and Big-circle ca
 - no owner/status/project/priority/delete automation;
 - no browser credential export;
 - no fuzzy title matching.
+
+
+## 2026-09-22 Gate D2 P4a-P4f integration handoff
+
+Current main:
+`d1b07b12bfdaf0fd2a684774afc96b09bf6d7c9a`
+
+Integrated:
+- P4a transport-envelope v1;
+- P4b durable transport spool v1;
+- P4c Windows CASE_FEED materializer v1;
+- P4d Windows Agent run-once pipeline v1;
+- P4e Big-circle RESULT/CHECKPOINT consumer v1;
+- P4f provider-neutral filesystem exchange v1.
+
+Open PRs at handoff: none.
+
+Exact next bounded lane:
+1. runtime-accept the local provider-neutral loop on Windows using synthetic/non-production artifacts;
+2. prove exact bytes/hash, duplicate NOOP, claim/processed/rejected lifecycle, RESULT/CHECKPOINT return path;
+3. separately decide/freeze the real cross-environment provider boundary only after local runtime proof;
+4. do not reopen Remote Queue/provider or production ONES mutation implicitly;
+5. keep Issue #20 runtime field-read acceptance separate and keep production ONES write disabled.
+
+Lead execution rule:
+do not stop at dispatch/status narration. Same-turn behavior is verify live state -> review -> merge when gates pass -> post-merge fan-out -> continue next bounded slice. Routine exact-head PASS + semantic ACCEPT merges are standing-authorized; fresh human confirmation is reserved for production-write, provider/security/trust-boundary expansion, destructive mutation, repository-admin or roadmap changes.
