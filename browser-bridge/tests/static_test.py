@@ -13,11 +13,12 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.4.1"
+assert manifest["version"] == "0.4.2"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
 assert "ONES_INVENTORY_READ" in worker
+assert "ONES_FIELD_READ" in worker
 assert "RELAY_PING" in worker
 assert "validatedOnesScope" in worker
 assert "chrome.permissions.request" in popup
@@ -40,4 +41,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V041_STATIC_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V042_STATIC_PASS")
