@@ -197,9 +197,9 @@ Tracked by Issue #14 (closed after code integration).
 
 ## P4 — Big-circle <-> Windows Agent transport abstraction
 
-`LANE_STATE=ACTIVE_RUNTIME_NEXT`
+`LANE_STATE=LOCAL_RUNTIME_PASS_PROVIDER_DECISION_BLOCKED`
 
-P4a-P4f code spine is integrated through main `d1b07b12bfdaf0fd2a684774afc96b09bf6d7c9a`. The provider-neutral local loop now exists; the next bounded action is runtime acceptance / transport-provider decision without reopening business semantics.
+P4a-P4f code spine is integrated and Gate D2 Windows local runtime acceptance passed by PR #35 / merge `bd62db2bcf6dedc58e9e0cb3f02b693238895fcf`, exact candidate `dcc8c8ee301adf785911b8607b45a3bde224b6bb`, CI run `35696120564`. The provider-neutral local loop is runtime-accepted with synthetic/non-production artifacts. The next boundary is a separately authorized real cross-environment transport-provider/security/trust contract; do not reopen business semantics.
 
 Goal: replace the current manual case-feed file handoff with automatic transport while preserving the exact same canonical snapshot contract.
 
@@ -207,7 +207,7 @@ The JSON case feed remains the logical payload/audit snapshot, but the user must
 
 Define a transport-neutral job/result envelope so the cloud Big-circle control plane can exchange bounded work with the Windows agent without coupling business semantics to one provider.
 
-Current restriction: do not silently select or open a Remote Queue/provider. The next Lead must first prove the P4a-P4f local loop on the user's Windows runtime, then separately freeze any real cross-environment transport provider boundary.
+Current restriction: the P4a-P4f Windows local runtime proof is complete. Do not silently select or open a Remote Queue/provider. Any real cross-environment transport provider boundary now requires separate human authorization before selection or implementation.
 
 The transport contract must be able to carry both read-only inventory jobs and future accepted write-plan jobs without granting new capabilities by default.
 

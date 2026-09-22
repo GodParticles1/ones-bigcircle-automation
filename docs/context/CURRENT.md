@@ -373,3 +373,38 @@ Current mainline now has a complete provider-neutral local transport loop:
 Big-circle outbox -> exchange/BIGCIRCLE_TO_WINDOWS -> Windows inbox -> exact CASE_FEED materialization -> existing periodic reconciliation -> RESULT/CHECKPOINT outbox -> exchange/WINDOWS_TO_BIGCIRCLE -> Big-circle receipt consumer.
 
 This does **not** mean production cross-environment transport is complete. P4f is a filesystem exchange adapter and acceptance scaffold. No network provider / Remote Queue has been selected or opened, and ONES production mutation remains disabled.
+
+
+## Gate D2 Windows local runtime acceptance — 2026-09-22
+
+`GATE_D2_WINDOWS_LOCAL_RUNTIME_ACCEPTANCE=PASS`
+
+Accepted integration:
+- Issue #34 / PR #35;
+- exact accepted candidate `dcc8c8ee301adf785911b8607b45a3bde224b6bb`;
+- exact CI run `35696120564`: Linux/python PASS + Windows/windows-relay PASS;
+- merge `bd62db2bcf6dedc58e9e0cb3f02b693238895fcf`;
+- synthetic/non-production acceptance only.
+
+Accepted runtime evidence:
+- CASE_FEED SHA256 `59453ae43048ae15fced5f12ec8e0042fb70388a32fe081b94e8adcd022e88ba`;
+- exact payload bytes preserved end-to-end;
+- filesystem export duplicate NOOP and import duplicate NOOP verified;
+- Windows spool processed and rejected transitions verified;
+- exact CASE_FEED materialization verified;
+- actual Windows Agent run-once process boundary exercised;
+- real reconciliation pipeline returned `RECONCILIATION_VERIFIED`;
+- immediate exact-input rerun returned `RECONCILIATION_NOOP_VERIFIED`;
+- first reverse path produced 3 RESULT/CHECKPOINT receipts;
+- NOOP reverse path produced 2 receipts;
+- incomplete CASE_FEED failed closed and was rejected.
+
+Boundary:
+- Browser/Relay was not used by this Gate D2 acceptance;
+- Issue #20 remains independent;
+- this proves the provider-neutral local runtime spine, not production cross-environment transport;
+- no production provider / Remote Queue is selected or opened;
+- production ONES root-cause write and all other frozen mutations remain disabled.
+
+Next decision boundary:
+the local runtime proof is complete. Any real cross-environment transport provider/security/trust contract is a separate human-authorized boundary. Do not select or open a provider implicitly.
