@@ -60,3 +60,29 @@ jobs:
       - run: python runtime-acceptance/gate_d2_windows_acceptance.py
       - shell: powershell
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
+      - shell: powershell
+        run: |
+          [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.0/setup.ps1 -Raw))
+          [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.0/run-once.ps1 -Raw))
+          [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.0/show-status.ps1 -Raw))
+          ./scripts/build-windows-agent-package.ps1
+          $zip = Get-ChildItem dist/ones-bigcircle-windows-agent-v0.1.0.zip
+          if (-not $zip) { throw "PACKAGE_ZIP_MISSING" }
+          $entries = [IO.Compression.ZipFile]::OpenRead($zip.FullName).Entries.FullName
+          foreach ($required in @(
+            "ones-bigcircle-windows-agent-v0.1.0/remote-transport/client.py",
+            "ones-bigcircle-windows-agent-v0.1.0/windows-agent/run_once.py",
+            "ones-bigcircle-windows-agent-v0.1.0/periodic-alignment/run-once.ps1",
+            "ones-bigcircle-windows-agent-v0.1.0/run-once.ps1",
+            "ones-bigcircle-windows-agent-v0.1.0/config.example.ps1",
+            "ones-bigcircle-windows-agent-v0.1.0/BUILD.json"
+          )) {
+            if ($entries -notcontains $required) { throw ("PACKAGE_ENTRY_MISSING: " + $required) }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ones-bigcircle-windows-agent-v0.1.0
+          path: |
+            dist/ones-bigcircle-windows-agent-v0.1.0.zip
+            dist/ones-bigcircle-windows-agent-v0.1.0.zip.sha256
+          if-no-files-found: error
