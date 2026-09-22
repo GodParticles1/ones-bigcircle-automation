@@ -146,6 +146,23 @@ def main():
         synthetic_relay_dir.mkdir(parents=True)
         write_json(synthetic_relay_dir / "synthetic-inventory.json", inventory)
 
+        diagnostic_case_dir = td / "diagnostic-case-feed"
+        diagnostic_runtime = td / "diagnostic-runtime"
+        diagnostic_case_dir.mkdir(parents=True)
+        diagnostic_case_file = diagnostic_case_dir / f"case-feed-{expected_case_sha}.json"
+        diagnostic_case_file.write_bytes(case_feed_raw)
+        _, diagnostic = run_json([
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", str(HERE / "synthetic-periodic-alignment.ps1"),
+            "-CaseFeedDir", str(diagnostic_case_dir),
+            "-RelayDir", str(synthetic_relay_dir),
+            "-ReconciliationDir", str(ROOT / "reconciliation"),
+            "-RuntimeDir", str(diagnostic_runtime),
+        ])
+        assert diagnostic and diagnostic["status"] == "RECONCILIATION_VERIFIED", diagnostic
+
         source_env_file = td / "case-feed-envelope.json"
         source_env = emit_raw_envelope(case_feed_raw, source_env_file)
         assert source_env["payloadSha256"] == expected_case_sha
