@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.4.3"
+assert manifest["version"] == "0.4.4"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -28,6 +28,9 @@ assert "tokenPresent" in popup
 assert "if (!validId(fieldId))" in worker
 assert "/^field[0-9]{1,6}$/" not in worker
 assert "HwyyVZy8" not in worker  # no private field hardcoding; custom IDs are accepted generically
+assert "normalizeSemanticText" in worker
+assert "ones-editor-text" in worker
+assert "<!--version:" not in worker  # decoder is generic; no runtime marker instance is hardcoded
 
 # Public projection must remain read-only and configuration-driven.
 assert "update3" not in worker
@@ -44,4 +47,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V043_STATIC_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V044_STATIC_PASS")
