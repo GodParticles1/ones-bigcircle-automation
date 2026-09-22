@@ -1,0 +1,8 @@
+{
+  "name": "ones-bigcircle-windows-agent",
+  "version": "0.1.0",
+  "sourceMain": "ef655ec1e4b3570ec9220a4c3b4583408d49ee43",
+  "provider": "CLOUDFLARE_WORKER_DO_R2_V1",
+  "onesMutation": false,
+  "productionSecretIncluded": false
+}
