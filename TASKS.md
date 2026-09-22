@@ -162,9 +162,9 @@ Execution-free planner integrated by PR #17 / merge `baabd600ea65e3bffbb3f7b6093
 
 ### P3a — read-only current-field snapshot
 
-`LANE_STATE=ACTIVE_CANDIDATE`
+`LANE_STATE=INTEGRATED_RUNTIME_PENDING`
 
-Issue #18 / PR #19. Add only `ONES_FIELD_READ` through Browser Bridge + Local Relay. This lane must remain read-only and must not include field mutation. Runtime acceptance requires Relay-token rotation first.
+Issue #18 / PR #19 integrated at merge `c5f6c0f01336b2d9179fb34b0ef3306189fa9368`. Browser Bridge v0.4.2 + Local Relay v0.2.2 now provide read-only `ONES_FIELD_READ`. Runtime acceptance is tracked by Issue #20 and requires Relay-token rotation first. CI/executor workflow cleanup is deferred to non-blocking Issue #21.
 
 ## P1d — 2-hour periodic read-only alignment
 
