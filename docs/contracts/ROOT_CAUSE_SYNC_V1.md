@@ -1,6 +1,6 @@
 # Root Cause Synchronization Contract v1
 
-Status: DESIGN_QUEUED
+Status: DESIGN_ACTIVE / PLANNER_IMPLEMENTATION_CANDIDATE
 
 ## Purpose
 
@@ -52,14 +52,39 @@ A root-cause write plan may be produced only when all are true:
 - configured root-cause field identifier is present;
 - current ONES field value was read successfully.
 
+## Read-before-write planner boundary
+
+The planner consumes an explicit read-only current-field snapshot. An unread, missing, duplicate, mismatched or non-`READ_VERIFIED` current-field row is **not** equivalent to a blank value.
+
+The current-field snapshot must bind:
+- the exact matched ONES task UUID;
+- the runtime-configured root-cause field identifier;
+- a read status;
+- the current field value;
+- capture provenance/time when available.
+
+The planner also binds the exact `CASE_FEED_V1` bytes to reconciliation through `pipeline.casesRawSha256`, and binds root-cause extraction back to the feed by `localCaseId`, `sourceTicketKey` and exact `remarks` fidelity.
+
+## Comparison semantics v1
+
+For this first planner implementation, "equal" means deterministic normalized-exact equality only:
+
+- normalize CRLF/CR line endings to LF;
+- trim leading/trailing whitespace;
+- preserve internal text, punctuation and case.
+
+No fuzzy matching, token similarity, LLM semantic equivalence or domain inference is permitted in the automatic decision.
+
 ## Decision table
 
-- current ONES field blank + confirmed local root cause -> `SET_CANDIDATE`
-- current ONES field semantically equal -> `NOOP`
-- current ONES field non-empty and different -> `CONFLICT_REVIEW`
-- person-scope mismatch, ambiguous/missing ticket, unconfirmed root cause, unreadable current value, missing field config -> `BLOCK`
+- verified current ONES field blank + confirmed local root cause -> `SET_CANDIDATE`
+- verified current ONES field normalized-exact equal -> `NOOP`
+- verified current ONES field non-empty and different -> `CONFLICT_REVIEW`
+- person-scope mismatch, ambiguous/missing ticket, unconfirmed root cause, unreadable/missing/duplicate current-value evidence, provenance drift, missing field config -> `BLOCK`
 
 No blind overwrite.
+
+The current planner emits a report/plan only. It does not enqueue a Browser/Relay job and does not mutate ONES.
 
 ## Execution boundary
 
