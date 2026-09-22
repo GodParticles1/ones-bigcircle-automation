@@ -537,12 +537,45 @@ async function relayReadTaskFields(scope, payload) {
     path:{ upstream_field:"field014", downstream_field:"field114" },
     config:{ field:"field007", tree:buildAllTree() }
   };
+  const normalizeSemanticText = (raw) => {
+    if (raw == null) return "";
+    const text = String(raw);
+    const norm = (value) => String(value ?? "")
+      .replace(/\u200B|\uFEFF/g, "")
+      .replace(/\r\n?/g, "\n")
+      .trim();
+
+    const meta = text.match(/<meta[^>]+name=["']ones-editor-text["'][^>]+content=["']([^"']*)["']/i)
+      || text.match(/<meta[^>]+content=["']([^"']*)["'][^>]+name=["']ones-editor-text["']/i);
+    if (meta && meta[1]) {
+      try {
+        const bytes = Uint8Array.from(atob(meta[1]), (ch) => ch.charCodeAt(0));
+        return norm(new TextDecoder().decode(bytes));
+      } catch (_) {}
+    }
+
+    if (/<[a-z!][\s\S]*>/i.test(text)) {
+      try {
+        const doc = new DOMParser().parseFromString(text, "text/html");
+        const bodyText = norm((doc.body && (doc.body.innerText || doc.body.textContent)) || "");
+        if (bodyText) return bodyText;
+      } catch (_) {}
+    }
+
+    return norm(text
+      .replace(/<!--version:[^>]*-->/gi, "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/<[^>]+>/g, " "));
+  };
+
   const readValue = (raw) => {
-    if (raw === null || typeof raw === "string") return { ok:true, value:raw };
+    if (raw === null || typeof raw === "string") {
+      return { ok:true, value:normalizeSemanticText(raw) };
+    }
     if (raw && typeof raw === "object" && !Array.isArray(raw) &&
         Object.prototype.hasOwnProperty.call(raw, "value") &&
         (raw.value === null || typeof raw.value === "string")) {
-      return { ok:true, value:raw.value };
+      return { ok:true, value:normalizeSemanticText(raw.value) };
     }
     return { ok:false, value:null };
   };
