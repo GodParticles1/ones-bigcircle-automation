@@ -199,10 +199,14 @@ Accepted exact-feed runtime audit: 252 rows -> CONFIRMED 70 / PROVISIONAL 17 / A
 
 ### Gate F — bounded root-cause synchronization
 
-Status: `ACTIVE_DESIGN_ONLY`
-Control: Issue #6
+Status: `PLANNER_INTEGRATED / CURRENT_FIELD_READ_CANDIDATE`
+Control: Issue #6 (planner, closed) + Issue #18 (read-only current-field reader)
+
+Execution-free planner is integrated by PR #17 / merge `baabd600ea65e3bffbb3f7b60931acf0a78e8094` after exact-head CI `35682582985` PASS.
 
 Only exact `MATCHED` + compatible person scope + confirmed local root cause may enter the write-plan lane.
+
+Current next candidate: PR #19, read-only `ONES_FIELD_READ` only. Before its Windows/Chrome runtime acceptance, rotate the exposed Local Relay token while preserving `relay.db`, update Browser Bridge config, and re-verify `RELAY_PING`.
 
 Still frozen:
 - production ONES root-cause write;
@@ -247,7 +251,7 @@ Do not wait for the scheduled 19:30 Big-circle run.
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
 2. Gate D1 periodic alignment is PASS and retired; do not reopen without contradictory runtime evidence.
 3. Gate E root-cause extraction is PASS and retired.
-4. Exact next lane: Issue #6 bounded root-cause synchronization planning/read-before-write logic only. Keep transport-provider selection, Remote Queue and production ONES mutation closed.
+4. Issue #6 planner is integrated. Exact next lane: Issue #18 / PR #19 read-only current-field snapshot. Keep transport-provider selection, Remote Queue and production ONES mutation closed.
 
 ## Product outcome model
 
