@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m compileall reconciliation local-relay root-cause root-cause-sync transport-envelope
+      - run: python -m compileall reconciliation local-relay root-cause root-cause-sync transport-envelope transport-spool
       - run: python reconciliation/tests/test_reconciliation.py
       - run: python reconciliation/tests/test_pipeline.py
       - run: python local-relay/tests/test_relay.py
@@ -29,6 +29,7 @@ jobs:
       - run: python root-cause/tests/test_extract.py
       - run: python root-cause-sync/tests/test_plan.py
       - run: python transport-envelope/tests/test_envelope.py
+      - run: python transport-spool/tests/test_spool.py
       - run: python scripts/repo_guard.py .
 
   windows-relay:
@@ -39,5 +40,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: python local-relay/tests/test_relay.py
+      - run: python transport-spool/tests/test_spool.py
       - shell: powershell
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
