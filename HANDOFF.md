@@ -170,13 +170,13 @@ Windows run-once acceptance PASS. Windows Task Scheduler acceptance PASS: `ONES-
 
 ### Gate D2 — Big-circle <-> Windows Agent automatic transport
 
-Status: `LOCAL_RUNTIME_PASS / PROVIDER_DECISION_REQUIRES_HUMAN_AUTHORIZATION`
+Status: `PROVIDER_CODE_PASS / LIVE_STAGING_ENVIRONMENT_BLOCKED`
 
 Provider-neutral P4a-P4f local transport/runtime acceptance is PASS on Windows using synthetic/non-production artifacts. Accepted by Issue #34 / PR #35, exact candidate `dcc8c8ee301adf785911b8607b45a3bde224b6bb`, CI run `35696120564`, merge `bd62db2bcf6dedc58e9e0cb3f02b693238895fcf`.
 
 The acceptance proved exact CASE_FEED byte/hash preservation, duplicate NOOP, processed/rejected lifecycle, materialization, Windows Agent run-once, VERIFIED + exact-input NOOP reconciliation, RESULT/CHECKPOINT reverse receipts, and fail-closed rejection.
 
-This still does not provide production cross-environment transport. Do not select/open Remote Queue or any real provider without separate human authorization for the provider/security/trust boundary.
+User authorization for the provider/security/trust boundary has been received. The frozen provider is `CLOUDFLARE_WORKER_DO_R2_V1`. P4g signed client/contract, P4h Worker+Durable Object+R2 gateway, and P4i staging deployment bundle are integrated. This still does not prove live production cross-environment transport because no authenticated Cloudflare staging deployment/readback/synthetic HTTPS smoke has run.
 
 Target:
 `Big-circle -> transport adapter -> Windows Agent -> Local Relay/Browser Bridge/reconciliation -> result/checkpoint -> Big-circle`
@@ -253,8 +253,8 @@ Do not wait for the scheduled 19:30 Big-circle run.
 1. Gates A, B and C are PASS; do not rerun frozen acceptance evidence without decision-changing evidence.
 2. Gate D1 periodic alignment is PASS and retired; do not reopen without contradictory runtime evidence.
 3. Gate E root-cause extraction is PASS and retired.
-4. Gate D2 provider-neutral Windows local runtime acceptance is PASS. The next transport action is a separately authorized production cross-environment provider/security/trust contract; keep provider selection and Remote Queue closed until that authorization.
-5. Issue #6 planner and Issue #18 read-only field reader are integrated; Issue #20 Windows runtime acceptance remains an independent lane and must rotate the Relay token first while preserving `relay.db`. Production ONES mutation stays closed.
+4. Gate D2 local runtime plus P4g-P4i provider source/client/deployment bundle are PASS. Exact next transport action is live Cloudflare staging only: private staging R2 + Worker/DO deploy + two role secrets + deployment identity readback + synthetic smoke from `cloudflare-remote-gateway/deploy/RUNBOOK.md`. Current Lead environment has no authenticated Cloudflare execution channel, so this is `ENVIRONMENT_BLOCKED`, not runtime PASS.
+5. Production CASE_FEED remote enablement remains closed until staging runtime PASS. Issue #20 remains an independent lane and must rotate the Relay token first while preserving `relay.db`. Production ONES mutation stays closed.
 
 ## Product outcome model
 
@@ -319,3 +319,26 @@ Accepted:
 - runtime marker: `GATE_D2_WINDOWS_LOCAL_RUNTIME_ACCEPTANCE_PASS`.
 
 This is local provider-neutral runtime acceptance only. Production cross-environment transport remains unselected/unimplemented. Remote Queue/provider stays CLOSED. Issue #20 remains separate.
+
+## 2026-09-22 P4g-P4i provider handoff
+
+Provider decision:
+`CLOUDFLARE_WORKER_DO_R2_V1`
+
+Integrated:
+- P4g Issue #37 / PR #38, exact CI `35697408554`, merge `c24f46c87dcd6cd9636c8cb4a225be54a455d84c`;
+- P4h Issue #39 / PR #40, exact CI `35697832605`, merge `a69b9ee1492422daddb03e72d234cc3530a89929`;
+- P4i Issue #41 / PR #42, exact accepted head `49ef3c8591a9bc01ea5d0d0817113a7bc40b7d54`, CI `35698375032`, merge `33d1d5679ad975f8c3bd201932d5dd14a3c9056f`.
+
+P4i first CI run `35698222869` failed only because the bundle test computed the repository root incorrectly. The correction changed only the test path; provider/client/deploy semantics were unchanged.
+
+Exact next gate:
+1. use an authenticated Cloudflare operator environment;
+2. create the private staging R2 bucket;
+3. inject independent Big-circle and Windows HMAC secrets without recording their values;
+4. deploy the exact integrated Worker/DO/R2 source;
+5. capture deployment/version identity mapped to exact repo SHA;
+6. run only `cloudflare-remote-gateway/deploy/smoke.py` synthetic traffic;
+7. accept only if exact forward bytes + RESULT/CHECKPOINT reverse path pass with `productionDataUsed=false`, `browserRelayUsed=false`, `onesMutationUsed=false`.
+
+No Cloudflare plugin/authenticated execution channel is available to this Lead environment. Do not claim staging deployed until external runtime evidence exists.
