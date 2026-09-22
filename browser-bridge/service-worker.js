@@ -2,7 +2,7 @@ const RELAY_CONFIG_KEY = "onesRelayConfig";
 const RELAY_RUNTIME_KEY = "onesRelayRuntime";
 const RELAY_ALARM = "onesRelayPollV02";
 const RELAY_DEFAULT_URL = "http://127.0.0.1:18731";
-const RELAY_CAPABILITIES = ["RELAY_PING", "ONES_INVENTORY_READ"];
+const RELAY_CAPABILITIES = ["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"];
 
 function validateRelayUrl(value) {
   const url = new URL(String(value || RELAY_DEFAULT_URL));
@@ -473,6 +473,191 @@ async function relayReadExternalTicketInventory(scope) {
   return { ok:true, status:"INVENTORY_VERIFIED", ...baseResult };
 }
 
+
+async function relayReadTaskFields(scope, payload) {
+  const TEAM_UUID = String(scope?.teamUuid || "");
+  const PROJECT_UUID = String(scope?.projectUuid || "");
+  const ISSUE_TYPE_UUID = String(scope?.issueTypeUuid || "");
+  const ORIGIN = location.origin;
+  const fieldId = String(payload?.fieldId || "").trim();
+  const taskUuids = Array.isArray(payload?.onesTaskUuids) ? payload.onesTaskUuids.map((x) => String(x || "").trim()) : [];
+
+  const teamMatch = location.href.match(/\/team\/([^/?#]+)/i);
+  const teamUuid = teamMatch ? teamMatch[1] : null;
+  const validId = (value) => /^[A-Za-z0-9_-]{1,128}$/.test(value);
+  if (teamUuid !== TEAM_UUID) {
+    return { ok:false, status:"FIELD_READ_TEAM_SCOPE_GUARD_FAILED", readOnly:true, complete:false };
+  }
+  if (!/^field[0-9]{1,6}$/.test(fieldId)) {
+    return { ok:false, status:"FIELD_READ_INPUT_REJECTED", readOnly:true, complete:false, error:"fieldId invalid" };
+  }
+  if (!taskUuids.length || taskUuids.length > 100 || taskUuids.some((x) => !validId(x)) || new Set(taskUuids).size !== taskUuids.length) {
+    return { ok:false, status:"FIELD_READ_INPUT_REJECTED", readOnly:true, complete:false, error:"onesTaskUuids invalid" };
+  }
+
+  const jsonFetch = async (url, init = {}) => {
+    const response = await fetch(url, { credentials:"same-origin", ...init });
+    const text = await response.text();
+    let json = null;
+    if (text) { try { json = JSON.parse(text); } catch (_) {} }
+    return { response, text, json };
+  };
+  const extractRawItems = (data) => {
+    const rawItems = [];
+    const seenNodes = new Set();
+    const walk = (node) => {
+      if (node == null) return;
+      if (Array.isArray(node)) { for (const value of node) walk(value); return; }
+      if (typeof node !== "object" || seenNodes.has(node)) return;
+      seenNodes.add(node);
+      if (node.type === "item" && node.item && typeof node.item === "object") rawItems.push(node.item);
+      for (const value of Object.values(node)) {
+        if (value && (Array.isArray(value) || typeof value === "object")) walk(value);
+      }
+    };
+    walk(data);
+    return rawItems;
+  };
+  const buildAllTree = () => {
+    const root = { uuids:["__ALL__"] };
+    let cursor = root;
+    for (let i = 1; i < 10; i += 1) {
+      const child = { uuids:["__ALL__"] };
+      cursor.children = [child];
+      cursor = child;
+    }
+    return root;
+  };
+  const hierarchy = {
+    lock_query:
+      "uid(field006) IN ( uid('" + PROJECT_UUID + "') ) AND " +
+      "uid(field007) IN ( uid('" + ISSUE_TYPE_UUID + "') )",
+    perspective:false,
+    flat:false,
+    path:{ upstream_field:"field014", downstream_field:"field114" },
+    config:{ field:"field007", tree:buildAllTree() }
+  };
+  const readValue = (raw) => {
+    if (raw === null || typeof raw === "string") return { ok:true, value:raw };
+    if (raw && typeof raw === "object" && !Array.isArray(raw) &&
+        Object.prototype.hasOwnProperty.call(raw, "value") &&
+        (raw.value === null || typeof raw.value === "string")) {
+      return { ok:true, value:raw.value };
+    }
+    return { ok:false, value:null };
+  };
+
+  const reads = [];
+  for (const onesTaskUuid of taskUuids) {
+    const query =
+      "select uid(uuid,field006.uuid,field007.uuid," + fieldId + ") " +
+      "from issue where uid(uuid) IN ( uid('" + onesTaskUuid + "') ) limit 0, 2";
+    const loaded = await jsonFetch(
+      ORIGIN + "/project/api/ones-project/team/" + encodeURIComponent(teamUuid) + "/workitems/onesql",
+      {
+        method:"POST",
+        headers:{ "content-type":"application/json; charset=UTF-8" },
+        body:JSON.stringify({ query, hierarchy })
+      }
+    );
+    const capturedAt = new Date().toISOString();
+    if (!loaded.response.ok || !loaded.json || !Array.isArray(loaded.json.data)) {
+      reads.push({ onesTaskUuid, fieldId, status:"READ_FAILED", value:null, capturedAt, reason:"QUERY_FAILED" });
+      continue;
+    }
+    const items = extractRawItems(loaded.json.data).filter((item) => item?.uuid === onesTaskUuid);
+    if (items.length !== 1) {
+      reads.push({ onesTaskUuid, fieldId, status:"READ_FAILED", value:null, capturedAt, reason:items.length ? "TASK_NOT_UNIQUE" : "TASK_NOT_FOUND" });
+      continue;
+    }
+    const item = items[0];
+    if ((item.field006?.uuid && item.field006.uuid !== PROJECT_UUID) ||
+        (item.field007?.uuid && item.field007.uuid !== ISSUE_TYPE_UUID)) {
+      reads.push({ onesTaskUuid, fieldId, status:"READ_FAILED", value:null, capturedAt, reason:"TASK_SCOPE_MISMATCH" });
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(item, fieldId)) {
+      reads.push({ onesTaskUuid, fieldId, status:"READ_FAILED", value:null, capturedAt, reason:"FIELD_NOT_RETURNED" });
+      continue;
+    }
+    const normalized = readValue(item[fieldId]);
+    if (!normalized.ok) {
+      reads.push({ onesTaskUuid, fieldId, status:"READ_FAILED", value:null, capturedAt, reason:"UNSUPPORTED_FIELD_VALUE_TYPE" });
+      continue;
+    }
+    reads.push({ onesTaskUuid, fieldId, status:"READ_VERIFIED", value:normalized.value, capturedAt });
+  }
+
+  const complete = reads.length === taskUuids.length && reads.every((row) => row.status === "READ_VERIFIED");
+  return {
+    ok:complete,
+    status:complete ? "FIELD_READ_VERIFIED" : "FIELD_READ_FAILED",
+    schema:"ones.root-cause-field-read/v1alpha1",
+    capturedAt:new Date().toISOString(),
+    readOnly:true,
+    complete,
+    fieldId,
+    requestedTaskCount:taskUuids.length,
+    reads
+  };
+}
+
+async function executeFieldReadJob(config, job) {
+  const tabState = await ensureInventoryTab(config);
+  if (!tabState.ok) {
+    return {
+      status:"FIELD_READ_FAILED",
+      result:{
+        ok:false,
+        status:"FIELD_READ_FAILED",
+        schema:"ones.root-cause-field-read/v1alpha1",
+        readOnly:true,
+        complete:false,
+        fieldId:String(job?.payload?.fieldId || ""),
+        reads:[],
+        reason:tabState.status,
+        error:tabState.error || null
+      }
+    };
+  }
+  try {
+    const [execution] = await chrome.scripting.executeScript({
+      target:{ tabId:tabState.tabId },
+      world:"MAIN",
+      func:relayReadTaskFields,
+      args:[{
+        teamUuid:config.teamUuid,
+        projectUuid:config.projectUuid,
+        issueTypeUuid:config.issueTypeUuid
+      }, job.payload || {}]
+    });
+    const result = execution?.result || {
+      ok:false,
+      status:"FIELD_READ_FAILED",
+      schema:"ones.root-cause-field-read/v1alpha1",
+      readOnly:true,
+      complete:false,
+      reads:[],
+      error:"MAIN world did not return field-read result"
+    };
+    return { status:result.status || "FIELD_READ_FAILED", result:{ ...result, relayJobId:job.jobId, relayExecutedAt:new Date().toISOString() } };
+  } catch (error) {
+    return {
+      status:"FIELD_READ_FAILED",
+      result:{
+        ok:false,
+        status:"FIELD_READ_FAILED",
+        schema:"ones.root-cause-field-read/v1alpha1",
+        readOnly:true,
+        complete:false,
+        reads:[],
+        error:String(error),
+        relayJobId:job.jobId
+      }
+    };
+  }
+}
+
 async function ensureInventoryTab(config) {
   if (!config.inventoryPageUrl) return { ok:false, status:"ONES_TAB_UNAVAILABLE", error:"尚未绑定共享外网单页面" };
   const scope = validatedOnesScope(config);
@@ -528,6 +713,7 @@ async function executeClaimedJob(config, job) {
     };
   }
   if (job.jobType === "ONES_INVENTORY_READ") return executeInventoryJob(config, job);
+  if (job.jobType === "ONES_FIELD_READ") return executeFieldReadJob(config, job);
   return { status:"INPUT_REJECTED", result:{ receivedJobType:job.jobType, allowedJobTypes:RELAY_CAPABILITIES } };
 }
 

@@ -50,8 +50,8 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.2.1"
-            assert health["allowedJobTypes"] == ["ONES_INVENTORY_READ", "RELAY_PING"]
+            assert health["version"] == "0.2.2"
+            assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
             status, body = request("GET", "/v1/stats")
@@ -66,7 +66,7 @@ def main():
             assert status == 200 and body2["deduplicated"] is True and body2["job"]["jobId"] == ping_id
 
             status, claim = request("POST", "/v1/extension/claim", token, {
-                "executorId":"test-executor", "capabilities":["RELAY_PING", "ONES_INVENTORY_READ"]
+                "executorId":"test-executor", "capabilities":["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"]
             })
             assert status == 200 and claim["job"]["jobId"] == ping_id
 
@@ -94,9 +94,31 @@ def main():
             })
             assert status == 200 and done["job"]["state"] == "INVENTORY_VERIFIED"
 
+            field_read = {"jobType":"ONES_FIELD_READ", "idempotencyKey":"test-field-read-1", "payload":{"fieldId":"field123", "onesTaskUuids":["task-001"]}}
+            status, body = request("POST", "/v1/jobs", token, field_read)
+            assert status == 201
+            field_read_id = body["job"]["jobId"]
+
+            status, claim = request("POST", "/v1/extension/claim", token, {
+                "executorId":"test-executor", "capabilities":["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"]
+            })
+            assert status == 200 and claim["job"]["jobId"] == field_read_id
+
+            field_result = {
+                "status":"FIELD_READ_VERIFIED",
+                "schema":"ones.root-cause-field-read/v1alpha1",
+                "complete":True,
+                "fieldId":"field123",
+                "reads":[{"onesTaskUuid":"task-001","fieldId":"field123","status":"READ_VERIFIED","value":None}],
+            }
+            status, done = request("POST", "/v1/extension/result", token, {
+                "jobId":field_read_id, "executorId":"test-executor", "status":"FIELD_READ_VERIFIED", "result":field_result
+            })
+            assert status == 200 and done["job"]["state"] == "FIELD_READ_VERIFIED"
+
             status, hb = request("POST", "/v1/extension/heartbeat", token, {
                 "executorId":"test-executor", "extensionVersion":"0.3.36",
-                "capabilities":["RELAY_PING", "ONES_INVENTORY_READ"], "onesTabCount":1
+                "capabilities":["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"], "onesTabCount":1
             })
             assert status == 200
 
@@ -104,10 +126,11 @@ def main():
             assert status == 200
             assert stats["jobsByState"]["RELAY_PING_OK"] == 1
             assert stats["jobsByState"]["INVENTORY_VERIFIED"] == 1
+            assert stats["jobsByState"]["FIELD_READ_VERIFIED"] == 1
 
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V021_TEST_PASS")
+            print("RELAY_V022_TEST_PASS")
         finally:
             proc.terminate()
             try:
