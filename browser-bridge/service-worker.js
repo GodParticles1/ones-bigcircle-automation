@@ -488,7 +488,7 @@ async function relayReadTaskFields(scope, payload) {
   if (teamUuid !== TEAM_UUID) {
     return { ok:false, status:"FIELD_READ_TEAM_SCOPE_GUARD_FAILED", readOnly:true, complete:false };
   }
-  if (!/^field[0-9]{1,6}$/.test(fieldId)) {
+  if (!validId(fieldId)) {
     return { ok:false, status:"FIELD_READ_INPUT_REJECTED", readOnly:true, complete:false, error:"fieldId invalid" };
   }
   if (!taskUuids.length || taskUuids.length > 100 || taskUuids.some((x) => !validId(x)) || new Set(taskUuids).size !== taskUuids.length) {
