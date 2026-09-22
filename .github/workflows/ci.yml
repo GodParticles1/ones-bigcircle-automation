@@ -69,14 +69,15 @@ jobs:
           $zip = Get-ChildItem dist/ones-bigcircle-windows-agent-v0.1.0.zip
           if (-not $zip) { throw "PACKAGE_ZIP_MISSING" }
           $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
-          try { $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace("\\", "/") }) } finally { $archive.Dispose() }
+          try { $entries = @($archive.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) } finally { $archive.Dispose() }
+          $entries | ForEach-Object { Write-Host ("ZIP_ENTRY=" + $_) }
           foreach ($required in @(
-            "remote-transport/client.py",
-            "windows-agent/run_once.py",
-            "periodic-alignment/run-once.ps1",
-            "run-once.ps1",
-            "config.example.ps1",
-            "BUILD.json"
+            "ones-bigcircle-windows-agent-v0.1.0/remote-transport/client.py",
+            "ones-bigcircle-windows-agent-v0.1.0/windows-agent/run_once.py",
+            "ones-bigcircle-windows-agent-v0.1.0/periodic-alignment/run-once.ps1",
+            "ones-bigcircle-windows-agent-v0.1.0/run-once.ps1",
+            "ones-bigcircle-windows-agent-v0.1.0/config.example.ps1",
+            "ones-bigcircle-windows-agent-v0.1.0/BUILD.json"
           )) {
             if ($entries -notcontains $required) { throw ("PACKAGE_ENTRY_MISSING: " + $required) }
           }
