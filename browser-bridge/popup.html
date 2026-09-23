@@ -9,16 +9,18 @@
 <body>
   <main>
     <h1>ONES Browser Bridge</h1>
-    <p class="hint">Read-only inventory executor. Environment scope is local configuration and is never hardcoded in source.</p>
+    <p class="hint">Read-only inventory/field executor with an explicit production root-cause write gate. Environment scope is local configuration and is never hardcoded in source.</p>
 
     <label>ONES origin<input id="onesOrigin" placeholder="https://ones.example.internal:8443" /></label>
     <label>Team UUID<input id="teamUuid" /></label>
     <label>Project UUID<input id="projectUuid" /></label>
     <label>Issue type UUID<input id="issueTypeUuid" /></label>
     <label>Department UUID<input id="assigneeDepartmentUuid" /></label>
+    <label>Root-cause field UUID<input id="rootCauseFieldId" /></label>
     <label>Relay URL<input id="relayUrl" value="http://127.0.0.1:18731" /></label>
     <label>Relay token<input id="relayToken" type="password" autocomplete="off" /></label>
     <label class="toggle"><input id="relayEnabled" type="checkbox" /> Enable background polling</label>
+    <label class="toggle"><input id="writeEnabled" type="checkbox" /> Enable production root-cause write gate</label>
 
     <div class="row">
       <button id="saveConfig">Save + grant origin</button>

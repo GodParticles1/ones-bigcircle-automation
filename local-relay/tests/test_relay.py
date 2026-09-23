@@ -50,8 +50,8 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.2.2"
-            assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "RELAY_PING"]
+            assert health["version"] == "0.3.0"
+            assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
             status, body = request("GET", "/v1/stats")
@@ -116,9 +116,36 @@ def main():
             })
             assert status == 200 and done["job"]["state"] == "FIELD_READ_VERIFIED"
 
+            writer_job = {
+                "jobType":"ONES_ROOT_CAUSE_WRITE",
+                "idempotencyKey":"test-root-cause-write-1",
+                "payload":{
+                    "taskTargetPolicy":"UNIQUE_ONES_TASK_ONLY",
+                    "decision":"SET_CANDIDATE",
+                    "writeMode":"fill_empty_only",
+                    "planSha256":"a"*64,
+                    "displayId":"TEST-1",
+                    "taskUuid":"task-001",
+                    "fieldId":"field-root",
+                    "desiredValue":"synthetic confirmed root cause"
+                }
+            }
+            status, body = request("POST", "/v1/jobs", token, writer_job)
+            assert status == 201
+            writer_id = body["job"]["jobId"]
+            status, claim = request("POST", "/v1/extension/claim", token, {
+                "executorId":"test-executor", "capabilities":["ONES_ROOT_CAUSE_WRITE"]
+            })
+            assert status == 200 and claim["job"]["jobId"] == writer_id
+            status, done = request("POST", "/v1/extension/result", token, {
+                "jobId":writer_id, "executorId":"test-executor", "status":"WRITE_VERIFIED",
+                "result":{"ok":True,"status":"WRITE_VERIFIED","writeAttempted":True}
+            })
+            assert status == 200 and done["job"]["state"] == "WRITE_VERIFIED"
+
             status, hb = request("POST", "/v1/extension/heartbeat", token, {
                 "executorId":"test-executor", "extensionVersion":"0.3.36",
-                "capabilities":["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"], "onesTabCount":1
+                "capabilities":["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ", "ONES_ROOT_CAUSE_WRITE"], "onesTabCount":1
             })
             assert status == 200
 
@@ -127,10 +154,11 @@ def main():
             assert stats["jobsByState"]["RELAY_PING_OK"] == 1
             assert stats["jobsByState"]["INVENTORY_VERIFIED"] == 1
             assert stats["jobsByState"]["FIELD_READ_VERIFIED"] == 1
+            assert stats["jobsByState"]["WRITE_VERIFIED"] == 1
 
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V022_TEST_PASS")
+            print("RELAY_V030_WRITE_GATE_TEST_PASS")
         finally:
             proc.terminate()
             try:
