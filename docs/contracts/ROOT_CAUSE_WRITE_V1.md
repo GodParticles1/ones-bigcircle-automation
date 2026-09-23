@@ -15,9 +15,10 @@ and only rows with:
 - `decision = SET_CANDIDATE`;
 - one exact ONES task UUID;
 - one runtime-configured root-cause field UUID;
-- a non-empty confirmed desired root-cause value;
+- a non-empty confirmed desired root-cause value (v1 bounded to one 1-300 character single paragraph);
 - `writeMode = fill_empty_only`;
-- an exact accepted planner SHA256.
+- an exact accepted planner SHA256;
+- the runtime field UUID must equal the locally configured root-cause field UUID.
 
 Case-level `cases[]` is diagnostic only and is not a write-authority surface.
 
