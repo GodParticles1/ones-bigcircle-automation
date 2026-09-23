@@ -4,7 +4,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
 $bridgeName = "ones-browser-bridge-v0.5.1"
-$relayName = "ones-local-relay-v0.3.1"
+$relayName = "ones-local-relay-v0.3.2"
 $bridgeStage = Join-Path $OutputDir $bridgeName
 $relayStage = Join-Path $OutputDir $relayName
 foreach ($p in @($bridgeStage,$relayStage)) {
@@ -35,7 +35,7 @@ if ($writer -notmatch 'DESIRED_VALUE_HASH_MISMATCH') { throw "DESIRED_HASH_MISMA
 if ($writer -match 'tasks/update3') { throw "DIRECT_RICHTEXT_UPDATE3_FORBIDDEN" }
 
 $relay = Get-Content -LiteralPath (Join-Path $relayStage "relay.py") -Raw
-if ($relay -notmatch 'VERSION = "0\.3\.1"') { throw "RELAY_VERSION_MISMATCH" }
+if ($relay -notmatch 'VERSION = "0\.3\.2"') { throw "RELAY_VERSION_MISMATCH" }
 if ($relay -notmatch '"ONES_ROOT_CAUSE_WRITE"') { throw "RELAY_WRITE_JOB_MISSING" }
 
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "upgrade-from-v0.3.0.ps1") -Raw))
