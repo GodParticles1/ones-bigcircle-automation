@@ -27,10 +27,20 @@ function rcSemanticFromRaw(raw) {
 }
 
 async function rcPagePreflightWrite(input) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const semanticFromRaw = (raw) => {
+    if (raw == null) return "";
+    const text = String(raw);
+    const meta = text.match(/<meta[^>]+name=["\']ones-editor-text["\'][^>]+content=["\']([^"\']*)["\']/i)
+      || text.match(/<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']ones-editor-text["\']/i);
+    if (meta && meta[1]) { try { const bytes=Uint8Array.from(atob(meta[1]),(ch)=>ch.charCodeAt(0)); return norm(new TextDecoder().decode(bytes)); } catch (_) {} }
+    try { const doc=new DOMParser().parseFromString(text,"text/html"); const bodyText=norm((doc.body&&(doc.body.innerText||doc.body.textContent))||""); if(bodyText) return bodyText; } catch (_) {}
+    return norm(text.replace(/<!--version:[^>]*-->/gi,"").replace(/<!--[\s\S]*?-->/g,"").replace(/<[^>]+>/g," "));
+  };
   const FIELD_UUID = String(input?.fieldId || "");
   const EXPECTED_DISPLAY_ID = String(input?.displayId || "");
   const EXPECTED_TASK_UUID = String(input?.taskUuid || "");
-  const desired = rcNorm(input?.desiredValue);
+  const desired = norm(input?.desiredValue);
   const ORIGIN = location.origin;
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
   const currentDisplayId = currentMatch ? currentMatch[1] : null;
@@ -83,7 +93,7 @@ async function rcPagePreflightWrite(input) {
     });
     const item = loaded.json?.data?.[0]?.item;
     if (!loaded.response.ok || !item || item.uuid !== EXPECTED_TASK_UUID) throw new Error("onesql HTTP " + loaded.response.status);
-    return { raw:item[FIELD_UUID] ?? null, semantic:rcSemanticFromRaw(item[FIELD_UUID]) };
+    return { raw:item[FIELD_UUID] ?? null, semantic:semanticFromRaw(item[FIELD_UUID]) };
   };
   const loadEvents = async () => {
     const loaded = await jsonFetch(messagesUrl, { method:"GET" });
@@ -170,6 +180,7 @@ async function rcPagePreflightWrite(input) {
 }
 
 function rcPageInspectSelection(expectedDisplayId, fieldId) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
   const currentDisplayId = currentMatch ? currentMatch[1] : null;
   if (currentDisplayId !== expectedDisplayId) return { ok:false, status:"TARGET_GUARD_FAILED", currentDisplayId, expectedDisplayId };
@@ -182,13 +193,14 @@ function rcPageInspectSelection(expectedDisplayId, fieldId) {
   return {
     ok:true,
     status:"SELECTION_INSPECTED",
-    selectedText:rcNorm(selection?.toString() || ""),
+    selectedText:norm(selection?.toString() || ""),
     anchorInside:!!anchorEl && root.contains(anchorEl),
     focusInside:!!focusEl && root.contains(focusEl)
   };
 }
 
 function rcPageInspectDraft(expectedDisplayId, fieldId, desiredText, expectedTextBlockId) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
   const currentDisplayId = currentMatch ? currentMatch[1] : null;
   if (currentDisplayId !== expectedDisplayId) return { ok:false, status:"TARGET_GUARD_FAILED", currentDisplayId, expectedDisplayId };
@@ -204,16 +216,26 @@ function rcPageInspectDraft(expectedDisplayId, fieldId, desiredText, expectedTex
     return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
   });
   if (textNodes.length !== 1) return { ok:false, status:"DRAFT_TEXT_SURFACE_NOT_UNIQUE", textNodeCount:textNodes.length };
-  const draft = rcNorm(textNodes[0].innerText || textNodes[0].textContent || "");
-  const desired = rcNorm(desiredText);
+  const draft = norm(textNodes[0].innerText || textNodes[0].textContent || "");
+  const desired = norm(desiredText);
   return { ok:draft === desired, status:draft === desired ? "DRAFT_DOM_VERIFIED" : "DRAFT_DOM_MISMATCH", draft, desired, textBlockId:block.id || null };
 }
 
 async function rcPageVerifyWrite(input) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const semanticFromRaw = (raw) => {
+    if (raw == null) return "";
+    const text = String(raw);
+    const meta = text.match(/<meta[^>]+name=["\']ones-editor-text["\'][^>]+content=["\']([^"\']*)["\']/i)
+      || text.match(/<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']ones-editor-text["\']/i);
+    if (meta && meta[1]) { try { const bytes=Uint8Array.from(atob(meta[1]),(ch)=>ch.charCodeAt(0)); return norm(new TextDecoder().decode(bytes)); } catch (_) {} }
+    try { const doc=new DOMParser().parseFromString(text,"text/html"); const bodyText=norm((doc.body&&(doc.body.innerText||doc.body.textContent))||""); if(bodyText) return bodyText; } catch (_) {}
+    return norm(text.replace(/<!--version:[^>]*-->/gi,"").replace(/<!--[\s\S]*?-->/g,"").replace(/<[^>]+>/g," "));
+  };
   const FIELD_UUID = String(input?.fieldId || "");
   const EXPECTED_DISPLAY_ID = String(input?.displayId || "");
   const EXPECTED_TASK_UUID = String(input?.taskUuid || "");
-  const desired = rcNorm(input?.desiredValue);
+  const desired = norm(input?.desiredValue);
   const baseline = new Set(Array.isArray(input?.baselineEventIds) ? input.baselineEventIds : []);
   const ORIGIN = location.origin;
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
@@ -237,12 +259,12 @@ async function rcPageVerifyWrite(input) {
     jsonFetch(ORIGIN + "/project/api/project/team/" + encodeURIComponent(teamUuid) + "/task/" + encodeURIComponent(EXPECTED_TASK_UUID) + "/messages", { method:"GET" })
   ]);
   const item = valueResp.json?.data?.[0]?.item;
-  const currentSemantic = item?.uuid === EXPECTED_TASK_UUID ? rcSemanticFromRaw(item[FIELD_UUID]) : null;
+  const currentSemantic = item?.uuid === EXPECTED_TASK_UUID ? semanticFromRaw(item[FIELD_UUID]) : null;
   const messages = Array.isArray(msgResp.json?.messages) ? msgResp.json.messages : [];
   const event = messages.find((m) => {
     if (!m?.uuid || baseline.has(m.uuid)) return false;
     if (m?.type !== "system" || m?.ext?.field_uuid !== FIELD_UUID) return false;
-    return rcNorm(m?.ext?.old_value) === "" && rcNorm(m?.ext?.new_value) === desired;
+    return norm(m?.ext?.old_value) === "" && norm(m?.ext?.new_value) === desired;
   });
   const verified = valueResp.response.ok && msgResp.response.ok && currentSemantic === desired && !!event;
   return {
@@ -255,7 +277,7 @@ async function rcPageVerifyWrite(input) {
     desired,
     fieldEvent:event ? {
       uuid:event.uuid, action:event.action || null,
-      oldValue:rcNorm(event?.ext?.old_value), newValue:rcNorm(event?.ext?.new_value),
+      oldValue:norm(event?.ext?.old_value), newValue:norm(event?.ext?.new_value),
       fieldName:event?.ext?.field_name || null, fieldTypeUuid:event?.ext?.field_type_uuid || null,
       versionUuid:event.version_uuid || null
     } : null
