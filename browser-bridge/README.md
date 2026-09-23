@@ -12,6 +12,9 @@ The write capability is not advertised to the Relay unless the explicit local pr
 
 The bounded root-cause writer:
 - consumes only `UNIQUE_ONES_TASK_ONLY` / `SET_CANDIDATE` / `fill_empty_only` jobs;
+- derives the initial job from an exact-hash planner artifact through the bundled enqueue helper;
+- requires the job field UUID to equal the locally configured root-cause field UUID;
+- v1 bounds desired text to one 1-300 character paragraph;
 - takes display ID, task UUID, field UUID, desired text, and plan SHA only at runtime;
 - performs a double authoritative pre-write read;
 - aborts on drift or non-empty different content;
