@@ -313,7 +313,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   }
 
   const located = await rcFindDetailTab(config, String(p.displayId));
-  if (!located.ok) return { status:located.status, result:{ ok:false, ...located, readOnly:false } };
+  if (!located.ok) return { status:"WRITE_BLOCKED", result:{ ok:false, ...located, status:"WRITE_BLOCKED", blockedBy:located.status, readOnly:false } };
   const tab = located.tab;
   const preArgs = [{ displayId:String(p.displayId), taskUuid:String(p.taskUuid), fieldId:String(p.fieldId), desiredValue:desired }];
 
@@ -322,7 +322,10 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   if (preflight.ok && preflight.status === "NOOP_VERIFIED") {
     return { status:"NOOP_VERIFIED", result:{ ...preflight, writeAttempted:false, planSha256:planSha, decision:p.decision, writeMode:p.writeMode } };
   }
-  if (!preflight.ok) return { status:preflight.status || "PREWRITE_FAILED", result:{ ...preflight, writeAttempted:false, planSha256:planSha } };
+  if (!preflight.ok) {
+    if (preflight.status === "CONFLICT_REVIEW") return { status:"CONFLICT_REVIEW", result:{ ...preflight, writeAttempted:false, planSha256:planSha } };
+    return { status:"WRITE_BLOCKED", result:{ ...preflight, status:"WRITE_BLOCKED", blockedBy:preflight.status || "PREWRITE_FAILED", writeAttempted:false, planSha256:planSha } };
+  }
 
   const debuggee = { tabId:tab.id };
   let attached = false;
@@ -342,7 +345,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     const [selExec] = await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageInspectSelection,args:[String(p.displayId),String(p.fieldId)]});
     const selection = selExec?.result || {ok:false,status:"NO_SELECTION_RESULT"};
     if (!selection.ok || !selection.anchorInside || !selection.focusInside || selection.selectedText !== "") {
-      return { status:"DIRTY_EDITOR_ABORT", result:{ ok:false,status:"DIRTY_EDITOR_ABORT",selection,writeAttempted:false,saveDispatched:false,planSha256:planSha } };
+      return { status:"WRITE_BLOCKED", result:{ ok:false,status:"WRITE_BLOCKED",blockedBy:"DIRTY_EDITOR_ABORT",selection,writeAttempted:false,saveDispatched:false,planSha256:planSha } };
     }
 
     await chrome.debugger.sendCommand(debuggee,"Input.insertText",{text:desired});
@@ -350,7 +353,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     const [draftExec] = await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageInspectDraft,args:[String(p.displayId),String(p.fieldId),desired,preflight.textBlockId]});
     draft = draftExec?.result || {ok:false,status:"NO_DRAFT_RESULT"};
     if (!draft.ok || draft.status !== "DRAFT_DOM_VERIFIED") {
-      return { status:draft.status || "DRAFT_DOM_MISMATCH", result:{ok:false,...preflight,draft,writeAttempted:false,saveDispatched:false,planSha256:planSha} };
+      return { status:"WRITE_BLOCKED", result:{ok:false,...preflight,status:"WRITE_BLOCKED",blockedBy:draft.status || "DRAFT_DOM_MISMATCH",draft,writeAttempted:false,saveDispatched:false,planSha256:planSha} };
     }
 
     const sx=preflight.savePoint.x, sy=preflight.savePoint.y;
@@ -359,7 +362,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseReleased",x:sx,y:sy,button:"left",clickCount:1});
     saveDispatched = true;
   } catch (error) {
-    return { status:saveDispatched ? "WRITE_UNVERIFIED" : "NATIVE_INPUT_FAILED", result:{ok:false,status:saveDispatched?"WRITE_UNVERIFIED":"NATIVE_INPUT_FAILED",error:String(error),saveDispatched,writeAttempted:saveDispatched,planSha256:planSha,draft} };
+    return { status:saveDispatched ? "WRITE_UNVERIFIED" : "WRITE_BLOCKED", result:{ok:false,status:saveDispatched?"WRITE_UNVERIFIED":"WRITE_BLOCKED",blockedBy:saveDispatched?null:"NATIVE_INPUT_FAILED",error:String(error),saveDispatched,writeAttempted:saveDispatched,planSha256:planSha,draft} };
   } finally {
     if (attached) { try { await chrome.debugger.detach(debuggee); } catch (_) {} }
   }
