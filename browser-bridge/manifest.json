@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "ONES Browser Bridge - Read-only",
-  "version": "0.4.4",
-  "description": "Configuration-driven read-only ONES inventory and bounded field reader for a loopback Local Relay.",
+  "name": "ONES Browser Bridge",
+  "version": "0.5.0",
+  "description": "Configuration-driven ONES inventory, field read, and gated root-cause write executor for a loopback Local Relay.",
   "permissions": [
     "activeTab",
     "tabs",
     "storage",
     "scripting",
-    "alarms"
+    "alarms",
+    "debugger"
   ],
   "host_permissions": [
     "http://127.0.0.1/*"
