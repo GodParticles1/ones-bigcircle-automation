@@ -38,7 +38,7 @@ $relay = Get-Content -LiteralPath (Join-Path $relayStage "relay.py") -Raw
 if ($relay -notmatch 'VERSION = "0\.3\.1"') { throw "RELAY_VERSION_MISMATCH" }
 if ($relay -notmatch '"ONES_ROOT_CAUSE_WRITE"') { throw "RELAY_WRITE_JOB_MISSING" }
 
-[void][scriptblock]::Create((Get-Content (Join-Path $relayStage "upgrade-from-v0.2.2.ps1") -Raw))
+[void][scriptblock]::Create((Get-Content (Join-Path $relayStage "upgrade-from-v0.3.0.ps1") -Raw))
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "enqueue-root-cause-write.ps1") -Raw))
 
 $bridgeZip = Join-Path $OutputDir ($bridgeName + ".zip")
