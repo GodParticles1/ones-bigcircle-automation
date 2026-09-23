@@ -75,9 +75,9 @@ jobs:
         with:
           name: ones-root-cause-write-runtime-v0.5.1-v0.3.1
           path: |
-            dist-root-cause-write/ones-browser-bridge-v0.5.0.zip
+            dist-root-cause-write/ones-browser-bridge-v0.5.1.zip
             dist-root-cause-write/ones-browser-bridge-v0.5.1.zip.sha256
-            dist-root-cause-write/ones-local-relay-v0.3.0.zip
+            dist-root-cause-write/ones-local-relay-v0.3.1.zip
             dist-root-cause-write/ones-local-relay-v0.3.1.zip.sha256
           if-no-files-found: error
       - shell: powershell
