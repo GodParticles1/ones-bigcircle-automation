@@ -55,7 +55,7 @@ async function rcPagePreflightWrite(input) {
   const validId = (v) => /^[A-Za-z0-9_-]{1,128}$/.test(String(v || ""));
   if (!teamUuid || currentDisplayId !== EXPECTED_DISPLAY_ID) return fail("TARGET_GUARD_FAILED", "current detail page does not match expected display ID");
   if (!validId(FIELD_UUID) || !validId(EXPECTED_TASK_UUID)) return fail("INPUT_REJECTED", "invalid target identifier");
-  if (!desired || desired.length > 2000 || /\u0000/.test(desired)) return fail("INPUT_REJECTED", "desired root cause must be 1-2000 characters");
+  if (!desired || desired.length > 300 || desired.includes("\n") || /\u0000/.test(desired)) return fail("INPUT_REJECTED", "bounded writer v1 requires 1-300 characters of single-paragraph root cause text");
 
   const jsonFetch = async (url, init = {}) => {
     const response = await fetch(url, { credentials:"same-origin", ...init });
@@ -308,8 +308,11 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   if (!/^[0-9a-f]{64}$/.test(planSha) || !validId(p.taskUuid) || !validId(p.fieldId) || !/^[A-Za-z0-9_.-]{1,128}$/.test(String(p.displayId || ""))) {
     return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"invalid write provenance/target" } };
   }
-  if (!desired || desired.length > 2000) {
-    return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"desired root cause must be 1-2000 characters" } };
+  if (!desired || desired.length > 300 || desired.includes("\n")) {
+    return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"bounded writer v1 requires 1-300 characters of single-paragraph root cause text" } };
+  }
+  if (!config?.rootCauseFieldId || String(p.fieldId) !== String(config.rootCauseFieldId)) {
+    return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"fieldId does not match locally configured root-cause field" } };
   }
 
   const located = await rcFindDetailTab(config, String(p.displayId));
