@@ -15,7 +15,7 @@ foreach ($p in @($bridgeStage,$relayStage)) {
 foreach ($name in @("manifest.json","service-worker.js","root-cause-writer.js","popup.html","popup.js","popup.css","README.md")) {
   Copy-Item -LiteralPath (Join-Path $RepoRoot ("browser-bridge\" + $name)) -Destination (Join-Path $bridgeStage $name) -Force
 }
-foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","show-status.ps1","enqueue-ping.ps1","enqueue-inventory.ps1","job-example.json","job-inventory-example.json","README.md")) {
+foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","show-status.ps1","enqueue-ping.ps1","enqueue-inventory.ps1","enqueue-root-cause-write.ps1","job-example.json","job-inventory-example.json","README.md")) {
   Copy-Item -LiteralPath (Join-Path $RepoRoot ("local-relay\" + $name)) -Destination (Join-Path $relayStage $name) -Force
 }
 Copy-Item -LiteralPath (Join-Path $RepoRoot "release\root-cause-write-runtime\upgrade-from-v0.2.2.ps1") -Destination (Join-Path $relayStage "upgrade-from-v0.2.2.ps1") -Force
@@ -37,6 +37,7 @@ if ($relay -notmatch 'VERSION = "0\.3\.0"') { throw "RELAY_VERSION_MISMATCH" }
 if ($relay -notmatch '"ONES_ROOT_CAUSE_WRITE"') { throw "RELAY_WRITE_JOB_MISSING" }
 
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "upgrade-from-v0.2.2.ps1") -Raw))
+[void][scriptblock]::Create((Get-Content (Join-Path $relayStage "enqueue-root-cause-write.ps1") -Raw))
 
 $bridgeZip = Join-Path $OutputDir ($bridgeName + ".zip")
 $relayZip = Join-Path $OutputDir ($relayName + ".zip")
