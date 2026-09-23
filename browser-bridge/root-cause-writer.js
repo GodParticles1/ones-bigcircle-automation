@@ -156,7 +156,7 @@ async function rcPagePreflightWrite(input) {
   }
 
   const saveControls = [...root.querySelectorAll("button,[role=button]")]
-    .filter((el) => visible(el) && rcNorm(el.innerText || el.textContent) === "保存");
+    .filter((el) => visible(el) && norm(el.innerText || el.textContent) === "保存");
   if (saveControls.length !== 1) return fail("SAVE_CONTROL_NOT_UNIQUE", "root-cause save control is not unique", { saveControlCount:saveControls.length });
 
   const br = inputBlock.getBoundingClientRect();
