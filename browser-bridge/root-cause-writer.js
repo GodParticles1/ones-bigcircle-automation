@@ -7,6 +7,12 @@ function rcNorm(value) {
   return String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
 }
 
+async function rcSha256Utf8(value) {
+  const bytes = new TextEncoder().encode(String(value ?? ""));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function rcSemanticFromRaw(raw) {
   if (raw == null) return "";
   const text = String(raw);
@@ -302,14 +308,19 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   const validId = (v) => /^[A-Za-z0-9_-]{1,128}$/.test(String(v || ""));
   const planSha = String(p.planSha256 || "").toLowerCase();
   const desired = rcNorm(p.desiredValue);
+  const expectedDesiredSha = String(p.desiredSha256 || "").toLowerCase();
   if (p.taskTargetPolicy !== "UNIQUE_ONES_TASK_ONLY" || p.decision !== "SET_CANDIDATE" || p.writeMode !== "fill_empty_only") {
     return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"task-level SET_CANDIDATE / fill_empty_only required" } };
   }
-  if (!/^[0-9a-f]{64}$/.test(planSha) || !validId(p.taskUuid) || !validId(p.fieldId) || !/^[A-Za-z0-9_.-]{1,128}$/.test(String(p.displayId || ""))) {
+  if (!/^[0-9a-f]{64}$/.test(planSha) || !/^[0-9a-f]{64}$/.test(expectedDesiredSha) || !validId(p.taskUuid) || !validId(p.fieldId) || !/^[A-Za-z0-9_.-]{1,128}$/.test(String(p.displayId || ""))) {
     return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"invalid write provenance/target" } };
   }
   if (!desired || desired.length > 300 || desired.includes("\n")) {
     return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"bounded writer v1 requires 1-300 characters of single-paragraph root cause text" } };
+  }
+  const actualDesiredSha = await rcSha256Utf8(desired);
+  if (actualDesiredSha !== expectedDesiredSha) {
+    return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"DESIRED_VALUE_HASH_MISMATCH", expectedDesiredSha256:expectedDesiredSha, actualDesiredSha256:actualDesiredSha } };
   }
   if (!config?.rootCauseFieldId || String(p.fieldId) !== String(config.rootCauseFieldId)) {
     return { status:"WRITE_INPUT_REJECTED", result:{ ok:false, status:"WRITE_INPUT_REJECTED", error:"fieldId does not match locally configured root-cause field" } };
