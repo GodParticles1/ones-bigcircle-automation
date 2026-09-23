@@ -24,7 +24,8 @@ function currentForm() {
     assigneeDepartmentUuid: $("assigneeDepartmentUuid").value.trim(),
     baseUrl: $("relayUrl").value.trim(),
     token: $("relayToken").value.trim(),
-    enabled: $("relayEnabled").checked
+    enabled: $("relayEnabled").checked,
+    writeEnabled: $("writeEnabled").checked
   };
 }
 
@@ -38,6 +39,7 @@ function applyForm(value) {
   $("relayUrl").value = v.baseUrl || "http://127.0.0.1:18731";
   $("relayToken").value = v.token || "";
   $("relayEnabled").checked = !!v.enabled;
+  $("writeEnabled").checked = !!v.writeEnabled;
 }
 
 async function getDraft() {
@@ -76,6 +78,7 @@ async function load() {
     baseUrl:c.baseUrl || "http://127.0.0.1:18731",
     token:"",
     enabled:!!c.enabled,
+    writeEnabled:!!c.writeEnabled,
     ...(draft || {})
   });
   $("inventoryPage").textContent = "Inventory page: " + (c.inventoryPageUrl || "not bound");
@@ -92,6 +95,7 @@ for (const id of DRAFT_INPUT_IDS) {
   $(id).addEventListener("input", () => { persistDraft().catch(() => {}); });
 }
 $("relayEnabled").addEventListener("change", () => { persistDraft().catch(() => {}); });
+$("writeEnabled").addEventListener("change", () => { persistDraft().catch(() => {}); });
 
 $("saveConfig").addEventListener("click", async () => {
   try {
