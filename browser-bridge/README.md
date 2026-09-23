@@ -1,21 +1,24 @@
-# Browser Bridge v0.4.2 public projection
+# Browser Bridge v0.5.0
 
-This is a configuration-driven, read-only projection of the previously accepted internal browser inventory/relay lane.
+Configuration-driven ONES browser executor for a Windows-local loopback Relay.
 
-Key properties:
+Capabilities:
+- `RELAY_PING`
+- `ONES_INVENTORY_READ`
+- `ONES_FIELD_READ`
+- gated `ONES_ROOT_CAUSE_WRITE`
 
-- no private ONES origin in source;
-- no team/project/issue-type/department identifiers in source;
-- no historical bounded-acceptance ticket IDs;
-- no ONES write UI or write handlers;
-- exact ONES origin permission is requested at runtime from a user gesture;
-- current capabilities are `RELAY_PING`, `ONES_INVENTORY_READ`, and bounded read-only `ONES_FIELD_READ`;
-- first-time setup draft is preserved in `chrome.storage.session` across popup close/reopen;
-- the transient setup draft is cleared after a successful `Save + grant origin`;
-- a committed Relay token is never rehydrated into the popup DOM or rendered in status JSON.
+The write capability is not advertised to the Relay unless the explicit local production write gate is enabled in the popup.
 
-`ONES_FIELD_READ` reads only runtime-configured `fieldNNN` values from exact requested task UUIDs and fails closed on missing/non-unique tasks, unsupported field value shapes, or partial completion.
+The bounded root-cause writer:
+- consumes only `UNIQUE_ONES_TASK_ONLY` / `SET_CANDIDATE` / `fill_empty_only` jobs;
+- takes display ID, task UUID, field UUID, desired text, and plan SHA only at runtime;
+- performs a double authoritative pre-write read;
+- aborts on drift or non-empty different content;
+- requires the exact ONES detail tab and native richtext editor to be open;
+- uses native browser input and one Save dispatch;
+- verifies both authoritative onesql semantic readback and a new system field event;
+- never auto-retries an uncertain write;
+- does not fabricate a direct richtext `tasks/update3` payload.
 
-The extension still relies on the user's already authenticated browser session. It does not export Cookie/Authorization/password material to the Relay.
-
-Runtime acceptance of this public projection is still required before it supersedes the accepted internal executor.
+The extension never exports browser Cookie/Authorization/password material to the Relay.
