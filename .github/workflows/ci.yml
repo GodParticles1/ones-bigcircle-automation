@@ -62,22 +62,22 @@ jobs:
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
       - shell: powershell
         run: |
-          [void][scriptblock]::Create((Get-Content release/field-read-runtime/upgrade-from-v0.2.1.ps1 -Raw))
-          ./scripts/build-field-read-runtime-packages.ps1
+          [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.2.2.ps1 -Raw))
+          ./scripts/build-root-cause-write-runtime.ps1
           foreach ($zip in @(
-            "dist-field-read/ones-browser-bridge-public-v0.4.4.zip",
-            "dist-field-read/ones-local-relay-v0.2.2.zip"
+            "dist-root-cause-write/ones-browser-bridge-v0.5.0.zip",
+            "dist-root-cause-write/ones-local-relay-v0.3.0.zip"
           )) {
             if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw ("PACKAGE_MISSING: " + $zip) }
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: ones-field-read-runtime-v0.4.4-v0.2.2
+          name: ones-root-cause-write-runtime-v0.5.0-v0.3.0
           path: |
-            dist-field-read/ones-browser-bridge-public-v0.4.4.zip
-            dist-field-read/ones-browser-bridge-public-v0.4.4.zip.sha256
-            dist-field-read/ones-local-relay-v0.2.2.zip
-            dist-field-read/ones-local-relay-v0.2.2.zip.sha256
+            dist-root-cause-write/ones-browser-bridge-v0.5.0.zip
+            dist-root-cause-write/ones-browser-bridge-v0.5.0.zip.sha256
+            dist-root-cause-write/ones-local-relay-v0.3.0.zip
+            dist-root-cause-write/ones-local-relay-v0.3.0.zip.sha256
           if-no-files-found: error
       - shell: powershell
         run: |
