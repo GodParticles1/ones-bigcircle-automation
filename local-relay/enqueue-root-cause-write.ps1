@@ -41,7 +41,7 @@ $desiredBytes = [Text.Encoding]::UTF8.GetBytes($desiredValue)
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $desiredHash = ([BitConverter]::ToString($sha.ComputeHash($desiredBytes))).Replace("-","").ToLowerInvariant() } finally { $sha.Dispose() }
 
-$idempotencyKey = "root-cause-write-" + $actualPlanSha.Substring(0,12) + "-" + $TaskUuid + "-" + $target.fieldId + "-" + $desiredHash.Substring(0,16)
+$idempotencyKey = "root-cause-write-utf8v2-" + $actualPlanSha.Substring(0,12) + "-" + $TaskUuid + "-" + $target.fieldId + "-" + $desiredHash.Substring(0,16)
 $body = @{
   jobType = "ONES_ROOT_CAUSE_WRITE"
   idempotencyKey = $idempotencyKey
