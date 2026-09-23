@@ -54,10 +54,12 @@ $body = @{
     taskUuid = $TaskUuid
     fieldId = [string]$target.fieldId
     desiredValue = $desiredValue
+    desiredSha256 = $desiredHash
   }
 } | ConvertTo-Json -Depth 20
 
-$result = Invoke-RestMethod -Method Post -Uri "$RelayUrl/v1/jobs" -Headers $headers -ContentType "application/json" -Body $body
+$bodyBytes = [Text.Encoding]::UTF8.GetBytes($body)
+$result = Invoke-RestMethod -Method Post -Uri "$RelayUrl/v1/jobs" -Headers $headers -ContentType "application/json; charset=utf-8" -Body $bodyBytes
 Write-Host "ROOT_CAUSE_WRITE_JOB_ENQUEUED"
 Write-Host ("JOB_ID=" + $result.job.jobId)
 Write-Host ("STATE=" + $result.job.state)
