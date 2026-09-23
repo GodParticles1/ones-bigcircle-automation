@@ -5,7 +5,7 @@ const RELAY_ALARM = "onesRelayPollV02";
 const RELAY_DEFAULT_URL = "http://127.0.0.1:18731";
 const RELAY_READ_CAPABILITIES = ["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"];
 function relayCapabilities(config) {
-  return config?.writeEnabled ? [...RELAY_READ_CAPABILITIES, "ONES_ROOT_CAUSE_WRITE"] : [...RELAY_READ_CAPABILITIES];
+  return config?.writeEnabled && config?.rootCauseFieldId ? [...RELAY_READ_CAPABILITIES, "ONES_ROOT_CAUSE_WRITE"] : [...RELAY_READ_CAPABILITIES];
 }
 
 function validateRelayUrl(value) {
@@ -62,6 +62,7 @@ async function getRelayConfig() {
   if (typeof current.writeEnabled !== "boolean") { current.writeEnabled = false; changed = true; }
   if (typeof current.token !== "string") { current.token = ""; changed = true; }
   if (typeof current.inventoryPageUrl !== "string") { current.inventoryPageUrl = ""; changed = true; }
+  if (typeof current.rootCauseFieldId !== "string") { current.rootCauseFieldId = ""; changed = true; }
   for (const key of ["onesOrigin","teamUuid","projectUuid","issueTypeUuid","assigneeDepartmentUuid"]) {
     if (typeof current[key] !== "string") { current[key] = ""; changed = true; }
   }
@@ -810,7 +811,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       const config = await getRelayConfig();
       const runtime = await getRelayRuntime();
-      sendResponse({ ok:true, config:{ baseUrl:config.baseUrl, enabled:config.enabled, writeEnabled:!!config.writeEnabled, executorId:config.executorId, tokenPresent:!!config.token, inventoryPageUrl:config.inventoryPageUrl || "", onesOrigin:config.onesOrigin || "", teamUuid:config.teamUuid || "", projectUuid:config.projectUuid || "", issueTypeUuid:config.issueTypeUuid || "", assigneeDepartmentUuid:config.assigneeDepartmentUuid || "" }, runtime, capabilities:relayCapabilities(config) });
+      sendResponse({ ok:true, config:{ baseUrl:config.baseUrl, enabled:config.enabled, writeEnabled:!!config.writeEnabled, rootCauseFieldId:config.rootCauseFieldId || "", executorId:config.executorId, tokenPresent:!!config.token, inventoryPageUrl:config.inventoryPageUrl || "", onesOrigin:config.onesOrigin || "", teamUuid:config.teamUuid || "", projectUuid:config.projectUuid || "", issueTypeUuid:config.issueTypeUuid || "", assigneeDepartmentUuid:config.assigneeDepartmentUuid || "" }, runtime, capabilities:relayCapabilities(config) });
     })().catch((error) => sendResponse({ ok:false, error:String(error) }));
     return true;
   }
@@ -821,14 +822,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const token = typeof message.token === "string" && message.token.trim() ? message.token.trim() : current.token;
       const enabled = !!message.enabled;
       const writeEnabled = !!message.writeEnabled;
+      const rootCauseFieldId = String(message.rootCauseFieldId || current.rootCauseFieldId || "").trim();
       const scope = validatedOnesScope(message);
+      if (rootCauseFieldId && !/^[A-Za-z0-9_-]{1,128}$/.test(rootCauseFieldId)) throw new Error("rootCauseFieldId 格式非法");
       if (enabled && !token) throw new Error("启用 Relay 前必须配置 token");
       if (writeEnabled && !enabled) throw new Error("启用 production write gate 前必须启用 background polling");
-      const next = { ...current, baseUrl, token, enabled, writeEnabled, ...scope };
+      if (writeEnabled && !rootCauseFieldId) throw new Error("启用 production write gate 前必须配置 root-cause field UUID");
+      const next = { ...current, baseUrl, token, enabled, writeEnabled, rootCauseFieldId, ...scope };
       await saveRelayConfig(next);
       await ensureRelayAlarm();
       const runtime = await setRelayRuntime({ state:enabled ? "CONFIGURED" : "DISABLED", error:null });
-      sendResponse({ ok:true, config:{ baseUrl, enabled, writeEnabled, executorId:next.executorId, tokenPresent:!!token, inventoryPageUrl:next.inventoryPageUrl || "", onesOrigin:next.onesOrigin, teamUuid:next.teamUuid, projectUuid:next.projectUuid, issueTypeUuid:next.issueTypeUuid, assigneeDepartmentUuid:next.assigneeDepartmentUuid }, runtime, capabilities:relayCapabilities(next) });
+      sendResponse({ ok:true, config:{ baseUrl, enabled, writeEnabled, rootCauseFieldId, executorId:next.executorId, tokenPresent:!!token, inventoryPageUrl:next.inventoryPageUrl || "", onesOrigin:next.onesOrigin, teamUuid:next.teamUuid, projectUuid:next.projectUuid, issueTypeUuid:next.issueTypeUuid, assigneeDepartmentUuid:next.assigneeDepartmentUuid }, runtime, capabilities:relayCapabilities(next) });
     })().catch((error) => sendResponse({ ok:false, error:String(error) }));
     return true;
   }
