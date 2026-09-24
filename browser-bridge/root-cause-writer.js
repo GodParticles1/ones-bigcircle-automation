@@ -478,3 +478,120 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   }
   return { status:"WRITE_UNVERIFIED", result:{...preflight,ok:false,status:"WRITE_UNVERIFIED",writeAttempted:true,saveDispatched:true,planSha256:planSha,draft,readback:last,error:"save dispatched exactly once but authoritative field value did not verify; automatic retry forbidden"} };
 };
+
+
+async function rcPagePreflightFormatRepair(input) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const semanticFromRaw = (raw) => {
+    if (raw == null) return "";
+    const text = String(raw);
+    const meta = text.match(/<meta[^>]+name=["\']ones-editor-text["\'][^>]+content=["\']([^"\']*)["\']/i)
+      || text.match(/<meta[^>]+content=["\']([^"\']*)["\'][^>]+name=["\']ones-editor-text["\']/i);
+    if (meta && meta[1]) { try { const bytes=Uint8Array.from(atob(meta[1]),(ch)=>ch.charCodeAt(0)); return norm(new TextDecoder().decode(bytes)); } catch (_) {} }
+    try { const doc=new DOMParser().parseFromString(text,"text/html"); const bodyText=norm((doc.body&&(doc.body.innerText||doc.body.textContent))||""); if(bodyText) return bodyText; } catch (_) {}
+    return norm(text.replace(/<!--version:[^>]*-->/gi,"").replace(/<!--[\s\S]*?-->/g,"").replace(/<[^>]+>/g," "));
+  };
+  const fieldId=String(input?.fieldId||"");
+  const displayId=String(input?.displayId||"");
+  const taskUuid=String(input?.taskUuid||"");
+  const expected=norm(input?.expectedValue);
+  const currentMatch=location.href.match(/\/issue\/([^/?#]+)/i);
+  const currentDisplayId=currentMatch?currentMatch[1]:null;
+  const teamMatch=location.href.match(/\/team\/([^/?#]+)/i);
+  const teamUuid=teamMatch?teamMatch[1]:null;
+  const fail=(status,error,extra={})=>({ok:false,status,error:String(error||status),...extra});
+  if(!teamUuid||currentDisplayId!==displayId) return fail("TARGET_GUARD_FAILED","current detail page does not match expected display ID");
+  const jsonFetch=async(url,init={})=>{const response=await fetch(url,{credentials:"same-origin",...init});const text=await response.text();let json=null;if(text){try{json=JSON.parse(text)}catch(_){}}return{response,json}};
+  const idr=await jsonFetch(location.origin+"/project/api/ones-project/team/"+encodeURIComponent(teamUuid)+"/tasks/identifier",{
+    method:"POST",headers:{"content-type":"application/json; charset=UTF-8"},body:JSON.stringify({display_id_path:displayId})
+  });
+  if(!idr.response.ok||idr.json?.display_id!==displayId||idr.json?.task_uuid!==taskUuid) return fail("TARGET_RESOLVE_FAILED","display ID did not resolve to expected task UUID");
+  const query="select uid(uuid,field903,"+fieldId+") from issue where uid(uuid) = uid('"+taskUuid+"');";
+  const read=async()=>{const r=await jsonFetch(location.origin+"/project/api/ones-project/team/"+encodeURIComponent(teamUuid)+"/workitems/onesql",{
+    method:"POST",headers:{"content-type":"application/json; charset=UTF-8"},body:JSON.stringify({query})
+  });const item=r.json?.data?.[0]?.item;if(!r.response.ok||!item||item.uuid!==taskUuid) throw new Error("onesql HTTP "+r.response.status);return semanticFromRaw(item[fieldId])};
+  let first,second;
+  try{first=await read();second=await read();}catch(error){return fail("PREFORMAT_READ_FAILED",error)}
+  if(first!==second) return fail("CONCURRENT_CHANGE_ABORT","field changed between format preflight reads",{firstSemantic:first,secondSemantic:second});
+  if(second!==expected) return fail("FORMAT_VALUE_MISMATCH","current semantic value differs from expected exact value",{currentSemantic:second,expected});
+
+  const root=document.getElementById(fieldId);
+  if(!root) return fail("EDITOR_NOT_READY","open the root-cause field in edit mode before polling the format repair job");
+  const visible=(el)=>{if(!el||!(el instanceof Element))return false;const r=el.getBoundingClientRect();const cs=getComputedStyle(el);return r.width>0&&r.height>0&&cs.display!=="none"&&cs.visibility!=="hidden"&&Number(cs.opacity||"1")>0};
+  const blocks=[...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible);
+  const focused=blocks.filter((el)=>el.classList.contains("focused"));
+  const block=focused.length===1?focused[0]:(blocks.length===1?blocks[0]:null);
+  if(!block) return fail("EDITOR_ACTIVE_BLOCK_NOT_UNIQUE","root-cause text block is not unique",{blockCount:blocks.length,focusedBlockCount:focused.length});
+  const textNodes=[...block.querySelectorAll(".text")].filter(visible);
+  if(textNodes.length!==1) return fail("DRAFT_TEXT_SURFACE_NOT_UNIQUE","format repair text surface is not unique",{textNodeCount:textNodes.length});
+  const draft=norm(textNodes[0].innerText||textNodes[0].textContent||"");
+  if(draft!==expected) return fail("FORMAT_EDITOR_VALUE_MISMATCH","editor text differs from authoritative expected value",{draft,expected});
+  return {ok:true,status:"FORMAT_REPAIR_READY",displayId,taskUuid,fieldId,expectedValue:expected,textBlockId:block.id||null,beforeAlign:String(getComputedStyle(block).textAlign||"").toLowerCase()};
+}
+
+function rcPageVerifyRenderedAlignment(expectedDisplayId, fieldId, expectedValue) {
+  const norm=(value)=>String(value??"").replace(/\u200B|\uFEFF/g,"").replace(/\r\n?/g,"\n").trim();
+  const currentMatch=location.href.match(/\/issue\/([^/?#]+)/i);
+  if((currentMatch?currentMatch[1]:null)!==expectedDisplayId) return {ok:false,status:"TARGET_GUARD_FAILED"};
+  const root=document.getElementById(fieldId);
+  if(!root) return {ok:false,status:"FIELD_CONTAINER_NOT_FOUND"};
+  const expected=norm(expectedValue);
+  const visible=(el)=>{if(!el||!(el instanceof Element))return false;const r=el.getBoundingClientRect();const cs=getComputedStyle(el);return r.width>0&&r.height>0&&cs.display!=="none"&&cs.visibility!=="hidden"};
+  const candidates=[root,...root.querySelectorAll(".text,p,div,span")].filter((el)=>visible(el)&&norm(el.innerText||el.textContent||"")===expected);
+  const rows=candidates.map((el)=>({tag:el.tagName,className:el.className||"",textAlign:String(getComputedStyle(el).textAlign||"").toLowerCase()}));
+  const match=rows.find((row)=>row.textAlign==="left"||row.textAlign==="start")||null;
+  return {ok:!!match,status:match?"RENDERED_LEFT_VERIFIED":"RENDERED_LEFT_PENDING",matches:rows.slice(-12)};
+}
+
+globalThis.onesRootCauseFormatRepairExecute = async function(config, job) {
+  const p=job?.payload||{};
+  const expected=rcNorm(p.expectedValue);
+  const expectedSha=String(p.expectedValueSha256||"").toLowerCase();
+  if(p.formatPolicy!=="EXACT_VALUE_LEFT_ALIGN_ONLY") return {status:"FORMAT_REPAIR_INPUT_REJECTED",result:{ok:false,status:"FORMAT_REPAIR_INPUT_REJECTED",error:"exact-value left-align policy required"}};
+  if(!/^[0-9a-f]{64}$/.test(expectedSha)||!expected||expected.length>300||expected.includes("\n")) return {status:"FORMAT_REPAIR_INPUT_REJECTED",result:{ok:false,status:"FORMAT_REPAIR_INPUT_REJECTED",error:"invalid expected value/hash"}};
+  if(!config?.rootCauseFieldId||String(p.fieldId)!==String(config.rootCauseFieldId)) return {status:"FORMAT_REPAIR_INPUT_REJECTED",result:{ok:false,status:"FORMAT_REPAIR_INPUT_REJECTED",error:"fieldId does not match locally configured root-cause field"}};
+  const actualSha=await rcSha256Utf8(expected);
+  if(actualSha!==expectedSha) return {status:"FORMAT_REPAIR_INPUT_REJECTED",result:{ok:false,status:"FORMAT_REPAIR_INPUT_REJECTED",error:"EXPECTED_VALUE_HASH_MISMATCH",expectedValueSha256:expectedSha,actualValueSha256:actualSha}};
+
+  const located=await rcFindDetailTab(config,String(p.displayId));
+  if(!located.ok) return {status:"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:located.status}};
+  const tab=located.tab;
+  const [preExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPagePreflightFormatRepair,args:[{displayId:String(p.displayId),taskUuid:String(p.taskUuid),fieldId:String(p.fieldId),expectedValue:expected}]});
+  const pre=preExec?.result||{ok:false,status:"NO_PREFORMAT_RESULT"};
+  if(!pre.ok) return {status:"FORMAT_REPAIR_BLOCKED",result:{...pre,ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:pre.status||"PREFORMAT_FAILED",saveDispatched:false}};
+
+  const [alignExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageNormalizeDraftAlignment,args:[String(p.displayId),String(p.fieldId),expected,pre.textBlockId]});
+  const alignment=alignExec?.result||{ok:false,status:"NO_ALIGNMENT_RESULT"};
+  if(!alignment.ok||alignment.status!=="DRAFT_LEFT_ALIGN_VERIFIED") return {status:"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:alignment.status||"ALIGNMENT_FAILED",alignment,saveDispatched:false}};
+
+  const [draftExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageInspectDraft,args:[String(p.displayId),String(p.fieldId),expected,pre.textBlockId]});
+  const draft=draftExec?.result||{ok:false,status:"NO_DRAFT_RESULT"};
+  if(!draft.ok||draft.status!=="DRAFT_DOM_VERIFIED") return {status:"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:draft.status||"DRAFT_VERIFY_FAILED",alignment,draft,saveDispatched:false}};
+
+  const debuggee={tabId:tab.id};
+  let attached=false,saveDispatched=false;
+  try{
+    await chrome.debugger.attach(debuggee,"1.3");attached=true;
+    const sx=draft.savePoint.x,sy=draft.savePoint.y;
+    await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseMoved",x:sx,y:sy});
+    await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mousePressed",x:sx,y:sy,button:"left",clickCount:1});
+    await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseReleased",x:sx,y:sy,button:"left",clickCount:1});
+    saveDispatched=true;
+  }catch(error){
+    return {status:saveDispatched?"FORMAT_REPAIR_UNVERIFIED":"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:saveDispatched?"FORMAT_REPAIR_UNVERIFIED":"FORMAT_REPAIR_BLOCKED",error:String(error),saveDispatched,alignment,draft}};
+  }finally{if(attached){try{await chrome.debugger.detach(debuggee)}catch(_){}}}
+
+  const delays=[350,700,1200,2000,3500,5500,8000];
+  let lastRead=null,lastRender=null;
+  for(let i=0;i<delays.length;i+=1){
+    if(i>0) await new Promise((resolve)=>setTimeout(resolve,delays[i]));
+    const [verifyExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageVerifyWrite,args:[{displayId:String(p.displayId),taskUuid:String(p.taskUuid),fieldId:String(p.fieldId),desiredValue:expected,baselineEventIds:[]}]});
+    lastRead=verifyExec?.result||null;
+    const [renderExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageVerifyRenderedAlignment,args:[String(p.displayId),String(p.fieldId),expected]});
+    lastRender=renderExec?.result||null;
+    if(lastRead?.currentSemantic===expected&&lastRender?.ok){
+      return {status:"FORMAT_REPAIR_VERIFIED",result:{ok:true,status:"FORMAT_REPAIR_VERIFIED",saveDispatched:true,expectedValueSha256:expectedSha,alignment,draft,readback:lastRead,render:lastRender}};
+    }
+  }
+  return {status:"FORMAT_REPAIR_UNVERIFIED",result:{ok:false,status:"FORMAT_REPAIR_UNVERIFIED",saveDispatched:true,expectedValueSha256:expectedSha,alignment,draft,readback:lastRead,render:lastRender,error:"format Save dispatched once but exact-value + rendered-left verification did not both pass; automatic retry forbidden"}};
+};
