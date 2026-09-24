@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$bridgeName = "ones-browser-bridge-v0.5.3"
+$bridgeName = "ones-browser-bridge-v0.5.4"
 $relayName = "ones-local-relay-v0.3.3"
 $bridgeStage = Join-Path $OutputDir $bridgeName
 $relayStage = Join-Path $OutputDir $relayName
@@ -21,7 +21,7 @@ foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","sh
 Copy-Item -LiteralPath (Join-Path $RepoRoot "release\root-cause-write-runtime\upgrade-from-v0.3.2.ps1") -Destination (Join-Path $relayStage "upgrade-from-v0.3.2.ps1") -Force
 
 $manifest = Get-Content -LiteralPath (Join-Path $bridgeStage "manifest.json") -Raw | ConvertFrom-Json
-if ($manifest.version -ne "0.5.3") { throw "BRIDGE_VERSION_MISMATCH" }
+if ($manifest.version -ne "0.5.4") { throw "BRIDGE_VERSION_MISMATCH" }
 if ($manifest.permissions -notcontains "debugger") { throw "BRIDGE_DEBUGGER_PERMISSION_MISSING" }
 
 $worker = Get-Content -LiteralPath (Join-Path $bridgeStage "service-worker.js") -Raw
