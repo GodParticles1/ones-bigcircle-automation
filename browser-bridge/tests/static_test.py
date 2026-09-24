@@ -13,13 +13,18 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.2"
+assert manifest["version"] == "0.5.3"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
 assert "ONES_INVENTORY_READ" in worker
 assert "ONES_FIELD_READ" in worker
 assert "ONES_ROOT_CAUSE_WRITE" in worker
+assert "RENDERED_LEFT_VERIFIED" in writer
+assert "FORMAT_REPAIR_VERIFIED" in writer
+assert "EXACT_VALUE_LEFT_ALIGN_ONLY" in writer
+assert "onesRootCauseFormatRepairExecute" in writer
+assert "ONES_ROOT_CAUSE_FORMAT_REPAIR" in worker
 assert "RELAY_PING" in worker
 assert "validatedOnesScope" in worker
 assert "chrome.permissions.request" in popup
@@ -67,4 +72,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V052_ALIGN_VERIFY_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V053_FORMAT_REPAIR_PASS")
