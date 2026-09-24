@@ -16,11 +16,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 DEFAULT_PORT = 18731
 MAX_BODY_BYTES = 256 * 1024
 TOKEN_HEADER = "X-Relay-Token"
-ALLOWED_JOB_TYPES = {"RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ", "ONES_ROOT_CAUSE_WRITE"}
+ALLOWED_JOB_TYPES = {"RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ", "ONES_ROOT_CAUSE_WRITE", "ONES_ROOT_CAUSE_FORMAT_REPAIR"}
 STATIC_TERMINAL_STATES = {
     "RELAY_PING_OK",
     "INPUT_REJECTED",
@@ -37,7 +37,7 @@ ERROR_LOG_CLEAN_INTERVAL_SECONDS = 6 * 60 * 60
 
 def terminal_status_allowed(status):
     return isinstance(status, str) and (
-        status in STATIC_TERMINAL_STATES or status.startswith("INVENTORY_") or status.startswith("FIELD_") or status.startswith("WRITE_") or status in {"NOOP_VERIFIED", "CONFLICT_REVIEW"}
+        status in STATIC_TERMINAL_STATES or status.startswith("INVENTORY_") or status.startswith("FIELD_") or status.startswith("WRITE_") or status.startswith("FORMAT_REPAIR_") or status in {"NOOP_VERIFIED", "CONFLICT_REVIEW"}
     )
 
 
@@ -303,7 +303,7 @@ class RelayApp:
 
 
 class RelayHandler(BaseHTTPRequestHandler):
-    server_version = "ONESLocalRelay/0.3.2"
+    server_version = "ONESLocalRelay/0.3.3"
 
     @property
     def app(self):
@@ -427,7 +427,7 @@ class RelayHTTPServer(ThreadingHTTPServer):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ONES local relay v0.3.2")
+    parser = argparse.ArgumentParser(description="ONES local relay v0.3.3")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--data-dir", default=str(Path(__file__).resolve().parent / "data"))
     parser.add_argument("--error-log", default="")

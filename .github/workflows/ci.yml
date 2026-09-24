@@ -63,22 +63,22 @@ jobs:
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
       - shell: powershell
         run: |
-          [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.0.ps1 -Raw))
+          [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.2.ps1 -Raw))
           ./scripts/build-root-cause-write-runtime.ps1
           foreach ($zip in @(
-            "dist-root-cause-write/ones-browser-bridge-v0.5.2.zip",
-            "dist-root-cause-write/ones-local-relay-v0.3.2.zip"
+            "dist-root-cause-write/ones-browser-bridge-v0.5.3.zip",
+            "dist-root-cause-write/ones-local-relay-v0.3.3.zip"
           )) {
             if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw ("PACKAGE_MISSING: " + $zip) }
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: ones-root-cause-write-runtime-v0.5.2-v0.3.2
+          name: ones-root-cause-write-runtime-v0.5.3-v0.3.3
           path: |
             dist-root-cause-write/ones-browser-bridge-v0.5.1.zip
-            dist-root-cause-write/ones-browser-bridge-v0.5.2.zip.sha256
+            dist-root-cause-write/ones-browser-bridge-v0.5.3.zip.sha256
             dist-root-cause-write/ones-local-relay-v0.3.2.zip
-            dist-root-cause-write/ones-local-relay-v0.3.2.zip.sha256
+            dist-root-cause-write/ones-local-relay-v0.3.3.zip.sha256
           if-no-files-found: error
       - shell: powershell
         run: |
