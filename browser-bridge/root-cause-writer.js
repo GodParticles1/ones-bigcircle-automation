@@ -358,6 +358,29 @@ async function rcPageVerifyWrite(input) {
   };
 }
 
+async function rcAcceptedFieldRead(config, tabId, taskUuid, fieldId) {
+  const [execution] = await chrome.scripting.executeScript({
+    target:{tabId},
+    world:"MAIN",
+    func:relayReadTaskFields,
+    args:[{
+      teamUuid:config.teamUuid,
+      projectUuid:config.projectUuid,
+      issueTypeUuid:config.issueTypeUuid
+    }, {
+      fieldId:String(fieldId),
+      onesTaskUuids:[String(taskUuid)]
+    }]
+  });
+  const result=execution?.result;
+  const row=result?.reads?.[0];
+  if(!result?.ok || result?.status!=="FIELD_READ_VERIFIED" || result?.complete!==true ||
+     row?.status!=="READ_VERIFIED" || row?.onesTaskUuid!==String(taskUuid) || row?.fieldId!==String(fieldId)) {
+    throw new Error("ACCEPTED_FIELD_READ_FAILED");
+  }
+  return String(row.value ?? "");
+}
+
 async function rcFindDetailTab(config, displayId) {
   const tabs = await chrome.tabs.query({ url:config.onesOrigin + "/*" });
   const matches = tabs.filter((tab) => {
@@ -506,13 +529,7 @@ async function rcPagePreflightFormatRepair(input) {
     method:"POST",headers:{"content-type":"application/json; charset=UTF-8"},body:JSON.stringify({display_id_path:displayId})
   });
   if(!idr.response.ok||idr.json?.display_id!==displayId||idr.json?.task_uuid!==taskUuid) return fail("TARGET_RESOLVE_FAILED","display ID did not resolve to expected task UUID");
-  const query="select uid(uuid,field903,"+fieldId+") from issue where uid(uuid) = uid('"+taskUuid+"');";
-  const read=async()=>{const r=await jsonFetch(location.origin+"/project/api/ones-project/team/"+encodeURIComponent(teamUuid)+"/workitems/onesql",{
-    method:"POST",headers:{"content-type":"application/json; charset=UTF-8"},body:JSON.stringify({query})
-  });const item=r.json?.data?.[0]?.item;if(!r.response.ok||!item||item.uuid!==taskUuid) throw new Error("onesql HTTP "+r.response.status);return semanticFromRaw(item[fieldId])};
-  let first,second;
-  try{first=await read();second=await read();}catch(error){return fail("PREFORMAT_READ_FAILED",error)}
-  if(first!==second) return fail("CONCURRENT_CHANGE_ABORT","field changed between format preflight reads",{firstSemantic:first,secondSemantic:second});
+  const second=norm(input?.authoritativeSemantic);
   if(second!==expected) return fail("FORMAT_VALUE_MISMATCH","current semantic value differs from expected exact value",{currentSemantic:second,expected});
 
   const root=document.getElementById(fieldId);
@@ -556,7 +573,15 @@ globalThis.onesRootCauseFormatRepairExecute = async function(config, job) {
   const located=await rcFindDetailTab(config,String(p.displayId));
   if(!located.ok) return {status:"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:located.status}};
   const tab=located.tab;
-  const [preExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPagePreflightFormatRepair,args:[{displayId:String(p.displayId),taskUuid:String(p.taskUuid),fieldId:String(p.fieldId),expectedValue:expected}]});
+  let acceptedFormat1,acceptedFormat2;
+  try {
+    acceptedFormat1=await rcAcceptedFieldRead(config,tab.id,p.taskUuid,p.fieldId);
+    acceptedFormat2=await rcAcceptedFieldRead(config,tab.id,p.taskUuid,p.fieldId);
+  } catch(error) {
+    return {status:"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:"ACCEPTED_FIELD_READ_FAILED",error:String(error),saveDispatched:false}};
+  }
+  if(acceptedFormat1!==acceptedFormat2) return {status:"FORMAT_REPAIR_BLOCKED",result:{ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:"CONCURRENT_CHANGE_ABORT",firstSemantic:acceptedFormat1,secondSemantic:acceptedFormat2,saveDispatched:false}};
+  const [preExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPagePreflightFormatRepair,args:[{displayId:String(p.displayId),taskUuid:String(p.taskUuid),fieldId:String(p.fieldId),expectedValue:expected,authoritativeSemantic:acceptedFormat2}]});
   const pre=preExec?.result||{ok:false,status:"NO_PREFORMAT_RESULT"};
   if(!pre.ok) return {status:"FORMAT_REPAIR_BLOCKED",result:{...pre,ok:false,status:"FORMAT_REPAIR_BLOCKED",blockedBy:pre.status||"PREFORMAT_FAILED",saveDispatched:false}};
 
