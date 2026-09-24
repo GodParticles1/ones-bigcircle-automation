@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.1"
+assert manifest["version"] == "0.5.2"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -45,6 +45,11 @@ assert "DESIRED_VALUE_HASH_MISMATCH" in writer
 assert "crypto.subtle.digest" in writer
 assert "WRITE_VERIFIED" in writer
 assert "WRITE_UNVERIFIED" in writer
+assert "ensureFieldReadTab" in worker
+assert "draft.savePoint" in writer
+assert "WRITE_VALUE_VERIFIED_EVENT_PENDING" in writer
+assert "justifyLeft" in writer
+assert "DRAFT_LEFT_ALIGN_VERIFIED" in writer
 assert "CONFLICT_REVIEW" in writer
 assert "chrome.debugger" in writer
 assert "tasks/update3" not in writer
@@ -62,4 +67,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V051_UTF8_HASH_STATIC_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V052_ALIGN_VERIFY_PASS")
