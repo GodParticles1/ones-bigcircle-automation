@@ -3,8 +3,8 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$bridgeName = "ones-browser-bridge-v0.5.2"
-$relayName = "ones-local-relay-v0.3.2"
+$bridgeName = "ones-browser-bridge-v0.5.3"
+$relayName = "ones-local-relay-v0.3.3"
 $bridgeStage = Join-Path $OutputDir $bridgeName
 $relayStage = Join-Path $OutputDir $relayName
 foreach ($p in @($bridgeStage,$relayStage)) {
@@ -15,13 +15,13 @@ foreach ($p in @($bridgeStage,$relayStage)) {
 foreach ($name in @("manifest.json","service-worker.js","root-cause-writer.js","popup.html","popup.js","popup.css","README.md")) {
   Copy-Item -LiteralPath (Join-Path $RepoRoot ("browser-bridge\" + $name)) -Destination (Join-Path $bridgeStage $name) -Force
 }
-foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","show-status.ps1","enqueue-ping.ps1","enqueue-inventory.ps1","enqueue-root-cause-write.ps1","job-example.json","job-inventory-example.json","README.md")) {
+foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","show-status.ps1","enqueue-ping.ps1","enqueue-inventory.ps1","enqueue-root-cause-write.ps1","enqueue-root-cause-format-repair.ps1","job-example.json","job-inventory-example.json","README.md")) {
   Copy-Item -LiteralPath (Join-Path $RepoRoot ("local-relay\" + $name)) -Destination (Join-Path $relayStage $name) -Force
 }
-Copy-Item -LiteralPath (Join-Path $RepoRoot "release\root-cause-write-runtime\upgrade-from-v0.3.0.ps1") -Destination (Join-Path $relayStage "upgrade-from-v0.3.0.ps1") -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot "release\root-cause-write-runtime\upgrade-from-v0.3.2.ps1") -Destination (Join-Path $relayStage "upgrade-from-v0.3.2.ps1") -Force
 
 $manifest = Get-Content -LiteralPath (Join-Path $bridgeStage "manifest.json") -Raw | ConvertFrom-Json
-if ($manifest.version -ne "0.5.2") { throw "BRIDGE_VERSION_MISMATCH" }
+if ($manifest.version -ne "0.5.3") { throw "BRIDGE_VERSION_MISMATCH" }
 if ($manifest.permissions -notcontains "debugger") { throw "BRIDGE_DEBUGGER_PERMISSION_MISSING" }
 
 $worker = Get-Content -LiteralPath (Join-Path $bridgeStage "service-worker.js") -Raw
@@ -32,14 +32,16 @@ if ($writer -notmatch 'UNIQUE_ONES_TASK_ONLY') { throw "TASK_TARGET_POLICY_MISSI
 if ($writer -notmatch 'fill_empty_only') { throw "FILL_EMPTY_ONLY_MISSING" }
 if ($writer -notmatch 'desiredSha256') { throw "DESIRED_HASH_GATE_MISSING" }
 if ($writer -notmatch 'DESIRED_VALUE_HASH_MISMATCH') { throw "DESIRED_HASH_MISMATCH_GATE_MISSING" }
+if ($writer -notmatch 'FORMAT_REPAIR_VERIFIED') { throw "FORMAT_REPAIR_GATE_MISSING" }
 if ($writer -match 'tasks/update3') { throw "DIRECT_RICHTEXT_UPDATE3_FORBIDDEN" }
 
 $relay = Get-Content -LiteralPath (Join-Path $relayStage "relay.py") -Raw
-if ($relay -notmatch 'VERSION = "0\.3\.2"') { throw "RELAY_VERSION_MISMATCH" }
+if ($relay -notmatch 'VERSION = "0\.3\.3"') { throw "RELAY_VERSION_MISMATCH" }
 if ($relay -notmatch '"ONES_ROOT_CAUSE_WRITE"') { throw "RELAY_WRITE_JOB_MISSING" }
 
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "upgrade-from-v0.3.0.ps1") -Raw))
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "enqueue-root-cause-write.ps1") -Raw))
+[void][scriptblock]::Create((Get-Content (Join-Path $relayStage "enqueue-root-cause-format-repair.ps1") -Raw))
 
 $bridgeZip = Join-Path $OutputDir ($bridgeName + ".zip")
 $relayZip = Join-Path $OutputDir ($relayName + ".zip")
