@@ -224,7 +224,33 @@ function rcPageInspectDraft(expectedDisplayId, fieldId, desiredText, expectedTex
   if (textNodes.length !== 1) return { ok:false, status:"DRAFT_TEXT_SURFACE_NOT_UNIQUE", textNodeCount:textNodes.length };
   const draft = norm(textNodes[0].innerText || textNodes[0].textContent || "");
   const desired = norm(desiredText);
-  return { ok:draft === desired, status:draft === desired ? "DRAFT_DOM_VERIFIED" : "DRAFT_DOM_MISMATCH", draft, desired, textBlockId:block.id || null };
+  const visible = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || "1") > 0;
+  };
+  const saveControls = [...root.querySelectorAll("button,[role=button]")]
+    .filter((el) => visible(el) && norm(el.innerText || el.textContent) === "保存");
+  if (saveControls.length !== 1) {
+    return {
+      ok:false,
+      status:"POST_DRAFT_SAVE_CONTROL_NOT_UNIQUE",
+      draft,
+      desired,
+      textBlockId:block.id || null,
+      saveControlCount:saveControls.length
+    };
+  }
+  const sr = saveControls[0].getBoundingClientRect();
+  return {
+    ok:draft === desired,
+    status:draft === desired ? "DRAFT_DOM_VERIFIED" : "DRAFT_DOM_MISMATCH",
+    draft,
+    desired,
+    textBlockId:block.id || null,
+    savePoint:{ x:Math.round(sr.left + sr.width / 2), y:Math.round(sr.top + sr.height / 2) }
+  };
 }
 
 async function rcPageVerifyWrite(input) {
@@ -370,7 +396,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
       return { status:"WRITE_BLOCKED", result:{ok:false,...preflight,status:"WRITE_BLOCKED",blockedBy:draft.status || "DRAFT_DOM_MISMATCH",draft,writeAttempted:false,saveDispatched:false,planSha256:planSha} };
     }
 
-    const sx=preflight.savePoint.x, sy=preflight.savePoint.y;
+    const sx=draft.savePoint.x, sy=draft.savePoint.y;
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseMoved",x:sx,y:sy});
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mousePressed",x:sx,y:sy,button:"left",clickCount:1});
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseReleased",x:sx,y:sy,button:"left",clickCount:1});
