@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.1"
+assert manifest["version"] == "0.5.2"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -42,6 +42,9 @@ assert "taskTargetPolicy" in writer and "UNIQUE_ONES_TASK_ONLY" in writer
 assert "fill_empty_only" in writer
 assert "desiredSha256" in writer
 assert "DESIRED_VALUE_HASH_MISMATCH" in writer
+assert "POST_DRAFT_SAVE_CONTROL_NOT_UNIQUE" in writer
+assert "draft.savePoint" in writer
+assert "preflight.savePoint.x" not in writer
 assert "crypto.subtle.digest" in writer
 assert "WRITE_VERIFIED" in writer
 assert "WRITE_UNVERIFIED" in writer
@@ -62,4 +65,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V051_UTF8_HASH_STATIC_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V052_POST_DRAFT_SAVE_RELOCATE_PASS")
