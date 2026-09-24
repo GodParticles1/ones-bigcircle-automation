@@ -75,7 +75,7 @@ jobs:
         with:
           name: ones-root-cause-write-runtime-v0.5.4-v0.3.3
           path: |
-            dist-root-cause-write/ones-browser-bridge-v0.5.3.zip
+            dist-root-cause-write/ones-browser-bridge-v0.5.4.zip
             dist-root-cause-write/ones-browser-bridge-v0.5.4.zip.sha256
             dist-root-cause-write/ones-local-relay-v0.3.3.zip
             dist-root-cause-write/ones-local-relay-v0.3.3.zip.sha256
