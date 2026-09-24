@@ -5,7 +5,7 @@ const RELAY_ALARM = "onesRelayPollV02";
 const RELAY_DEFAULT_URL = "http://127.0.0.1:18731";
 const RELAY_READ_CAPABILITIES = ["RELAY_PING", "ONES_INVENTORY_READ", "ONES_FIELD_READ"];
 function relayCapabilities(config) {
-  return config?.writeEnabled && config?.rootCauseFieldId ? [...RELAY_READ_CAPABILITIES, "ONES_ROOT_CAUSE_WRITE"] : [...RELAY_READ_CAPABILITIES];
+  return config?.writeEnabled && config?.rootCauseFieldId ? [...RELAY_READ_CAPABILITIES, "ONES_ROOT_CAUSE_WRITE", "ONES_ROOT_CAUSE_FORMAT_REPAIR"] : [...RELAY_READ_CAPABILITIES];
 }
 
 function validateRelayUrl(value) {
@@ -775,6 +775,10 @@ async function executeClaimedJob(config, job) {
   if (job.jobType === "ONES_ROOT_CAUSE_WRITE") {
     if (!config.writeEnabled) return { status:"WRITE_GATE_DISABLED", result:{ ok:false, status:"WRITE_GATE_DISABLED", error:"production root-cause write gate is disabled" } };
     return globalThis.onesRootCauseWriteExecute(config, job);
+  }
+  if (job.jobType === "ONES_ROOT_CAUSE_FORMAT_REPAIR") {
+    if (!config.writeEnabled) return { status:"WRITE_GATE_DISABLED", result:{ ok:false, status:"WRITE_GATE_DISABLED", error:"production root-cause write gate is disabled" } };
+    return globalThis.onesRootCauseFormatRepairExecute(config, job);
   }
   return { status:"INPUT_REJECTED", result:{ receivedJobType:job.jobType, allowedJobTypes:relayCapabilities(config) } };
 }
