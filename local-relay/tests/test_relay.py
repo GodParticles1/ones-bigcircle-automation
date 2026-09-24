@@ -50,8 +50,8 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.3.2"
-            assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
+            assert health["version"] == "0.3.3"
+            assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_FORMAT_REPAIR", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
             status, body = request("GET", "/v1/stats")
@@ -158,7 +158,7 @@ def main():
 
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V032_IDEMPOTENCY_TEST_PASS")
+            print("RELAY_V033_FORMAT_REPAIR_TEST_PASS")
         finally:
             proc.terminate()
             try:
