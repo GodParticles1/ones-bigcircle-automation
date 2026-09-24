@@ -205,6 +205,51 @@ function rcPageInspectSelection(expectedDisplayId, fieldId) {
   };
 }
 
+function rcPageNormalizeDraftAlignment(expectedDisplayId, fieldId, desiredText, expectedTextBlockId) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
+  const currentDisplayId = currentMatch ? currentMatch[1] : null;
+  if (currentDisplayId !== expectedDisplayId) return { ok:false, status:"TARGET_GUARD_FAILED", currentDisplayId, expectedDisplayId };
+  const root = document.getElementById(fieldId);
+  if (!root) return { ok:false, status:"EDITOR_NOT_READY" };
+  const block = expectedTextBlockId ? document.getElementById(expectedTextBlockId) : null;
+  if (!block || !root.contains(block) || !block.matches('.text-block[data-type="editor-block"][data-block-type="text"]')) {
+    return { ok:false, status:"ACTIVE_BLOCK_LOST", expectedTextBlockId:expectedTextBlockId || null };
+  }
+  const textNodes = [...block.querySelectorAll(".text")].filter((el) => {
+    const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+  });
+  if (textNodes.length !== 1) return { ok:false, status:"DRAFT_TEXT_SURFACE_NOT_UNIQUE", textNodeCount:textNodes.length };
+  const desired = norm(desiredText);
+  const before = norm(textNodes[0].innerText || textNodes[0].textContent || "");
+  if (before !== desired) return { ok:false, status:"DRAFT_DOM_MISMATCH", draft:before, desired };
+
+  const beforeAlign = String(getComputedStyle(block).textAlign || "").toLowerCase();
+  if (beforeAlign !== "left" && beforeAlign !== "start") {
+    const range = document.createRange();
+    range.selectNodeContents(block);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const applied = document.execCommand("justifyLeft", false, null);
+    selection.removeAllRanges();
+    if (!applied) return { ok:false, status:"LEFT_ALIGN_COMMAND_FAILED", beforeAlign };
+  }
+  const after = norm(textNodes[0].innerText || textNodes[0].textContent || "");
+  const afterAlign = String(getComputedStyle(block).textAlign || "").toLowerCase();
+  const ok = after === desired && (afterAlign === "left" || afterAlign === "start");
+  return {
+    ok,
+    status:ok ? "DRAFT_LEFT_ALIGN_VERIFIED" : "DRAFT_LEFT_ALIGN_FAILED",
+    draft:after,
+    desired,
+    beforeAlign,
+    afterAlign,
+    textBlockId:block.id || null
+  };
+}
+
 function rcPageInspectDraft(expectedDisplayId, fieldId, desiredText, expectedTextBlockId) {
   const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
@@ -224,7 +269,30 @@ function rcPageInspectDraft(expectedDisplayId, fieldId, desiredText, expectedTex
   if (textNodes.length !== 1) return { ok:false, status:"DRAFT_TEXT_SURFACE_NOT_UNIQUE", textNodeCount:textNodes.length };
   const draft = norm(textNodes[0].innerText || textNodes[0].textContent || "");
   const desired = norm(desiredText);
-  return { ok:draft === desired, status:draft === desired ? "DRAFT_DOM_VERIFIED" : "DRAFT_DOM_MISMATCH", draft, desired, textBlockId:block.id || null };
+  const textAlign = String(getComputedStyle(block).textAlign || "").toLowerCase();
+  const visible = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || "1") > 0;
+  };
+  const saveControls = [...root.querySelectorAll("button,[role=button]")]
+    .filter((el) => visible(el) && norm(el.innerText || el.textContent) === "保存");
+  if (saveControls.length !== 1) {
+    return { ok:false, status:"POST_DRAFT_SAVE_CONTROL_NOT_UNIQUE", draft, desired, textAlign, saveControlCount:saveControls.length };
+  }
+  const sr = saveControls[0].getBoundingClientRect();
+  const aligned = textAlign === "left" || textAlign === "start";
+  const ok = draft === desired && aligned;
+  return {
+    ok,
+    status:ok ? "DRAFT_DOM_VERIFIED" : (draft !== desired ? "DRAFT_DOM_MISMATCH" : "DRAFT_ALIGNMENT_INVALID"),
+    draft,
+    desired,
+    textAlign,
+    textBlockId:block.id || null,
+    savePoint:{ x:Math.round(sr.left + sr.width / 2), y:Math.round(sr.top + sr.height / 2) }
+  };
 }
 
 async function rcPageVerifyWrite(input) {
@@ -364,13 +432,24 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
 
     await chrome.debugger.sendCommand(debuggee,"Input.insertText",{text:desired});
     await new Promise((resolve)=>setTimeout(resolve,250));
+
+    const [alignExec] = await chrome.scripting.executeScript({
+      target:{tabId:tab.id}, world:"MAIN", func:rcPageNormalizeDraftAlignment,
+      args:[String(p.displayId),String(p.fieldId),desired,preflight.textBlockId]
+    });
+    const alignment = alignExec?.result || {ok:false,status:"NO_ALIGNMENT_RESULT"};
+    if (!alignment.ok || alignment.status !== "DRAFT_LEFT_ALIGN_VERIFIED") {
+      return { status:"WRITE_BLOCKED", result:{ok:false,...preflight,status:"WRITE_BLOCKED",blockedBy:alignment.status || "DRAFT_LEFT_ALIGN_FAILED",alignment,writeAttempted:false,saveDispatched:false,planSha256:planSha} };
+    }
+
+    await new Promise((resolve)=>setTimeout(resolve,120));
     const [draftExec] = await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageInspectDraft,args:[String(p.displayId),String(p.fieldId),desired,preflight.textBlockId]});
     draft = draftExec?.result || {ok:false,status:"NO_DRAFT_RESULT"};
     if (!draft.ok || draft.status !== "DRAFT_DOM_VERIFIED") {
-      return { status:"WRITE_BLOCKED", result:{ok:false,...preflight,status:"WRITE_BLOCKED",blockedBy:draft.status || "DRAFT_DOM_MISMATCH",draft,writeAttempted:false,saveDispatched:false,planSha256:planSha} };
+      return { status:"WRITE_BLOCKED", result:{ok:false,...preflight,status:"WRITE_BLOCKED",blockedBy:draft.status || "DRAFT_DOM_MISMATCH",alignment,draft,writeAttempted:false,saveDispatched:false,planSha256:planSha} };
     }
 
-    const sx=preflight.savePoint.x, sy=preflight.savePoint.y;
+    const sx=draft.savePoint.x, sy=draft.savePoint.y;
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseMoved",x:sx,y:sy});
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mousePressed",x:sx,y:sy,button:"left",clickCount:1});
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseReleased",x:sx,y:sy,button:"left",clickCount:1});
@@ -381,7 +460,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     if (attached) { try { await chrome.debugger.detach(debuggee); } catch (_) {} }
   }
 
-  const delays=[180,350,650,1100,1800,2600];
+  const delays=[180,350,650,1100,1800,2600,4200,6500,9000];
   let last=null;
   for(let i=0;i<delays.length;i+=1){
     if(i>0) await new Promise((resolve)=>setTimeout(resolve,delays[i]));
@@ -394,5 +473,8 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
       return { status:"WRITE_VERIFIED", result:{...preflight,ok:true,status:"WRITE_VERIFIED",writeAttempted:true,saveDispatched:true,readbackAttempts:i+1,planSha256:planSha,decision:p.decision,writeMode:p.writeMode,draft,readback:last} };
     }
   }
-  return { status:"WRITE_UNVERIFIED", result:{...preflight,ok:false,status:"WRITE_UNVERIFIED",writeAttempted:true,saveDispatched:true,planSha256:planSha,draft,readback:last,error:"save dispatched exactly once but authoritative readback did not verify; automatic retry forbidden"} };
+  if (last?.currentSemantic === desired) {
+    return { status:"WRITE_VALUE_VERIFIED_EVENT_PENDING", result:{...preflight,ok:false,status:"WRITE_VALUE_VERIFIED_EVENT_PENDING",writeAttempted:true,saveDispatched:true,planSha256:planSha,draft,readback:last,error:"authoritative value matches desired but field event is still pending; automatic retry forbidden"} };
+  }
+  return { status:"WRITE_UNVERIFIED", result:{...preflight,ok:false,status:"WRITE_UNVERIFIED",writeAttempted:true,saveDispatched:true,planSha256:planSha,draft,readback:last,error:"save dispatched exactly once but authoritative field value did not verify; automatic retry forbidden"} };
 };

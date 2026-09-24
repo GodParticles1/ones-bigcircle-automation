@@ -641,8 +641,27 @@ async function relayReadTaskFields(scope, payload) {
   };
 }
 
+async function ensureFieldReadTab(config) {
+  const scope = validatedOnesScope(config);
+  const tabs = await findOnesTabs(config);
+  const teamTabs = tabs.filter((tab) => {
+    try {
+      const u = new URL(tab.url || "");
+      return u.origin === scope.onesOrigin && u.pathname.includes("/team/" + scope.teamUuid + "/");
+    } catch (_) {
+      return false;
+    }
+  });
+  if (!teamTabs.length) {
+    return { ok:false, status:"ONES_TAB_UNAVAILABLE", error:"未找到已登录的 ONES team 页面" };
+  }
+  const tab = teamTabs.find((item) => item.active) || teamTabs[0];
+  if (!tab?.id) return { ok:false, status:"ONES_TAB_UNAVAILABLE", error:"无法定位 ONES team 页面" };
+  return { ok:true, tabId:tab.id, created:false, ready:{ href:tab.url || null, teamUuid:scope.teamUuid } };
+}
+
 async function executeFieldReadJob(config, job) {
-  const tabState = await ensureInventoryTab(config);
+  const tabState = await ensureFieldReadTab(config);
   if (!tabState.ok) {
     return {
       status:"FIELD_READ_FAILED",
