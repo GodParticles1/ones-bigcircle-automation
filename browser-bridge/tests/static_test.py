@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.3"
+assert manifest["version"] == "0.5.4"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -38,6 +38,9 @@ assert "replace(/<!--version:[^>]*-->/gi" in worker
 writer = (ROOT / "root-cause-writer.js").read_text(encoding="utf-8")
 assert "RENDERED_LEFT_VERIFIED" in writer
 assert "FORMAT_REPAIR_VERIFIED" in writer
+assert "authoritativeSemantic" in writer
+assert "ACCEPTED_FIELD_READ_FAILED" in writer
+assert "rcAcceptedFieldRead" in writer
 assert "EXACT_VALUE_LEFT_ALIGN_ONLY" in writer
 assert "onesRootCauseFormatRepairExecute" in writer
 assert "debugger" in manifest["permissions"]
@@ -72,4 +75,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V053_FORMAT_REPAIR_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V054_ACCEPTED_READ_AUTHORITY_PASS")
