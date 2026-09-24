@@ -20,10 +20,6 @@ assert "https://*/*" in manifest["optional_host_permissions"]
 assert "ONES_INVENTORY_READ" in worker
 assert "ONES_FIELD_READ" in worker
 assert "ONES_ROOT_CAUSE_WRITE" in worker
-assert "RENDERED_LEFT_VERIFIED" in writer
-assert "FORMAT_REPAIR_VERIFIED" in writer
-assert "EXACT_VALUE_LEFT_ALIGN_ONLY" in writer
-assert "onesRootCauseFormatRepairExecute" in writer
 assert "ONES_ROOT_CAUSE_FORMAT_REPAIR" in worker
 assert "RELAY_PING" in worker
 assert "validatedOnesScope" in worker
@@ -38,8 +34,12 @@ assert "normalizeSemanticText" in worker
 assert "ones-editor-text" in worker
 assert "replace(/<!--version:[^>]*-->/gi" in worker
 
-# Public projection remains configuration-driven; the only write lane is the bounded native richtext root-cause writer.
+# Public projection remains configuration-driven; the only write lanes are bounded root-cause operations.
 writer = (ROOT / "root-cause-writer.js").read_text(encoding="utf-8")
+assert "RENDERED_LEFT_VERIFIED" in writer
+assert "FORMAT_REPAIR_VERIFIED" in writer
+assert "EXACT_VALUE_LEFT_ALIGN_ONLY" in writer
+assert "onesRootCauseFormatRepairExecute" in writer
 assert "debugger" in manifest["permissions"]
 assert "ONES_ROOT_CAUSE_WRITE" in worker
 assert "writeEnabled" in worker and "writeEnabled" in popup
