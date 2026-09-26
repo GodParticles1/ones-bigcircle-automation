@@ -1,62 +1,25 @@
 # AGENTS.md — permanent repository constraints
 
-This is the permanent startup entry for `GodParticles1/ones-bigcircle-automation`.
+## Startup and authority
 
-## Startup order
+Read this file and docs/context/CURRENT.md, then the exact task/handoff and relevant live main/issue/PR/head. Lead work uses docs/governance/LEAD_RESPONSIBILITY.md, the sole owner of takeover depth, working discipline, authority inheritance, proof-stop and self-correction. TASKS/HANDOFF and product/security contracts load for their actual lane decisions, not repeated unrelated discovery. Refresh before writes or changed-state decisions.
 
-1. Read this file.
-2. Read `docs/context/CURRENT.md`.
-3. Reconstruct live `main`, open priority issues, open PRs, writer branches, exact heads and CI.
-4. Read `TASKS.md` and `HANDOFF.md`.
-5. Read only the product/security contracts relevant to the current lane.
-6. If acting as Lead, read `docs/governance/LEAD_RESPONSIBILITY.md`.
+Latest explicit user instruction > live repository/runtime evidence > accepted/frozen decisions > governance contracts > current snapshots > history. Old handoffs and events are navigation, not live authority.
 
-Chat summaries and old handoffs are recovery aids, not live authority.
+## Product and privacy boundary
 
-## Authority
+This repository owns confirmed-case feed normalization, completeness-verified ONES reconciliation, loopback relay and accepted configuration-driven browser/transport capabilities. It does not own xRocket product knowledge or historical chat truth. Future transport/mutation requires its separate accepted contract and runtime gate; governance maintenance does not enable it.
 
-`latest explicit user instruction > live repository/runtime evidence > accepted/frozen decisions > governance contracts > current-state snapshots > historical notes`
+This is public source: no real engineer/personal identifiers, production case exports/raw chats, private origins or tenant/team/project/department identifiers, cookies/auth headers/passwords/tokens/keys/session material, or unreviewed production screenshots/log bundles. Use synthetic fixtures and configuration placeholders. Never export browser credentials to relay/cloud; local relay stays loopback-only by default.
 
-## Product boundary
+## Safety and engineering
 
-This repository owns automation code and contracts for:
+ONES access remains read-only until a separately frozen mutation contract and runtime acceptance explicitly authorizes more. Incomplete inventory cannot prove a missing ticket; ambiguous keys are not guessed by title similarity. Preserve accepted population/identity, snapshot-completeness, exact-input and idempotency semantics.
 
-- local confirmed-case feed normalization;
-- completeness-verified ONES inventory reconciliation;
-- local loopback relay;
-- a future public-safe, configuration-driven browser bridge;
-- future transport only after a separate accepted contract.
+Prefer small explicit modules, deterministic schemas, fail-closed validation, idempotency and atomic checkpoints. No hidden retries after uncertain delivery. Tests bind to their actual candidate; CI/source success does not imply browser, transport or production-write acceptance.
 
-It does not own xRocket product knowledge. It must not become a second history/memory repository.
+## Collaboration and persistence
 
-## Public repository privacy boundary
+Writers have an accepted base/branch, bounded goal, ownership, applicable tests and stop condition; no self-merge or scope expansion. Lead independently reviews semantics/evidence and integrates under the existing gates. The Lead owner contains the canonical state vocabulary, not another copy here.
 
-Never commit:
-
-- real engineer names or personal identifiers;
-- production case exports or raw group-chat history;
-- private ONES origins, tenant/team/project/department identifiers;
-- cookies, Authorization headers, passwords, tokens, private keys or session material;
-- exact production screenshots/log bundles unless separately reviewed and redacted.
-
-Use synthetic fixtures and configuration placeholders in public code/tests/docs.
-
-## Safety boundary
-
-Current capabilities are read-only with respect to ONES. Do not enable create/import or field mutation without a separately frozen contract and runtime acceptance.
-
-Never export browser credentials to the relay or cloud. The relay stays loopback-only by default.
-
-Incomplete inventory cannot declare missing tickets. Ambiguous local keys are not guessed by title similarity.
-
-## Engineering
-
-Prefer small explicit modules, deterministic schemas, fail-closed validation, idempotency and atomic checkpoint updates. No hidden retries for uncertain delivery. Tests bind to the exact candidate SHA.
-
-## Multi-agent
-
-Each writer gets an accepted base SHA, branch, bounded goal, owned files, required tests and stop conditions. Writers do not self-merge or expand product scope. Lead owns semantic review and integration.
-
-## Persistence
-
-Permanent rules live here/governance. Current facts live in `docs/context/CURRENT.md`. Active gates live in `TASKS.md`. Executable continuation lives in `HANDOFF.md`. Do not create a second global memory system inside this repository.
+Permanent constraints live here and in their existing governance owners; current facts in docs/context/CURRENT.md; current gates in TASKS; executable relay in HANDOFF; review/history in issues/PRs/Git. Update only changed facts and never build a second memory system or copy private source bodies into public context.
