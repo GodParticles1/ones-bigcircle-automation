@@ -40,6 +40,8 @@ if ($relay -notmatch 'VERSION = "0\.3\.4"') { throw "RELAY_VERSION_MISMATCH" }
 if ($relay -notmatch '"ONES_ROOT_CAUSE_WRITE"') { throw "RELAY_WRITE_JOB_MISSING" }
 
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "upgrade-from-v0.3.3.ps1") -Raw))
+$upgradeHelper = Get-Content -LiteralPath (Join-Path $relayStage "upgrade-from-v0.3.3.ps1") -Raw
+if ($upgradeHelper -notmatch 'ones-local-relay-v0\.3\.3') { throw "RELAY_V034_UPGRADE_SOURCE_MISMATCH" }
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "enqueue-root-cause-write.ps1") -Raw))
 [void][scriptblock]::Create((Get-Content (Join-Path $relayStage "enqueue-root-cause-format-repair.ps1") -Raw))
 $formatHelper = Get-Content -LiteralPath (Join-Path $relayStage "enqueue-root-cause-format-repair.ps1") -Raw
