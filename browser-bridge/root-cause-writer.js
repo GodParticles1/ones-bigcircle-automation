@@ -293,16 +293,17 @@ function rcPageNormalizeDraftAlignment(expectedDisplayId, fieldId, desiredText, 
   if (before !== desired) return { ok:false, status:"DRAFT_DOM_MISMATCH", draft:before, desired };
 
   const beforeAlign = String(getComputedStyle(block).textAlign || "").toLowerCase();
-  if (beforeAlign !== "left" && beforeAlign !== "start") {
-    const range = document.createRange();
-    range.selectNodeContents(block);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    const applied = document.execCommand("justifyLeft", false, null);
-    selection.removeAllRanges();
-    if (!applied) return { ok:false, status:"LEFT_ALIGN_COMMAND_FAILED", beforeAlign };
-  }
+  // Persist an explicit native paragraph alignment even when inherited CSS
+  // already looks left-aligned. Keep the accepted single paragraph verbatim:
+  // no splitting, headings, reordering, or inferred solution/next-step facts.
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  const applied = document.execCommand("justifyLeft", false, null);
+  selection.removeAllRanges();
+  if (!applied) return { ok:false, status:"LEFT_ALIGN_COMMAND_FAILED", beforeAlign };
   const after = norm(textNodes[0].innerText || textNodes[0].textContent || "");
   const afterAlign = String(getComputedStyle(block).textAlign || "").toLowerCase();
   const ok = after === desired && (afterAlign === "left" || afterAlign === "start");
@@ -635,13 +636,21 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     displayId:String(p.displayId), taskUuid:String(p.taskUuid), fieldId:String(p.fieldId),
     desiredValue:desired, baselineEventIds:preflight.baselineEventIds
   });
-  const status = checked.status;
-  const error = status === "WRITE_VERIFIED" ? null : status === "WRITE_VALUE_VERIFIED_EVENT_PENDING"
+  const semanticStatus = checked.status;
+  const semanticVerified = semanticStatus === "WRITE_VERIFIED" || semanticStatus === "WRITE_VALUE_VERIFIED_EVENT_PENDING";
+  const presentation = semanticVerified ? await rcVerifyRootCausePresentation(tab.id, {
+    expectedHref:tab.url, displayId:String(p.displayId), fieldId:String(p.fieldId), expectedValue:desired
+  }) : null;
+  const status = semanticVerified && !presentation?.ok ? "WRITE_PRESENTATION_UNVERIFIED" : semanticStatus;
+  const error = status === "WRITE_VERIFIED" ? null : status === "WRITE_PRESENTATION_UNVERIFIED"
+    ? "semantic persistence verified but rendered presentation is unverified; automatic Save retry forbidden"
+    : status === "WRITE_VALUE_VERIFIED_EVENT_PENDING"
     ? "authoritative value matches desired but field event is still pending; automatic retry forbidden"
     : "save dispatched exactly once but authoritative field value did not verify within bounded convergence; automatic retry forbidden";
   return { status, result:{
     ...preflight, ok:status === "WRITE_VERIFIED", status, writeAttempted:true, saveDispatched:true,
     readbackAttempts:checked.verification.attempts, verification:checked.verification,
+    semanticStatus, presentation, presentationPolicy:"EXACT_SINGLE_PARAGRAPH_LEFT_V1",
     planSha256:planSha, decision:p.decision, writeMode:p.writeMode, draft, readback:checked.readback,
     ...(error ? { error } : {})
   } };
@@ -691,18 +700,84 @@ async function rcPagePreflightFormatRepair(input) {
   return {ok:true,status:"FORMAT_REPAIR_READY",displayId,taskUuid,fieldId,expectedValue:expected,textBlockId:block.id||null,beforeAlign:String(getComputedStyle(block).textAlign||"").toLowerCase()};
 }
 
-function rcPageVerifyRenderedAlignment(expectedDisplayId, fieldId, expectedValue) {
-  const norm=(value)=>String(value??"").replace(/\u200B|\uFEFF/g,"").replace(/\r\n?/g,"\n").trim();
-  const currentMatch=location.href.match(/\/issue\/([^/?#]+)/i);
-  if((currentMatch?currentMatch[1]:null)!==expectedDisplayId) return {ok:false,status:"TARGET_GUARD_FAILED"};
-  const root=document.getElementById(fieldId);
-  if(!root) return {ok:false,status:"FIELD_CONTAINER_NOT_FOUND"};
-  const expected=norm(expectedValue);
-  const visible=(el)=>{if(!el||!(el instanceof Element))return false;const r=el.getBoundingClientRect();const cs=getComputedStyle(el);return r.width>0&&r.height>0&&cs.display!=="none"&&cs.visibility!=="hidden"};
-  const candidates=[root,...root.querySelectorAll(".text,p,div,span")].filter((el)=>visible(el)&&norm(el.innerText||el.textContent||"")===expected);
-  const rows=candidates.map((el)=>({tag:el.tagName,className:el.className||"",textAlign:String(getComputedStyle(el).textAlign||"").toLowerCase()}));
-  const match=rows.find((row)=>row.textAlign==="left"||row.textAlign==="start")||null;
-  return {ok:!!match,status:match?"RENDERED_LEFT_VERIFIED":"RENDERED_LEFT_PENDING",matches:rows.slice(-12)};
+function rcPageVerifyRenderedAlignment(expectedDisplayId, fieldId, expectedValue, expectedHref) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const initialHref = location.href;
+  const targetMatches = () => (!expectedHref || location.href === expectedHref) &&
+    location.href === initialHref && location.href.match(/\/issue\/([^/?#]+)/i)?.[1] === expectedDisplayId;
+  if (!targetMatches()) return { ok:false, status:"TARGET_GUARD_FAILED" };
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(fieldId || ""))) return { ok:false, status:"RENDERED_FIELD_INPUT_REJECTED" };
+  const roots = [...document.querySelectorAll('[id="' + fieldId + '"]')];
+  if (roots.length !== 1) return { ok:false, status:"RENDERED_FIELD_NOT_UNIQUE", fieldCount:roots.length };
+  const root = roots[0];
+  const visible = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || "1") > 0;
+  };
+  if (!root.isConnected || !visible(root)) return { ok:false, status:"RENDERED_FIELD_NOT_VISIBLE" };
+  // A matching draft is not a saved/rendered field. Reject editor ancestors too.
+  const editing = '.standard-co-editor-editing,[contenteditable="true"]';
+  if (root.closest(editing) || root.querySelectorAll(editing).length) return { ok:false, status:"RENDERED_EDITOR_STILL_OPEN" };
+  const expected = norm(expectedValue);
+  if (!expected || expected.length > 300 || expected.includes("\n")) return { ok:false, status:"RENDERED_PARAGRAPH_POLICY_FAILED" };
+  if (norm(root.innerText || root.textContent) !== expected) return { ok:false, status:"RENDERED_SEMANTIC_MISMATCH" };
+  if ([...root.querySelectorAll('h1,h2,h3,h4,h5,h6,ul,ol,li,pre,blockquote')].some(visible)) {
+    return { ok:false, status:"RENDERED_PARAGRAPH_POLICY_FAILED" };
+  }
+  const blocks = [root, ...root.querySelectorAll('*')].filter((el) => {
+    const display = getComputedStyle(el).display;
+    return visible(el) && display !== "inline" && display !== "contents" && norm(el.innerText || el.textContent) !== "";
+  });
+  const exactBlocks = blocks.filter((el) => norm(el.innerText || el.textContent) === expected);
+  const textBlocks = exactBlocks.filter((el) => !exactBlocks.some((child) => child !== el && el.contains(child)));
+  if (textBlocks.length !== 1) return { ok:false, status:"RENDERED_TEXT_BLOCK_NOT_UNIQUE", blockCount:textBlocks.length };
+  // Check the text-owning block and all text-bearing descendant blocks. A left
+  // ancestor cannot hide a centered/right-aligned paragraph or inline block.
+  const textBlock = textBlocks[0];
+  const rows = blocks.filter((el) => textBlock.contains(el)).map((el) => ({
+    tag:el.tagName, textAlign:String(getComputedStyle(el).textAlign || "").toLowerCase()
+  }));
+  if (!targetMatches() || !root.isConnected) return { ok:false, status:"TARGET_GUARD_FAILED" };
+  const ok = rows.length > 0 && rows.every((row) => row.textAlign === "left" || row.textAlign === "start");
+  return { ok, status:ok ? "RENDERED_LEFT_VERIFIED" : "RENDERED_LEFT_PENDING", fieldId, matches:rows };
+}
+
+async function rcVerifyRootCausePresentation(tabId, input) {
+  const started = performance.now();
+  const maxElapsedMs = 5000;
+  let last = { ok:false, status:"NO_RENDERED_RESULT" };
+  let attempts = 0;
+  for (const delay of [0,300,700]) {
+    if (performance.now() - started + delay >= maxElapsedMs) break;
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    const remaining = maxElapsedMs - (performance.now() - started);
+    if (remaining <= 0) break;
+    attempts += 1;
+    let timer;
+    try {
+      const executions = await Promise.race([
+        chrome.scripting.executeScript({
+          target:{tabId}, world:"MAIN", func:rcPageVerifyRenderedAlignment,
+          args:[input.displayId,input.fieldId,input.expectedValue,input.expectedHref]
+        }),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve([{ result:{ ok:false, status:"RENDERED_READ_TIMEOUT" } }]), Math.min(2000, remaining));
+        })
+      ]);
+      last = executions?.[0]?.result || { ok:false, status:"NO_RENDERED_RESULT" };
+    } catch (_) {
+      last = { ok:false, status:"RENDERED_READ_FAILED" };
+    } finally {
+      clearTimeout(timer);
+    }
+    if ((last.ok && last.status === "RENDERED_LEFT_VERIFIED") || last.status === "TARGET_GUARD_FAILED") break;
+  }
+  return {
+    ...last, ok:last.ok === true && last.status === "RENDERED_LEFT_VERIFIED",
+    source:"RENDERED_FIELD_DOM", attempts, elapsedMs:Math.round(performance.now() - started), maxElapsedMs
+  };
 }
 
 globalThis.onesRootCauseFormatRepairExecute = async function(config, job) {
@@ -757,7 +832,7 @@ globalThis.onesRootCauseFormatRepairExecute = async function(config, job) {
     if(i>0) await new Promise((resolve)=>setTimeout(resolve,delays[i]));
     const [verifyExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageVerifyWrite,args:[{displayId:String(p.displayId),taskUuid:String(p.taskUuid),fieldId:String(p.fieldId),desiredValue:expected,baselineEventIds:[]}]});
     lastRead=verifyExec?.result||null;
-    const [renderExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageVerifyRenderedAlignment,args:[String(p.displayId),String(p.fieldId),expected]});
+    const [renderExec]=await chrome.scripting.executeScript({target:{tabId:tab.id},world:"MAIN",func:rcPageVerifyRenderedAlignment,args:[String(p.displayId),String(p.fieldId),expected,tab.url]});
     lastRender=renderExec?.result||null;
     if(lastRead?.currentSemantic===expected&&lastRender?.ok){
       return {status:"FORMAT_REPAIR_VERIFIED",result:{ok:true,status:"FORMAT_REPAIR_VERIFIED",saveDispatched:true,expectedValueSha256:expectedSha,alignment,draft,readback:lastRead,render:lastRender}};

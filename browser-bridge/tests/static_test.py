@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.7"
+assert manifest["version"] == "0.5.8"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -103,4 +103,15 @@ assert "valueReadVerified" in convergence
 assert "READBACK_TIMEOUT" in convergence
 assert "READBACK_EXECUTION_FAILED" in convergence
 assert "ONESQL_AND_FIELD_EVENTS" in convergence
-print("BROWSER_BRIDGE_PUBLIC_V057_POST_SAVE_CONVERGENCE_PASS")
+# Issue #85: only normal rendered field DOM can prove presentation acceptance.
+rendered = writer.split("function rcPageVerifyRenderedAlignment", 1)[1].split("globalThis.onesRootCauseFormatRepairExecute", 1)[0]
+assert "RENDERED_EDITOR_STILL_OPEN" in rendered
+assert "RENDERED_FIELD_NOT_UNIQUE" in rendered
+assert "rows.every" in rendered
+assert "expectedHref" in rendered
+assert "RENDERED_FIELD_DOM" in rendered
+for forbidden in ("chrome.debugger", "Input.insertText", "dispatchMouseEvent", ".click(", "execCommand", "fetch("):
+    assert forbidden not in rendered
+assert 'presentationPolicy:"EXACT_SINGLE_PARAGRAPH_LEFT_V1"' in writer
+assert 'semanticVerified && !presentation?.ok ? "WRITE_PRESENTATION_UNVERIFIED"' in writer
+print("BROWSER_BRIDGE_PUBLIC_V058_RENDERED_PRESENTATION_PASS")
