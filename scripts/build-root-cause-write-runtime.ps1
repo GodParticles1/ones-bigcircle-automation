@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$bridgeName = "ones-browser-bridge-v0.5.4"
+$bridgeName = "ones-browser-bridge-v0.5.5"
 $relayName = "ones-local-relay-v0.3.4"
 $bridgeStage = Join-Path $OutputDir $bridgeName
 $relayStage = Join-Path $OutputDir $relayName
@@ -21,12 +21,13 @@ foreach ($name in @("relay.py","start.ps1","stop.ps1","start-foreground.ps1","sh
 Copy-Item -LiteralPath (Join-Path $RepoRoot "release\root-cause-write-runtime\upgrade-from-v0.3.3.ps1") -Destination (Join-Path $relayStage "upgrade-from-v0.3.3.ps1") -Force
 
 $manifest = Get-Content -LiteralPath (Join-Path $bridgeStage "manifest.json") -Raw | ConvertFrom-Json
-if ($manifest.version -ne "0.5.4") { throw "BRIDGE_VERSION_MISMATCH" }
+if ($manifest.version -ne "0.5.5") { throw "BRIDGE_VERSION_MISMATCH" }
 if ($manifest.permissions -notcontains "debugger") { throw "BRIDGE_DEBUGGER_PERMISSION_MISSING" }
 
 $worker = Get-Content -LiteralPath (Join-Path $bridgeStage "service-worker.js") -Raw
 $writer = Get-Content -LiteralPath (Join-Path $bridgeStage "root-cause-writer.js") -Raw
 if ($worker -notmatch '"ONES_ROOT_CAUSE_WRITE"') { throw "BRIDGE_WRITE_CAPABILITY_MISSING" }
+if ($worker -notmatch 'u\.pathname \+ u\.search \+ u\.hash') { throw "BRIDGE_HASH_ROUTE_FIELD_READ_GUARD_MISSING" }
 if ($worker -notmatch 'writeEnabled') { throw "BRIDGE_WRITE_GATE_MISSING" }
 if ($writer -notmatch 'UNIQUE_ONES_TASK_ONLY') { throw "TASK_TARGET_POLICY_MISSING" }
 if ($writer -notmatch 'fill_empty_only') { throw "FILL_EMPTY_ONLY_MISSING" }
