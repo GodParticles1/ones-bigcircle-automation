@@ -1,5 +1,5 @@
 param(
-  [string]$OldRelayDir = "D:\tools\ones-local-relay-v0.3.4",
+  [string]$OldRelayDir = "D:\tools\ones-local-relay-v0.3.3",
   [string]$NewRelayDir = $PSScriptRoot
 )
 $ErrorActionPreference = "Stop"
