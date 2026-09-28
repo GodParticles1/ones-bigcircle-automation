@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.4"
+assert manifest["version"] == "0.5.5"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -54,6 +54,8 @@ assert "crypto.subtle.digest" in writer
 assert "WRITE_VERIFIED" in writer
 assert "WRITE_UNVERIFIED" in writer
 assert "ensureFieldReadTab" in worker
+assert 'const route = u.pathname + u.search + u.hash;' in worker
+assert 'route.includes("/team/" + scope.teamUuid + "/")' in worker
 assert "draft.savePoint" in writer
 assert "WRITE_VALUE_VERIFIED_EVENT_PENDING" in writer
 assert "justifyLeft" in writer
@@ -75,4 +77,4 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V054_ACCEPTED_READ_AUTHORITY_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V055_HASH_ROUTE_FIELD_READ_PASS")
