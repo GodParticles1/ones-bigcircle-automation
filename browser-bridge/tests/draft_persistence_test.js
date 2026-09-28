@@ -24,7 +24,7 @@ class FakeElement {
 function makePopup(sessionStore, committedConfig = {}) {
   const ids = [
     "output", "onesOrigin", "teamUuid", "projectUuid", "issueTypeUuid",
-    "assigneeDepartmentUuid", "relayUrl", "relayToken", "relayEnabled",
+    "assigneeDepartmentUuid", "rootCauseFieldId", "writeEnabled", "relayUrl", "relayToken", "relayEnabled",
     "inventoryPage", "runtime", "saveConfig", "bindInventory", "testRelay", "pollNow"
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement()]));
@@ -39,6 +39,8 @@ function makePopup(sessionStore, committedConfig = {}) {
     projectUuid:"",
     issueTypeUuid:"",
     assigneeDepartmentUuid:"",
+    rootCauseFieldId:"",
+    writeEnabled:false,
     ...committedConfig
   };
   const chrome = {
@@ -68,7 +70,9 @@ function makePopup(sessionStore, committedConfig = {}) {
             teamUuid:message.teamUuid,
             projectUuid:message.projectUuid,
             issueTypeUuid:message.issueTypeUuid,
-            assigneeDepartmentUuid:message.assigneeDepartmentUuid
+            assigneeDepartmentUuid:message.assigneeDepartmentUuid,
+            rootCauseFieldId:message.rootCauseFieldId,
+            writeEnabled:message.writeEnabled
           });
           return {
             ok:true,

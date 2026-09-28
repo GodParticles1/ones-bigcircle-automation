@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.8"
+assert manifest["version"] == "0.5.9"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -114,4 +114,12 @@ for forbidden in ("chrome.debugger", "Input.insertText", "dispatchMouseEvent", "
     assert forbidden not in rendered
 assert 'presentationPolicy:"EXACT_SINGLE_PARAGRAPH_LEFT_V1"' in writer
 assert 'semanticVerified && !presentation?.ok ? "WRITE_PRESENTATION_UNVERIFIED"' in writer
-print("BROWSER_BRIDGE_PUBLIC_V058_RENDERED_PRESENTATION_PASS")
+# Issue #83: config must be acknowledged before a permission prompt can destroy the popup.
+save_handler = popup.split('$("saveConfig").addEventListener("click", async () => {', 1)[1].split('$("bindInventory")', 1)[0]
+assert save_handler.index('type:"ONES_RELAY_SET_CONFIG"') < save_handler.index("chrome.permissions.request")
+assert save_handler.index("if (!result?.ok)") < save_handler.index("chrome.permissions.request")
+assert save_handler.index("await clearDraft()") < save_handler.index("chrome.permissions.request")
+assert 'origins:[origin + "/*"]' in save_handler
+assert 'normalizeOrigin(form.onesOrigin)' in save_handler
+assert 'storedDraft?.baseConfig === draftBase' in popup
+print("BROWSER_BRIDGE_PUBLIC_V059_PERSIST_BEFORE_PERMISSION_PASS")

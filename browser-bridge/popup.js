@@ -1,6 +1,9 @@
 const $ = (id) => document.getElementById(id);
 const output = $("output");
 const DRAFT_KEY = "onesRelaySetupDraftV041";
+let draftBase = null;
+let draftWrite = Promise.resolve();
+let savingConfig = false;
 const DRAFT_INPUT_IDS = [
   "onesOrigin",
   "teamUuid",
@@ -51,12 +54,24 @@ async function getDraft() {
   return draft && typeof draft === "object" ? draft : null;
 }
 
-async function persistDraft() {
-  await chrome.storage.session.set({ [DRAFT_KEY]: currentForm() });
+function persistDraft() {
+  if (savingConfig) return Promise.resolve();
+  const draft = { form:currentForm(), baseConfig:draftBase };
+  // Serialize draft writes so an earlier input event cannot resurrect a draft
+  // after a successful save clears it. Only session presentation state is queued.
+  const write = () => chrome.storage.session.set({ [DRAFT_KEY]: draft });
+  draftWrite = draftWrite.then(write, write);
+  return draftWrite;
 }
 
 async function clearDraft() {
+  await draftWrite.catch(() => {});
   await chrome.storage.session.remove(DRAFT_KEY);
+}
+
+function setSavingConfig(value) {
+  savingConfig = value;
+  for (const id of [...DRAFT_INPUT_IDS, "relayEnabled", "writeEnabled", "saveConfig"]) $(id).disabled = value;
 }
 
 function normalizeOrigin(raw) {
@@ -67,12 +82,8 @@ function normalizeOrigin(raw) {
   return url.origin;
 }
 
-async function load() {
-  const result = await chrome.runtime.sendMessage({ type:"ONES_RELAY_GET_CONFIG" });
-  if (!result?.ok) return show(result);
-  const c = result.config || {};
-  const draft = await getDraft();
-  applyForm({
+function formFromConfig(c) {
+  return {
     onesOrigin:c.onesOrigin || "",
     teamUuid:c.teamUuid || "",
     projectUuid:c.projectUuid || "",
@@ -82,9 +93,21 @@ async function load() {
     baseUrl:c.baseUrl || "http://127.0.0.1:18731",
     token:"",
     enabled:!!c.enabled,
-    writeEnabled:!!c.writeEnabled,
-    ...(draft || {})
-  });
+    writeEnabled:!!c.writeEnabled
+  };
+}
+
+async function load() {
+  const result = await chrome.runtime.sendMessage({ type:"ONES_RELAY_GET_CONFIG" });
+  if (!result?.ok) return show(result);
+  const c = result.config || {};
+  const savedForm = formFromConfig(c);
+  // The baseline contains no token: GET_CONFIG exposes only tokenPresent.
+  draftBase = JSON.stringify({ ...savedForm, tokenPresent:!!c.tokenPresent });
+  const storedDraft = await getDraft();
+  const draft = storedDraft?.baseConfig === draftBase ? storedDraft.form
+    : storedDraft && !storedDraft.form && !c.onesOrigin && !c.tokenPresent ? storedDraft : null;
+  applyForm({ ...savedForm, ...(draft || {}) });
   $("inventoryPage").textContent = "Inventory page: " + (c.inventoryPageUrl || "not bound");
   $("runtime").textContent = "Runtime: " + (result.runtime?.state || "unknown");
   show({
@@ -102,17 +125,29 @@ $("relayEnabled").addEventListener("change", () => { persistDraft().catch(() => 
 $("writeEnabled").addEventListener("change", () => { persistDraft().catch(() => {}); });
 
 $("saveConfig").addEventListener("click", async () => {
+  if (savingConfig) return;
+  setSavingConfig(true);
+  let configSaved = false;
   try {
     const form = currentForm();
     const origin = normalizeOrigin(form.onesOrigin);
-    const granted = await chrome.permissions.request({ origins:[origin + "/*"] });
-    if (!granted) throw new Error("ONES origin permission was not granted");
     const result = await chrome.runtime.sendMessage({ type:"ONES_RELAY_SET_CONFIG", ...form, onesOrigin:origin });
     if (!result?.ok) throw new Error(result?.error || "Failed to save Browser Bridge configuration");
+    configSaved = true;
     await clearDraft();
-    show(result);
+    // The permission prompt may destroy this popup. Config and draft cleanup
+    // must already be committed; no continuation is required for persistence.
+    const savedForm = formFromConfig(result.config || {});
+    draftBase = JSON.stringify({ ...savedForm, tokenPresent:!!result.config?.tokenPresent });
+    applyForm(savedForm);
+    const granted = await chrome.permissions.request({ origins:[origin + "/*"] });
+    if (!granted) throw new Error("Configuration saved; ONES origin permission was not granted");
     await load();
-  } catch (error) { show({ ok:false, error:String(error) }); }
+  } catch (error) {
+    show({ ok:false, configSaved, error:String(error) });
+  } finally {
+    setSavingConfig(false);
+  }
 });
 
 $("bindInventory").addEventListener("click", async () => {
