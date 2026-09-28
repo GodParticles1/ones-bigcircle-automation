@@ -379,35 +379,53 @@ async function rcPageVerifyWrite(input) {
   const desired = norm(input?.desiredValue);
   const baseline = new Set(Array.isArray(input?.baselineEventIds) ? input.baselineEventIds : []);
   const ORIGIN = location.origin;
+  const initialHref = location.href;
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
   const currentDisplayId = currentMatch ? currentMatch[1] : null;
   const teamMatch = location.href.match(/\/team\/([^/?#]+)/i);
   const teamUuid = teamMatch ? teamMatch[1] : null;
-  if (!teamUuid || currentDisplayId !== EXPECTED_DISPLAY_ID) return { ok:false, status:"TARGET_GUARD_FAILED" };
+  if ((input.expectedHref && location.href !== input.expectedHref) || !teamUuid || currentDisplayId !== EXPECTED_DISPLAY_ID) return { ok:false, status:"TARGET_GUARD_FAILED" };
 
   const jsonFetch = async (url, init = {}) => {
-    const response = await fetch(url, { credentials:"same-origin", ...init });
-    const text = await response.text();
-    let json = null; if (text) { try { json = JSON.parse(text); } catch (_) {} }
-    return { response, json };
+    const controller = new AbortController();
+    const timeoutMs = input.readTimeoutMs;
+    const timer = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      const response = await fetch(url, { credentials:"same-origin", ...init, signal:controller.signal });
+      const text = await response.text();
+      let json = null; if (text) { try { json = JSON.parse(text); } catch (_) {} }
+      return { response, json };
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+    }
   };
 
   const query = "select uid(uuid,field903," + FIELD_UUID + ") from issue where uid(uuid) = uid('" + EXPECTED_TASK_UUID + "');";
-  const [valueResp, msgResp] = await Promise.all([
+  const [valueRead, eventRead] = await Promise.allSettled([
     jsonFetch(ORIGIN + "/project/api/ones-project/team/" + encodeURIComponent(teamUuid) + "/workitems/onesql", {
       method:"POST", headers:{ "content-type":"application/json; charset=UTF-8" }, body:JSON.stringify({ query })
     }),
     jsonFetch(ORIGIN + "/project/api/project/team/" + encodeURIComponent(teamUuid) + "/task/" + encodeURIComponent(EXPECTED_TASK_UUID) + "/messages", { method:"GET" })
   ]);
-  const item = valueResp.json?.data?.[0]?.item;
-  const currentSemantic = item?.uuid === EXPECTED_TASK_UUID ? semanticFromRaw(item[FIELD_UUID]) : null;
-  const messages = Array.isArray(msgResp.json?.messages) ? msgResp.json.messages : [];
+  if (location.href !== initialHref || location.origin !== ORIGIN) return { ok:false, status:"TARGET_GUARD_FAILED" };
+  const valueResp = valueRead.status === "fulfilled" ? valueRead.value : null;
+  const msgResp = eventRead.status === "fulfilled" ? eventRead.value : null;
+  const rows = valueResp?.json?.data;
+  const item = Array.isArray(rows) && rows.length === 1 ? rows[0]?.item : null;
+  const raw = item?.[FIELD_UUID];
+  // Same raw/string-or-value-wrapper contract as the accepted field reader.
+  const fieldValue = raw && typeof raw === "object" && !Array.isArray(raw) && Object.hasOwn(raw, "value") ? raw.value : raw;
+  const valueReadVerified = !!valueResp?.response.ok && item?.uuid === EXPECTED_TASK_UUID &&
+    Object.hasOwn(item, FIELD_UUID) && (fieldValue === null || typeof fieldValue === "string");
+  const currentSemantic = valueReadVerified ? semanticFromRaw(fieldValue) : null;
+  const messages = msgResp?.response.ok && Array.isArray(msgResp.json?.messages) ? msgResp.json.messages : [];
   const event = messages.find((m) => {
     if (!m?.uuid || baseline.has(m.uuid)) return false;
     if (m?.type !== "system" || m?.ext?.field_uuid !== FIELD_UUID) return false;
     return norm(m?.ext?.old_value) === "" && norm(m?.ext?.new_value) === desired;
   });
-  const verified = valueResp.response.ok && msgResp.response.ok && currentSemantic === desired && !!event;
+  const verified = valueReadVerified && currentSemantic === desired && !!event;
   return {
     ok:verified,
     status:verified ? "WRITE_VERIFIED" : "READBACK_PENDING",
@@ -415,6 +433,7 @@ async function rcPageVerifyWrite(input) {
     taskUuid:EXPECTED_TASK_UUID,
     fieldId:FIELD_UUID,
     currentSemantic,
+    valueReadVerified,
     desired,
     fieldEvent:event ? {
       uuid:event.uuid, action:event.action || null,
@@ -459,6 +478,67 @@ async function rcFindDetailTab(config, displayId) {
   });
   if (matches.length !== 1) return { ok:false, status:"WRITE_TARGET_TAB_NOT_UNIQUE", tabCount:matches.length };
   return { ok:true, tab:matches[0] };
+}
+
+// Read-only post-save policy. This helper has no access to native input or Save.
+async function rcVerifyRootCauseAfterSave(tabId, input) {
+  const started = performance.now();
+  const maxElapsedMs = 90000;
+  const readTimeoutMs = 5000;
+  const verification = {
+    source:"ONESQL_AND_FIELD_EVENTS", attempts:0, inlineAttempts:0,
+    convergenceAttempts:0, elapsedMs:0, maxElapsedMs, readTimeoutMs
+  };
+  const phases = [
+    { name:"inline", delays:[0,350,650,1100,1800,2600,4200,6500,9000] },
+    { name:"convergence", delays:[5000,10000,15000] }
+  ];
+  let last = null;
+  const remaining = () => maxElapsedMs - (performance.now() - started);
+  const finish = (status) => ({
+    status, readback:last,
+    verification:{ ...verification, elapsedMs:Math.round(performance.now() - started) }
+  });
+  for (const phase of phases) {
+    for (const delay of phase.delays) {
+      if (remaining() <= delay) break;
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (remaining() <= 0) break;
+      verification.attempts += 1;
+      verification[phase.name + "Attempts"] += 1;
+      verification.phase = phase.name;
+      const timeoutMs = Math.min(readTimeoutMs, remaining());
+      let timer;
+      try {
+        const executions = await Promise.race([
+          chrome.scripting.executeScript({
+            target:{tabId}, world:"MAIN", func:rcPageVerifyWrite,
+            // Leave time for aborted page fetches to return their partial evidence.
+            args:[{ ...input, readTimeoutMs:Math.max(1, timeoutMs - 250) }]
+          }),
+          new Promise((resolve) => {
+            timer = setTimeout(() => resolve([{ result:{ ok:false, status:"READBACK_TIMEOUT" } }]), timeoutMs);
+          })
+        ]);
+        last = executions?.[0]?.result || { ok:false, status:"NO_READBACK_RESULT" };
+      } catch (_) {
+        // An unavailable read is evidence of uncertainty, never of persistence.
+        last = { ok:false, status:"READBACK_EXECUTION_FAILED" };
+      } finally {
+        clearTimeout(timer);
+      }
+      verification.lastStatus = last.status;
+      if (last.ok && last.status === "WRITE_VERIFIED") return finish("WRITE_VERIFIED");
+      if (last.status === "TARGET_GUARD_FAILED") return finish("WRITE_UNVERIFIED");
+      // Keep the inline event-aware window intact. In convergence, stop once
+      // authoritative persistence is proven; absence of an event is explicit.
+      if (phase.name === "convergence" && last.valueReadVerified && last.currentSemantic === input.desiredValue) {
+        return finish("WRITE_VALUE_VERIFIED_EVENT_PENDING");
+      }
+    }
+    if (last?.valueReadVerified && last.currentSemantic === input.desiredValue) return finish("WRITE_VALUE_VERIFIED_EVENT_PENDING");
+  }
+  return finish("WRITE_UNVERIFIED");
 }
 
 globalThis.onesRootCauseWriteExecute = async function(config, job) {
@@ -550,23 +630,21 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     if (attached) { try { await chrome.debugger.detach(debuggee); } catch (_) {} }
   }
 
-  const delays=[180,350,650,1100,1800,2600,4200,6500,9000];
-  let last=null;
-  for(let i=0;i<delays.length;i+=1){
-    if(i>0) await new Promise((resolve)=>setTimeout(resolve,delays[i]));
-    const [verifyExec] = await chrome.scripting.executeScript({
-      target:{tabId:tab.id}, world:"MAIN", func:rcPageVerifyWrite,
-      args:[{displayId:String(p.displayId),taskUuid:String(p.taskUuid),fieldId:String(p.fieldId),desiredValue:desired,baselineEventIds:preflight.baselineEventIds}]
-    });
-    last=verifyExec?.result || null;
-    if(last?.ok && last.status==="WRITE_VERIFIED"){
-      return { status:"WRITE_VERIFIED", result:{...preflight,ok:true,status:"WRITE_VERIFIED",writeAttempted:true,saveDispatched:true,readbackAttempts:i+1,planSha256:planSha,decision:p.decision,writeMode:p.writeMode,draft,readback:last} };
-    }
-  }
-  if (last?.currentSemantic === desired) {
-    return { status:"WRITE_VALUE_VERIFIED_EVENT_PENDING", result:{...preflight,ok:false,status:"WRITE_VALUE_VERIFIED_EVENT_PENDING",writeAttempted:true,saveDispatched:true,planSha256:planSha,draft,readback:last,error:"authoritative value matches desired but field event is still pending; automatic retry forbidden"} };
-  }
-  return { status:"WRITE_UNVERIFIED", result:{...preflight,ok:false,status:"WRITE_UNVERIFIED",writeAttempted:true,saveDispatched:true,planSha256:planSha,draft,readback:last,error:"save dispatched exactly once but authoritative field value did not verify; automatic retry forbidden"} };
+  const checked = await rcVerifyRootCauseAfterSave(tab.id, {
+    expectedHref:tab.url,
+    displayId:String(p.displayId), taskUuid:String(p.taskUuid), fieldId:String(p.fieldId),
+    desiredValue:desired, baselineEventIds:preflight.baselineEventIds
+  });
+  const status = checked.status;
+  const error = status === "WRITE_VERIFIED" ? null : status === "WRITE_VALUE_VERIFIED_EVENT_PENDING"
+    ? "authoritative value matches desired but field event is still pending; automatic retry forbidden"
+    : "save dispatched exactly once but authoritative field value did not verify within bounded convergence; automatic retry forbidden";
+  return { status, result:{
+    ...preflight, ok:status === "WRITE_VERIFIED", status, writeAttempted:true, saveDispatched:true,
+    readbackAttempts:checked.verification.attempts, verification:checked.verification,
+    planSha256:planSha, decision:p.decision, writeMode:p.writeMode, draft, readback:checked.readback,
+    ...(error ? { error } : {})
+  } };
 };
 
 
