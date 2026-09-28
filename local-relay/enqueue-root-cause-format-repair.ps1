@@ -28,7 +28,7 @@ $token=(Get-Content -LiteralPath $TokenFile -Raw).Trim()
 $headers=@{ "X-Relay-Token" = $token }
 $body=@{
   jobType="ONES_ROOT_CAUSE_FORMAT_REPAIR"
-  idempotencyKey=("root-cause-format-left-v1-" + $actualPlanSha.Substring(0,12) + "-" + $TaskUuid + "-" + $target.fieldId + "-" + $expectedSha.Substring(0,16))
+  idempotencyKey=("root-cause-format-left-v2-" + $actualPlanSha.Substring(0,12) + "-" + $TaskUuid + "-" + $target.fieldId + "-" + $expectedSha.Substring(0,16))
   payload=@{
     formatPolicy="EXACT_VALUE_LEFT_ALIGN_ONLY"
     planSha256=$actualPlanSha
