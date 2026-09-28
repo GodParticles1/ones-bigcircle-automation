@@ -36,7 +36,7 @@ class Element {
   matches(selector) {
     return selector.split(',').some((part) => {
       if (part === '*') return true;
-      const tag = part.match(/^[a-z]+/i)?.[0];
+      const tag = part.match(/^[a-z][a-z0-9]*/i)?.[0];
       if (tag && tag.toUpperCase() !== this.tagName) return false;
       for (const match of part.matchAll(/\.([a-zA-Z0-9_-]+)/g)) if (!this.classList.contains(match[1])) return false;
       for (const match of part.matchAll(/\[([a-z-]+)(?:=["']?([^"'\]]+)["']?)?\]/g)) {
@@ -117,7 +117,11 @@ function harness(options = {}) {
       return id;
     },
     clearTimeout: (id) => timers.delete(id),
-    getComputedStyle: (el) => ({ display: 'block', visibility: 'visible', opacity: '1', cursor: el.options.cursor || 'auto' }),
+    getComputedStyle: (el) => {
+      let owner = el;
+      while (owner && !owner.options.textAlign) owner = owner.parentElement;
+      return { display: el.options.display || (el.tagName === 'SPAN' ? 'inline' : 'block'), visibility: 'visible', opacity: '1', cursor: el.options.cursor || 'auto', textAlign: owner?.options.textAlign || 'left' };
+    },
     document: {
       body, documentElement: new Element('', { tag: 'html' }),
       getElementById: (id) => body.querySelectorAll('[id="' + id + '"]')[0] || null,
@@ -249,8 +253,9 @@ for (const [option, status, clicks] of blockedTransitions) {
   });
 }
 
-function wireExecutor(h, verify) {
+function wireExecutor(h, verify, render) {
   let verifyAttempts = 0;
+  let renderAttempts = 0;
   h.context.chrome = {
     tabs: { query: async () => [{ id: 42, url: h.location.href }] },
     scripting: { executeScript: async ({ func, args }) => {
@@ -265,6 +270,15 @@ function wireExecutor(h, verify) {
         verifyAttempts += 1;
         h.log.push('verify:' + verifyAttempts);
         result = verify ? await verify(verifyAttempts, args[0]) : { ok: true, status: 'WRITE_VERIFIED' };
+      }
+      else if (func.name === 'rcPageVerifyRenderedAlignment') {
+        renderAttempts += 1;
+        h.log.push('render:' + renderAttempts);
+        if (render) result = await render(renderAttempts, args);
+        else {
+          setRendered(h);
+          result = func(...args);
+        }
       }
       else throw new Error('Unexpected page function: ' + func.name);
       return [{ result }];
@@ -554,4 +568,214 @@ test('post-save guard rejects a different team route even with the same display 
   const result = await h.context.rcPageVerifyWrite({ fieldId, taskUuid, displayId, expectedHref, desiredValue: desired });
   assert.equal(result.status, 'TARGET_GUARD_FAILED');
   assert.deepEqual(h.log, []);
+});
+
+
+function setRendered(h, options = {}) {
+  h.root.options.classes = options.editorStillOpen ? ['standard-co-editor-editing'] : [];
+  h.root.options.textAlign = options.rootAlign || 'left';
+  h.root.children = [];
+  const paragraph = new Element('synthetic_rendered_paragraph', {
+    tag: 'p', text: options.text ?? desired, textAlign: options.align || 'left'
+  });
+  h.root.append(paragraph);
+  return paragraph;
+}
+
+function renderedRead(h) {
+  return h.context.rcPageVerifyRenderedAlignment(displayId, fieldId, desired, 'https://synthetic.invalid/#/team/synthetic_team/issue/' + displayId);
+}
+
+for (const align of ['left', 'start']) {
+  test('saved single paragraph verifies rendered alignment: ' + align, () => {
+    const h = harness();
+    setRendered(h, { align });
+    assert.equal(renderedRead(h).status, 'RENDERED_LEFT_VERIFIED');
+  });
+}
+
+for (const align of ['center', 'right', 'justify']) {
+  test('left ancestor cannot hide final text alignment: ' + align, () => {
+    const h = harness();
+    setRendered(h, { rootAlign: 'left', align });
+    assert.equal(renderedRead(h).status, 'RENDERED_LEFT_PENDING');
+  });
+}
+
+test('visible editor draft is never rendered presentation proof', () => {
+  const h = harness();
+  setRendered(h, { editorStillOpen: true });
+  assert.equal(renderedRead(h).status, 'RENDERED_EDITOR_STILL_OPEN');
+});
+
+test('contenteditable descendant is not a saved field', () => {
+  const h = harness();
+  const paragraph = setRendered(h);
+  paragraph.options.attrs = { contenteditable: 'true' };
+  assert.equal(renderedRead(h).status, 'RENDERED_EDITOR_STILL_OPEN');
+});
+
+test('rendered root missing or duplicate fails closed including a hidden duplicate', () => {
+  for (const roots of [[], [new Element(fieldId), new Element(fieldId, { hidden: true })]]) {
+    assert.equal(renderedRead(harness({ roots })).status, 'RENDERED_FIELD_NOT_UNIQUE');
+  }
+});
+
+test('rendered root visibility and exact semantic text are required', () => {
+  const h = harness();
+  setRendered(h, { text: desired + ' unsupported extra fact' });
+  assert.equal(renderedRead(h).status, 'RENDERED_SEMANTIC_MISMATCH');
+  setRendered(h);
+  h.root.options.hidden = true;
+  assert.equal(renderedRead(h).status, 'RENDERED_FIELD_NOT_VISIBLE');
+});
+
+test('decorative heading is not the accepted verbatim single paragraph', () => {
+  const h = harness();
+  const paragraph = setRendered(h);
+  paragraph.tagName = 'H2';
+  assert.equal(renderedRead(h).status, 'RENDERED_PARAGRAPH_POLICY_FAILED');
+});
+
+test('right-aligned text-bearing inline block cannot hide within a left paragraph', () => {
+  const h = harness();
+  const paragraph = setRendered(h, { text: '' });
+  paragraph.append(new Element('', { tag: 'span', text: 'Synthetic ', display: 'inline-block', textAlign: 'right' }));
+  paragraph.append(new Element('', { tag: 'span', text: 'confirmed cause' }));
+  assert.equal(renderedRead(h).status, 'RENDERED_LEFT_PENDING');
+});
+
+test('rendered verification binds exact field ID and original issue URL', () => {
+  const h = harness();
+  setRendered(h);
+  h.root.id = 'other_field';
+  assert.equal(renderedRead(h).status, 'RENDERED_FIELD_NOT_UNIQUE');
+  h.location.href = h.location.href.replace('synthetic_team', 'other_team');
+  assert.equal(renderedRead(h).status, 'TARGET_GUARD_FAILED');
+});
+
+test('target drift during rendered DOM inspection fails closed', () => {
+  const h = harness();
+  const paragraph = setRendered(h);
+  paragraph.getBoundingClientRect = () => {
+    h.location.href += '/changed';
+    return { left: 0, top: 0, width: 100, height: 30 };
+  };
+  assert.equal(renderedRead(h).status, 'TARGET_GUARD_FAILED');
+});
+
+async function presentationCase(render, verify = () => fullRead()) {
+  const h = harness({ display: true });
+  wireExecutor(h, verify, (n, args) => render(h, n, args));
+  const out = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
+  assert.equal(h.log.filter((e) => e.method === 'Input.insertText').length, 1);
+  assert.equal(h.log.filter((e) => e === 'open').length, 1);
+  assert.equal(out.result.presentationPolicy, 'EXACT_SINGLE_PARAGRAPH_LEFT_V1');
+  assert.equal(out.result.desired, desired);
+  return { ...out, h };
+}
+
+test('semantic persistence plus rendered-left is accepted only after rendered read', async () => {
+  const out = await presentationCase((h) => { setRendered(h); return renderedRead(h); });
+  assert.equal(out.status, 'WRITE_VERIFIED');
+  assert.equal(out.result.semanticStatus, 'WRITE_VERIFIED');
+  assert.equal(out.result.presentation.status, 'RENDERED_LEFT_VERIFIED');
+  assert.ok(out.h.log.indexOf('render:1') > out.h.log.indexOf('verify:1'));
+});
+
+for (const align of ['center', 'right']) {
+  test('semantic PASS plus rendered ' + align + ' returns distinct presentation state without Save retry', async () => {
+    const out = await presentationCase((h) => { setRendered(h, { align }); return renderedRead(h); });
+    assert.equal(out.status, 'WRITE_PRESENTATION_UNVERIFIED');
+    assert.equal(out.result.ok, false);
+    assert.equal(out.result.semanticStatus, 'WRITE_VERIFIED');
+    assert.equal(out.result.presentation.status, 'RENDERED_LEFT_PENDING');
+    assert.equal(out.result.presentation.attempts, 3);
+  });
+}
+
+test('delayed normal view uses bounded DOM reads, no input or Save retry', async () => {
+  const out = await presentationCase((h, n) => {
+    setRendered(h, { editorStillOpen: n < 3 });
+    return renderedRead(h);
+  });
+  assert.equal(out.status, 'WRITE_VERIFIED');
+  assert.equal(out.result.presentation.attempts, 3);
+  assert.equal(out.result.presentation.elapsedMs, 1000);
+});
+
+test('semantic exact but event pending remains distinct even after presentation passes', async () => {
+  const out = await presentationCase((h) => { setRendered(h); return renderedRead(h); }, () => pendingRead(desired));
+  assert.equal(out.status, 'WRITE_VALUE_VERIFIED_EVENT_PENDING');
+  assert.equal(out.result.presentation.ok, true);
+  assert.equal(out.result.ok, false);
+});
+
+test('presentation failure retains semantic/event-pending evidence', async () => {
+  const out = await presentationCase((h) => { setRendered(h, { align: 'right' }); return renderedRead(h); }, () => pendingRead(desired));
+  assert.equal(out.status, 'WRITE_PRESENTATION_UNVERIFIED');
+  assert.equal(out.result.semanticStatus, 'WRITE_VALUE_VERIFIED_EVENT_PENDING');
+});
+
+test('no rendered acceptance when semantic persistence itself remains unverified', async () => {
+  const out = await presentationCase(() => { throw new Error('must not inspect presentation'); }, () => pendingRead());
+  assert.equal(out.status, 'WRITE_UNVERIFIED');
+  assert.equal(out.result.presentation, null);
+  assert.equal(out.h.log.some((e) => typeof e === 'string' && e.startsWith('render:')), false);
+});
+
+test('rendered target drift stops immediately with no second Save', async () => {
+  const out = await presentationCase((h) => { h.location.href += '/changed'; return renderedRead(h); });
+  assert.equal(out.status, 'WRITE_PRESENTATION_UNVERIFIED');
+  assert.equal(out.result.presentation.status, 'TARGET_GUARD_FAILED');
+  assert.equal(out.result.presentation.attempts, 1);
+});
+
+test('hung or failed rendered inspection is bounded and never a success', async () => {
+  for (const render of [() => new Promise(() => {}), () => { throw new Error('synthetic unavailable'); }]) {
+    const out = await presentationCase(render);
+    assert.equal(out.status, 'WRITE_PRESENTATION_UNVERIFIED');
+    assert.ok(out.result.presentation.attempts <= 3);
+    assert.ok(out.result.presentation.elapsedMs <= 5000);
+  }
+});
+
+test('native paragraph normalization is explicit even if computed alignment is already left', () => {
+  const h = harness();
+  h.block.append(new Element('', { classes: ['text'], text: desired }));
+  h.context.document.createRange = () => ({ selectNodeContents: (block) => assert.equal(block, h.block) });
+  h.context.window = { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) };
+  let commands = 0;
+  h.context.document.execCommand = (command) => { assert.equal(command, 'justifyLeft'); commands += 1; return true; };
+  const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+  assert.equal(out.status, 'DRAFT_LEFT_ALIGN_VERIFIED');
+  assert.equal(commands, 1);
+  assert.equal(h.block.innerText, desired);
+});
+
+
+for (const mode of ['missing', 'duplicate']) {
+  test('semantic PASS plus ' + mode + ' rendered field fails closed without a second Save', async () => {
+    const out = await presentationCase((h, n) => {
+      if (n === 1) {
+        setRendered(h);
+        if (mode === 'missing') h.root.id = 'other_field';
+        else h.root.parentElement.append(new Element(fieldId, { hidden: true }));
+      }
+      return renderedRead(h);
+    });
+    assert.equal(out.status, 'WRITE_PRESENTATION_UNVERIFIED');
+    assert.equal(out.result.presentation.status, 'RENDERED_FIELD_NOT_UNIQUE');
+  });
+}
+
+test('native alignment command failure cannot be reported as draft alignment success', () => {
+  const h = harness();
+  h.block.append(new Element('', { classes: ['text'], text: desired }));
+  h.context.document.createRange = () => ({ selectNodeContents() {} });
+  h.context.window = { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) };
+  h.context.document.execCommand = () => false;
+  assert.equal(h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id).status, 'LEFT_ALIGN_COMMAND_FAILED');
+  assert.equal(h.block.innerText, desired);
 });
