@@ -13,12 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m compileall reconciliation local-relay root-cause root-cause-sync transport-envelope transport-spool windows-agent bigcircle-control filesystem-exchange runtime-acceptance remote-transport cloudflare-remote-gateway/deploy
       - run: python reconciliation/tests/test_reconciliation.py
       - run: python reconciliation/tests/test_pipeline.py
+      - run: node browser-bridge/tests/root_cause_writer_test.js
       - run: python local-relay/tests/test_relay.py
       - shell: pwsh
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
@@ -45,9 +48,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: node browser-bridge/tests/root_cause_writer_test.js
       - run: python local-relay/tests/test_relay.py
       - run: python transport-spool/tests/test_spool.py
       - run: python windows-agent/tests/test_materialize_case_feed.py
@@ -66,17 +72,17 @@ jobs:
           [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.3.ps1 -Raw))
           ./scripts/build-root-cause-write-runtime.ps1
           foreach ($zip in @(
-            "dist-root-cause-write/ones-browser-bridge-v0.5.5.zip",
+            "dist-root-cause-write/ones-browser-bridge-v0.5.6.zip",
             "dist-root-cause-write/ones-local-relay-v0.3.4.zip"
           )) {
             if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw ("PACKAGE_MISSING: " + $zip) }
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: ones-root-cause-write-runtime-v0.5.5-v0.3.4
+          name: ones-root-cause-write-runtime-v0.5.6-v0.3.4
           path: |
-            dist-root-cause-write/ones-browser-bridge-v0.5.5.zip
-            dist-root-cause-write/ones-browser-bridge-v0.5.5.zip.sha256
+            dist-root-cause-write/ones-browser-bridge-v0.5.6.zip
+            dist-root-cause-write/ones-browser-bridge-v0.5.6.zip.sha256
             dist-root-cause-write/ones-local-relay-v0.3.4.zip
             dist-root-cause-write/ones-local-relay-v0.3.4.zip.sha256
           if-no-files-found: error
