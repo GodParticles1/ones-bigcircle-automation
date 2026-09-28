@@ -647,7 +647,8 @@ async function ensureFieldReadTab(config) {
   const teamTabs = tabs.filter((tab) => {
     try {
       const u = new URL(tab.url || "");
-      return u.origin === scope.onesOrigin && u.pathname.includes("/team/" + scope.teamUuid + "/");
+      const route = u.pathname + u.search + u.hash;
+      return u.origin === scope.onesOrigin && route.includes("/team/" + scope.teamUuid + "/");
     } catch (_) {
       return false;
     }
