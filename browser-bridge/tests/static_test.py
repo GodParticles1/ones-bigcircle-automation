@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.5"
+assert manifest["version"] == "0.5.6"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -77,4 +77,19 @@ assert "inventoryPageUrl" in worker
 assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
-print("BROWSER_BRIDGE_PUBLIC_V055_HASH_ROUTE_FIELD_READ_PASS")
+
+# Issue #84: opening is root-cause-specific, one-click, and identity-bound before input.
+preflight = writer.split("async function rcPagePreflightWrite(input) {", 1)[1].split("function rcPageInspectSelection", 1)[0]
+assert 'text === "问题根因" || text === "【问题根因】"' in preflight
+assert preflight.count("entries[0].click()") == 1
+assert "root.id !== FIELD_UUID" in preflight
+assert "container.querySelectorAll(editorSelector)" in preflight
+assert "ROOT_CAUSE_CONTAINER_LOST" in preflight
+assert "EDITOR_FIELD_ID_MISMATCH" in preflight
+assert "location.href !== initialHref" in preflight
+assert preflight.index("root.id !== FIELD_UUID") < preflight.index("const blocks =")
+assert "Input.insertText" not in preflight
+assert "dispatchMouseEvent" not in preflight
+assert "setInterval" not in preflight
+
+print("BROWSER_BRIDGE_PUBLIC_V056_BOUNDED_EDITOR_PASS")

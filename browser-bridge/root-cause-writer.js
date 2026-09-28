@@ -48,6 +48,7 @@ async function rcPagePreflightWrite(input) {
   const EXPECTED_TASK_UUID = String(input?.taskUuid || "");
   const desired = norm(input?.desiredValue);
   const ORIGIN = location.origin;
+  const initialHref = location.href;
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
   const currentDisplayId = currentMatch ? currentMatch[1] : null;
   const teamMatch = location.href.match(/\/team\/([^/?#]+)/i);
@@ -133,16 +134,81 @@ async function rcPagePreflightWrite(input) {
     });
   }
 
-  const root = document.getElementById(FIELD_UUID);
-  if (!root) return fail("EDITOR_NOT_READY", "open the root-cause field in edit mode before polling the write job");
-
+  // Recheck after asynchronous reads, before touching any native editor surface.
+  if (location.href !== initialHref || location.origin !== ORIGIN) {
+    return fail("TARGET_GUARD_FAILED", "detail page changed during pre-write reads");
+  }
   const visible = (el) => {
     if (!el || !(el instanceof Element)) return false;
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || "1") > 0;
   };
-  if (!visible(root)) return fail("EDITOR_NOT_READY", "root-cause editor is not visible");
+  const editorSelector = 'div.standard-co-editor-editing.task-rich-text-edit';
+  const exactRoots = () => [...document.querySelectorAll('[id="' + FIELD_UUID + '"]')];
+  let roots = exactRoots();
+  if (roots.length > 1) return fail("EDITOR_ROOT_NOT_UNIQUE", "root-cause editor root is not unique", { editorRootCount:roots.length });
+  let root = roots[0];
+  let editorOpened = false;
+  if (!root || !visible(root) || !root.matches(editorSelector)) {
+    // Historical native-editor lineage: the display surface is label-bound;
+    // only the resulting native editor can prove the configured field UUID.
+    const isRootCauseLabel = (el) => {
+      const text = norm(el.innerText || el.textContent);
+      return text === "问题根因" || text === "【问题根因】";
+    };
+    const labels = [...document.querySelectorAll('label,span,div,p')]
+      .filter((el) => visible(el) && isRootCauseLabel(el))
+      .filter((el) => ![...el.querySelectorAll('label,span,div,p')].some((child) => visible(child) && isRootCauseLabel(child)));
+    if (labels.length !== 1) return fail("ROOT_CAUSE_LABEL_NOT_UNIQUE", "root-cause display label is missing or ambiguous", { labelCount:labels.length });
+
+    // Strip label-only wrappers. Never search successive ancestors for a
+    // convenient button: the first parent containing other content is the bound.
+    let labelBranch = labels[0];
+    while (labelBranch.parentElement && labelBranch.parentElement.children.length === 1 && isRootCauseLabel(labelBranch.parentElement)) {
+      labelBranch = labelBranch.parentElement;
+    }
+    const container = labelBranch.parentElement;
+    if (!container || container === document.body || container === document.documentElement ||
+        container.matches('main,[role="main"]') || !visible(container)) {
+      return fail("ROOT_CAUSE_CONTAINER_NOT_UNIQUE", "no bounded local root-cause field container");
+    }
+    const candidates = [...container.querySelectorAll('*')].filter((el) => {
+      if (!visible(el) || labelBranch.contains(el) || el.contains(labelBranch)) return false;
+      if (el.matches('a,input,select,textarea,[contenteditable="true"]') || el.closest(editorSelector)) return false;
+      if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const text = norm(el.innerText || el.textContent);
+      if (text === "保存" || text === "取消") return false;
+      return el.matches('button,[role="button"],[tabindex="0"]') || getComputedStyle(el).cursor === 'pointer';
+    });
+    // Cursor inheritance / nested icons are one entry surface, not extra clicks.
+    const entries = candidates.filter((el) => el.matches('button,[role="button"],[tabindex="0"]') ||
+      !candidates.some((parent) => parent !== el && parent.contains(el)));
+    if (entries.length !== 1) return fail("ROOT_CAUSE_ENTRY_NOT_UNIQUE", "root-cause native edit entry is missing or ambiguous", { entryCount:entries.length });
+    if (location.href !== initialHref || location.origin !== ORIGIN || !container.isConnected) {
+      return fail("TARGET_GUARD_FAILED", "root-cause target changed before editor open");
+    }
+    try {
+      entries[0].click(); // One native editor-open interaction; never a Save.
+      editorOpened = true;
+      // One bounded transition wait, no click retry or mutation polling.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      return fail("EDITOR_OPEN_FAILED", error);
+    }
+    if (location.href !== initialHref || location.origin !== ORIGIN) {
+      return fail("TARGET_GUARD_FAILED", "detail page changed during editor open");
+    }
+    // A detached/replaced field container is not assumed to preserve identity.
+    if (!container.isConnected) return fail("ROOT_CAUSE_CONTAINER_LOST", "root-cause field container was replaced during editor open");
+    const openedRoots = [...container.querySelectorAll(editorSelector)].filter(visible);
+    if (openedRoots.length !== 1) return fail("EDITOR_ROOT_NOT_UNIQUE", "native editor transition did not produce one root", { editorRootCount:openedRoots.length });
+    root = openedRoots[0];
+    if (root.id !== FIELD_UUID) return fail("EDITOR_FIELD_ID_MISMATCH", "opened editor is not the configured root-cause field");
+    roots = exactRoots();
+    if (roots.length !== 1 || roots[0] !== root) return fail("EDITOR_ROOT_NOT_UNIQUE", "configured field root is not unique", { editorRootCount:roots.length });
+  }
+  if (!visible(root) || !root.matches(editorSelector)) return fail("EDITOR_NOT_READY", "root-cause native editor is not visible");
 
   const blocks = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible);
   const focusedBlocks = blocks.filter((el) => el.classList.contains("focused"));
@@ -174,6 +240,7 @@ async function rcPagePreflightWrite(input) {
     taskUuid:EXPECTED_TASK_UUID,
     fieldId:FIELD_UUID,
     desired,
+    editorOpened,
     prewriteSemantic:second.semantic,
     baselineEventIds:events.map((e) => e.uuid).filter(Boolean),
     inputPoint:{ x:Math.round(Math.min(br.right - 8, br.left + 18)), y:Math.round(br.top + br.height / 2) },
