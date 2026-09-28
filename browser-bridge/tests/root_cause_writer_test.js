@@ -56,6 +56,23 @@ class Element {
 
 function harness(options = {}) {
   const log = [];
+  let now = 0;
+  let nextTimer = 0;
+  const timers = new Map();
+  let pumpScheduled = false;
+  const pump = () => {
+    if (pumpScheduled) return;
+    pumpScheduled = true;
+    setImmediate(() => {
+      pumpScheduled = false;
+      const next = [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next) return;
+      timers.delete(next[0]);
+      now = Math.max(now, next[1].at);
+      next[1].fn();
+      pump();
+    });
+  };
   const block = new Element('synthetic_text_block', { focused: true, classes: ['text-block'], attrs: { 'data-type': 'editor-block', 'data-block-type': 'text' } });
   const save = new Element('synthetic_save', { tag: 'button', text: '\u4fdd\u5b58', save: true });
   const root = new Element(options.wrongEditorId ? 'other_field' : fieldId, {
@@ -91,8 +108,15 @@ function harness(options = {}) {
   const href = 'https://synthetic.invalid/#/team/synthetic_team/issue/' + displayId;
   const location = { origin: 'https://synthetic.invalid', href };
   const context = vm.createContext({
-    Element, TextEncoder, TextDecoder, crypto: webcrypto, URL, location,
-    setTimeout: (fn) => { fn(); return 0; }, clearTimeout: () => {},
+    Element, TextEncoder, TextDecoder, crypto: webcrypto, URL, location, AbortController,
+    performance: { now: () => now },
+    setTimeout: (fn, delay = 0) => {
+      const id = ++nextTimer;
+      timers.set(id, { at: now + delay, fn });
+      pump();
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
     getComputedStyle: (el) => ({ display: 'block', visibility: 'visible', opacity: '1', cursor: el.options.cursor || 'auto' }),
     document: {
       body, documentElement: new Element('', { tag: 'html' }),
@@ -116,7 +140,7 @@ function harness(options = {}) {
     }
   });
   vm.runInContext(source, context);
-  return { context, log, root, block, save, location, container };
+  return { context, log, root, block, save, location, container, timers };
 }
 
 async function preflight(options = {}) {
@@ -225,7 +249,8 @@ for (const [option, status, clicks] of blockedTransitions) {
   });
 }
 
-function wireExecutor(h) {
+function wireExecutor(h, verify) {
+  let verifyAttempts = 0;
   h.context.chrome = {
     tabs: { query: async () => [{ id: 42, url: h.location.href }] },
     scripting: { executeScript: async ({ func, args }) => {
@@ -236,7 +261,11 @@ function wireExecutor(h) {
       } else if (func.name === 'rcPageInspectSelection') result = { ok: true, anchorInside: true, focusInside: true, selectedText: '' };
       else if (func.name === 'rcPageNormalizeDraftAlignment') result = { ok: true, status: 'DRAFT_LEFT_ALIGN_VERIFIED' };
       else if (func.name === 'rcPageInspectDraft') result = { ok: true, status: 'DRAFT_DOM_VERIFIED', savePoint: { x: 400, y: 25 } };
-      else if (func.name === 'rcPageVerifyWrite') result = { ok: true, status: 'WRITE_VERIFIED' };
+      else if (func.name === 'rcPageVerifyWrite') {
+        verifyAttempts += 1;
+        h.log.push('verify:' + verifyAttempts);
+        result = verify ? await verify(verifyAttempts, args[0]) : { ok: true, status: 'WRITE_VERIFIED' };
+      }
       else throw new Error('Unexpected page function: ' + func.name);
       return [{ result }];
     } },
@@ -323,4 +352,206 @@ test('pointer icon inherited inside one entry does not cause a second click', as
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
   assert.equal(result.status, 'PREWRITE_READY');
   assert.equal(h.log.filter((e) => e === 'open').length, 1);
+});
+
+
+const pendingRead = (value = '') => ({ ok: false, status: 'READBACK_PENDING', valueReadVerified: true, currentSemantic: value });
+const fullRead = () => ({ ok: true, status: 'WRITE_VERIFIED', valueReadVerified: true, currentSemantic: desired, fieldEvent: { uuid: 'synthetic_new_event' } });
+
+async function convergenceCase(verify) {
+  const h = harness({ display: true });
+  wireExecutor(h, verify);
+  const output = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1, 'exactly one Save');
+  assert.equal(h.log.filter((e) => e.method === 'Input.insertText').length, 1, 'no write retry');
+  assert.equal(h.log.filter((e) => e === 'open').length, 1, 'no editor reopen');
+  const metadata = output.result.verification;
+  assert.equal(metadata.source, 'ONESQL_AND_FIELD_EVENTS');
+  assert.ok(metadata.elapsedMs <= metadata.maxElapsedMs);
+  assert.equal(metadata.attempts, metadata.inlineAttempts + metadata.convergenceAttempts);
+  assert.equal(output.result.saveDispatched, true);
+  return { ...h, ...output };
+}
+
+test('post-save immediate full verification needs only one read', async () => {
+  const out = await convergenceCase(() => fullRead());
+  assert.equal(out.status, 'WRITE_VERIFIED');
+  assert.equal(out.result.verification.attempts, 1);
+  assert.equal(out.result.verification.convergenceAttempts, 0);
+  assert.equal(out.result.verification.elapsedMs, 0);
+});
+
+test('semantic persistence delayed beyond inline window converges without an event', async () => {
+  const out = await convergenceCase((n) => pendingRead(n === 11 ? desired : ''));
+  assert.equal(out.status, 'WRITE_VALUE_VERIFIED_EVENT_PENDING');
+  assert.equal(out.result.ok, false);
+  assert.equal(out.result.verification.inlineAttempts, 9);
+  assert.equal(out.result.verification.convergenceAttempts, 2);
+  assert.equal(out.result.verification.elapsedMs, 41200);
+});
+
+test('semantic and new event delayed beyond inline window converge fully', async () => {
+  const out = await convergenceCase((n) => n === 12 ? fullRead() : pendingRead());
+  assert.equal(out.status, 'WRITE_VERIFIED');
+  assert.equal(out.result.verification.attempts, 12);
+  assert.equal(out.result.verification.elapsedMs, 56200);
+});
+
+test('event delayed after exact semantic read remains in existing event-aware loop', async () => {
+  const out = await convergenceCase((n) => n === 5 ? fullRead() : pendingRead(desired));
+  assert.equal(out.status, 'WRITE_VERIFIED');
+  assert.equal(out.result.verification.attempts, 5);
+  assert.equal(out.result.verification.convergenceAttempts, 0);
+});
+
+test('exact semantic value at inline end reports event pending, never unverified', async () => {
+  const out = await convergenceCase(() => pendingRead(desired));
+  assert.equal(out.status, 'WRITE_VALUE_VERIFIED_EVENT_PENDING');
+  assert.equal(out.result.verification.attempts, 9);
+});
+
+test('semantic never exact exhausts the bounded policy with no second Save', async () => {
+  const out = await convergenceCase(() => pendingRead('different'));
+  assert.equal(out.status, 'WRITE_UNVERIFIED');
+  assert.equal(out.result.verification.attempts, 12);
+  assert.equal(out.result.verification.elapsedMs, 56200);
+});
+
+test('script read failures remain explicit uncertainty, not persistence', async () => {
+  const out = await convergenceCase(() => { throw new Error('synthetic failure'); });
+  assert.equal(out.status, 'WRITE_UNVERIFIED');
+  assert.equal(out.result.verification.lastStatus, 'READBACK_EXECUTION_FAILED');
+  assert.equal(out.result.verification.attempts, 12);
+});
+
+test('a hung read is time-bounded across the entire post-save policy', async () => {
+  const out = await convergenceCase(() => new Promise(() => {}));
+  assert.equal(out.status, 'WRITE_UNVERIFIED');
+  assert.equal(out.result.verification.lastStatus, 'READBACK_TIMEOUT');
+  assert.ok(out.result.verification.attempts <= 12);
+  assert.ok(out.result.verification.elapsedMs <= 90000);
+});
+
+test('target drift terminates read-only convergence without another Save', async () => {
+  const out = await convergenceCase((n) => n === 10 ? { ok: false, status: 'TARGET_GUARD_FAILED' } : pendingRead());
+  assert.equal(out.status, 'WRITE_UNVERIFIED');
+  assert.equal(out.result.verification.lastStatus, 'TARGET_GUARD_FAILED');
+  assert.equal(out.result.verification.attempts, 10);
+});
+
+async function pageRead(options = {}) {
+  const h = harness();
+  let aborted = 0;
+  h.context.fetch = async (url, init) => {
+    if (url.endsWith('/onesql')) {
+      assert.equal(init.method, 'POST');
+      assert.match(JSON.parse(init.body).query, /synthetic_root_cause/);
+      if (options.hungValue) return new Promise((resolve, reject) => {
+        init.signal.addEventListener('abort', () => { aborted += 1; reject(new Error('aborted')); });
+      });
+      if (options.drift) h.location.href += '/changed';
+      return { ok: !options.badHttp, text: async () => JSON.stringify({ data: [
+        { item: { uuid: options.wrongTask ? 'other' : taskUuid, [fieldId]: options.unsupportedValue ? { unexpected: desired } : options.wrappedValue ? { value: '<p>' + desired + '</p>' } : '<p>' + desired + '</p>' } }
+      ] }) };
+    }
+    assert.ok(url.endsWith('/messages'));
+    assert.equal(init.method, 'GET');
+    if (options.eventFailure) throw new Error('event read unavailable');
+    return { ok: true, text: async () => JSON.stringify({ messages: options.noEvent ? [] : [{
+      uuid: options.oldEvent ? 'synthetic_baseline_event' : 'synthetic_new_event', type: 'system',
+      ext: { field_uuid: options.wrongFieldEvent ? 'other_field' : fieldId, old_value: '', new_value: desired }
+    }] }) };
+  };
+  const result = await h.context.rcPageVerifyWrite({ fieldId, taskUuid, displayId, desiredValue: desired, baselineEventIds: ['synthetic_baseline_event'], readTimeoutMs: 5000 });
+  return { result, aborted, h };
+}
+
+test('actual ONESQL/event verifier proves exact semantic plus new event', async () => {
+  assert.equal((await pageRead()).result.status, 'WRITE_VERIFIED');
+});
+
+test('event failures/absence/old or wrong-field events do not erase a valid semantic read', async () => {
+  for (const option of ['eventFailure', 'noEvent', 'oldEvent', 'wrongFieldEvent']) {
+    const { result } = await pageRead({ [option]: true });
+    assert.equal(result.status, 'READBACK_PENDING');
+    assert.equal(result.valueReadVerified, true);
+    assert.equal(result.currentSemantic, desired);
+    assert.equal(result.fieldEvent, null);
+  }
+});
+
+test('failed HTTP or wrong task cannot masquerade as authoritative exact value', async () => {
+  for (const option of ['badHttp', 'wrongTask']) {
+    const { result } = await pageRead({ [option]: true });
+    assert.equal(result.ok, false);
+    assert.equal(result.valueReadVerified, false);
+    assert.equal(result.currentSemantic, null);
+  }
+});
+
+test('page verification aborts a hung fetch and does not fabricate value proof', async () => {
+  const { result, aborted } = await pageRead({ hungValue: true });
+  assert.equal(aborted, 1);
+  assert.equal(result.valueReadVerified, false);
+});
+
+test('page identity is rechecked after asynchronous readback', async () => {
+  assert.equal((await pageRead({ drift: true })).result.status, 'TARGET_GUARD_FAILED');
+});
+
+
+test('accepted value-wrapper semantics are retained without coercing unsupported values', async () => {
+  assert.equal((await pageRead({ wrappedValue: true })).result.status, 'WRITE_VERIFIED');
+  assert.equal((await pageRead({ unsupportedValue: true })).result.valueReadVerified, false);
+});
+
+test('integrated page read converges after delayed persistence using ONESQL and event requests only', async () => {
+  const h = harness({ display: true });
+  let requests = 0;
+  wireExecutor(h, async (attempt, input) => {
+    h.context.fetch = async (url, init) => {
+      requests += 1;
+      if (url.endsWith('/onesql')) {
+        assert.equal(init.method, 'POST');
+        return { ok: true, text: async () => JSON.stringify({ data: [{ item: {
+          uuid: taskUuid, [fieldId]: attempt >= 11 ? { value: desired } : ''
+        } }] }) };
+      }
+      assert.ok(url.endsWith('/messages'));
+      assert.equal(init.method, 'GET');
+      return { ok: true, text: async () => JSON.stringify({ messages: [] }) };
+    };
+    return h.context.rcPageVerifyWrite(input);
+  });
+  const out = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(out.status, 'WRITE_VALUE_VERIFIED_EVENT_PENDING');
+  assert.equal(out.result.verification.attempts, 11);
+  assert.equal(requests, 22);
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
+});
+
+test('hung event read returns exact semantic evidence before the outer script deadline', async () => {
+  const h = harness();
+  wireExecutor(h, async (_, input) => {
+    h.context.fetch = async (url, init) => {
+      if (url.endsWith('/onesql')) return { ok: true, text: async () => JSON.stringify({ data: [{ item: { uuid: taskUuid, [fieldId]: desired } }] }) };
+      return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('event read aborted'))));
+    };
+    return h.context.rcPageVerifyWrite(input);
+  });
+  const out = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(out.status, 'WRITE_VALUE_VERIFIED_EVENT_PENDING');
+  assert.equal(out.result.verification.attempts, 9);
+  assert.equal(out.result.readback.valueReadVerified, true);
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
+});
+
+
+test('post-save guard rejects a different team route even with the same display ID', async () => {
+  const h = harness();
+  const expectedHref = h.location.href;
+  h.location.href = expectedHref.replace('synthetic_team', 'other_team');
+  const result = await h.context.rcPageVerifyWrite({ fieldId, taskUuid, displayId, expectedHref, desiredValue: desired });
+  assert.equal(result.status, 'TARGET_GUARD_FAILED');
+  assert.deepEqual(h.log, []);
 });

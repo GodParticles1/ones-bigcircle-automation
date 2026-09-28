@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.6"
+assert manifest["version"] == "0.5.7"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -92,4 +92,15 @@ assert "Input.insertText" not in preflight
 assert "dispatchMouseEvent" not in preflight
 assert "setInterval" not in preflight
 
-print("BROWSER_BRIDGE_PUBLIC_V056_BOUNDED_EDITOR_PASS")
+# Issue #86 convergence may read only and must remain bounded.
+convergence = writer.split("async function rcVerifyRootCauseAfterSave", 1)[1].split("globalThis.onesRootCauseWriteExecute", 1)[0]
+assert "rcPageVerifyWrite" in convergence
+assert "maxElapsedMs = 90000" in convergence
+assert 'name:"convergence"' in convergence
+for forbidden in ("chrome.debugger", "Input.insertText", "dispatchMouseEvent", ".click(", "fetch(", "enqueue"):
+    assert forbidden not in convergence
+assert "valueReadVerified" in convergence
+assert "READBACK_TIMEOUT" in convergence
+assert "READBACK_EXECUTION_FAILED" in convergence
+assert "ONESQL_AND_FIELD_EVENTS" in convergence
+print("BROWSER_BRIDGE_PUBLIC_V057_POST_SAVE_CONVERGENCE_PASS")
