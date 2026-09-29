@@ -82,25 +82,63 @@ function harness(options = {}) {
   const body = new Element('', { tag: 'body' });
   let container;
   if (options.display) {
-    const label = new Element('', { tag: 'span', text: options.bracketLabel ? '【问题根因】' : '问题根因' });
-    const labelWrapper = new Element('', { children: [label] });
-    const entry = new Element('', { tag: 'button', text: options.iconEntry ? '' : '编辑', onClick: () => {
-      log.push('open');
-      if (options.throwOpen) throw new Error('synthetic click failure');
-      if (options.driftDuringOpen) location.href = href.replace(displayId, 'SYN-102');
-      if (options.detachContainer) container.parentElement = null;
-      if (!options.noTransition) {
-        (options.editorOutside ? body : container).append(root);
-        if (options.duplicateOpenedRoot) container.append(new Element(fieldId, { classes: ['standard-co-editor-editing', 'task-rich-text-edit'] }));
-        if (options.hiddenDuplicateRoot) body.append(new Element(fieldId, { hidden: true }));
+    const labelLeaf = new Element('', { tag: 'span', text: options.bracketLabel ? '【问题根因】' : '问题根因' });
+    const labelLeaves = options.duplicateLabelLeaf
+      ? [labelLeaf, new Element('', { tag: 'span', text: options.bracketLabel ? '【问题根因】' : '问题根因' })]
+      : [labelLeaf];
+    const formLabel = new Element('', {
+      classes: ['form-field-label', 'edit_form_field_label'],
+      children: labelLeaves
+    });
+    const viewer = new Element('', {
+      classes: ['standard-co-viewer'],
+      text: options.viewerText || '',
+      onClick: () => {
+        log.push('open');
+        if (options.throwOpen) throw new Error('synthetic click failure');
+        if (options.driftDuringOpen) location.href = href.replace(displayId, 'SYN-102');
+        if (!options.noTransition) {
+          if (options.replaceContainer) {
+            container.parentElement = null;
+            body.append(root);
+          } else {
+            (options.editorOutside ? body : container).append(root);
+          }
+          if (options.duplicateOpenedRoot) body.append(new Element(fieldId, { classes: ['standard-co-editor-editing', 'task-rich-text-edit'] }));
+          if (options.hiddenDuplicateRoot) body.append(new Element(fieldId, { hidden: true }));
+        }
       }
-    } });
-    const children = [...(options.missingLabel ? [] : [labelWrapper]), ...(options.missingEntry ? [new Element('', { text: '只读内容' })] : [entry])];
-    if (options.duplicateEntry) children.push(new Element('', { tag: 'button', text: '另一入口' }));
-    if (options.duplicateLabel) children.push(new Element('', { tag: 'span', text: '问题根因' }));
-    container = options.missingContainer ? body : new Element('', { children });
-    if (options.missingContainer) children.forEach((child) => body.append(child));
-    else body.append(container);
+    });
+    const fieldChildren = [
+      ...(options.missingLabel ? [] : [formLabel]),
+      ...(options.missingViewer ? [new Element('', { text: '只读内容' })] : [viewer])
+    ];
+    if (options.duplicateViewer) fieldChildren.push(new Element('', { classes: ['standard-co-viewer'] }));
+    container = options.missingContainer
+      ? null
+      : new Element('', { classes: ['oac-flex', 'oac-py-1', 'oac-items-start', 'oac-flex-col'], children: fieldChildren });
+    if (options.missingContainer) {
+      fieldChildren.forEach((child) => body.append(child));
+    } else {
+      body.append(container);
+    }
+    if (options.duplicateFormLabel) {
+      const duplicateLabel = new Element('', {
+        classes: ['form-field-label', 'edit_form_field_label'],
+        children: [new Element('', { tag: 'span', text: '问题根因' })]
+      });
+      const duplicateWrap = new Element('', {
+        classes: ['oac-flex', 'oac-py-1', 'oac-items-start', 'oac-flex-col'],
+        children: [duplicateLabel, new Element('', { classes: ['standard-co-viewer'] })]
+      });
+      body.append(duplicateWrap);
+    }
+    if (options.historyLabel) {
+      body.append(new Element('', {
+        classes: ['message-v2-log-item-content'],
+        children: [new Element('', { tag: 'span', text: '问题根因' })]
+      }));
+    }
   } else {
     (options.roots || [root]).forEach((el) => body.append(el));
   }
@@ -221,31 +259,48 @@ test('duplicate editor IDs fail closed, even when one is hidden', async () => {
 
 
 for (const bracketLabel of [false, true]) {
-  test('display label opens and binds exact native field ID: bracket=' + bracketLabel, async () => {
-    const { result, log } = await preflight({ display: true, bracketLabel, iconEntry: true });
+  test('canonical detail-form label opens unique viewer and binds exact native field ID: bracket=' + bracketLabel, async () => {
+    const { result, log } = await preflight({ display: true, bracketLabel, duplicateLabelLeaf: true, historyLabel: true });
     assert.equal(result.status, 'PREWRITE_READY');
     assert.equal(result.editorOpened, true);
     assert.deepEqual(log, ['identity', 'read', 'events', 'read', 'open']);
   });
 }
 
+test('duplicate semantic leaves inside one canonical form label de-duplicate cleanly', async () => {
+  const { result, log } = await preflight({ display: true, duplicateLabelLeaf: true });
+  assert.equal(result.status, 'PREWRITE_READY');
+  assert.equal(log.filter((event) => event === 'open').length, 1);
+});
+
+test('activity/history root-cause text outside the detail form does not create ambiguity', async () => {
+  const { result, log } = await preflight({ display: true, historyLabel: true });
+  assert.equal(result.status, 'PREWRITE_READY');
+  assert.equal(log.filter((event) => event === 'open').length, 1);
+});
+
+test('framework may replace the old field wrapper when exact configured editor root rebinds', async () => {
+  const { result, log } = await preflight({ display: true, replaceContainer: true });
+  assert.equal(result.status, 'PREWRITE_READY');
+  assert.equal(result.editorOpened, true);
+  assert.equal(log.filter((event) => event === 'open').length, 1);
+});
+
 const blockedTransitions = [
   ['missingLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE', 0],
-  ['duplicateLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE', 0],
+  ['duplicateFormLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE', 0],
   ['missingContainer', 'ROOT_CAUSE_CONTAINER_NOT_UNIQUE', 0],
-  ['missingEntry', 'ROOT_CAUSE_ENTRY_NOT_UNIQUE', 0],
-  ['duplicateEntry', 'ROOT_CAUSE_ENTRY_NOT_UNIQUE', 0],
+  ['missingViewer', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE', 0],
+  ['duplicateViewer', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE', 0],
   ['noTransition', 'EDITOR_ROOT_NOT_UNIQUE', 1],
   ['wrongEditorId', 'EDITOR_FIELD_ID_MISMATCH', 1],
   ['duplicateOpenedRoot', 'EDITOR_ROOT_NOT_UNIQUE', 1],
   ['hiddenDuplicateRoot', 'EDITOR_ROOT_NOT_UNIQUE', 1],
-  ['editorOutside', 'EDITOR_ROOT_NOT_UNIQUE', 1],
-  ['detachContainer', 'ROOT_CAUSE_CONTAINER_LOST', 1],
   ['driftDuringOpen', 'TARGET_GUARD_FAILED', 1],
   ['throwOpen', 'EDITOR_OPEN_FAILED', 1]
 ];
 for (const [option, status, clicks] of blockedTransitions) {
-  test('fail closed without repeated clicks: ' + option, async () => {
+  test('fail closed without repeated viewer clicks: ' + option, async () => {
     const { result, log } = await preflight({ display: true, [option]: true });
     assert.equal(result.ok, false);
     assert.equal(result.status, status);
