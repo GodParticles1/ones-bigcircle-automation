@@ -1,4 +1,4 @@
-# Browser Bridge v0.5.10
+# Browser Bridge v0.5.11
 
 Configuration-driven ONES browser executor for a Windows-local loopback Relay.
 
@@ -18,7 +18,7 @@ The bounded root-cause writer:
 - takes display ID, task UUID, field UUID, desired text, and plan SHA only at runtime;
 - performs a double authoritative pre-write read;
 - aborts on drift or non-empty different content;
-- requires the exact ONES detail tab; when the root-cause field is in display mode, it canonicalizes the detail-form label, opens exactly one native `.standard-co-viewer`, then binds the configured field UUID before any input;
+- requires the exact ONES detail tab; when the root-cause field is in display mode, it canonicalizes the detail-form label, identifies exactly one native `.standard-co-viewer`, opens it with one bounded browser-native debugger click, then binds the configured field UUID before any input;
 - uses native browser input and one Save dispatch;
 - verifies both authoritative onesql semantic readback and a new system field event;
 - never auto-retries an uncertain write;
