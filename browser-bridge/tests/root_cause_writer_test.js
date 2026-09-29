@@ -64,6 +64,15 @@ class Element {
   click() { this.options.onClick?.(); }
 }
 
+const EDIT_GLYPH_PATH_D = "M7.928 3.828 3.174 8.582a1 1 0 0 0-.263.465l-.943 3.771a1 1 0 0 0 1.213 1.213l3.771-.943a1 1 0 0 0 .465-.263l4.754-4.754M7.928 3.828l2.121-2.12a1 1 0 0 1 1.415 0l2.828 2.828a1 1 0 0 1 0 1.414L12.171 8.07M7.928 3.828l4.243 4.243";
+const FULLSCREEN_GLYPH_PATH_D = "m1 1 4.5 4.5m0-4.5v4.5H1m14 14-4.5-4.5m0 4.5v-4.5H15";
+function glyphButton(id, pathD, options = {}) {
+  const path = new Element('', { tag:'path', attrs:{ d:pathD } });
+  const svg = new Element('', { tag:'svg', classes:['ones-icon', 'ones-icon-non-scaling-stroke'], children:[path] });
+  return new Element(id, { tag:'button', left:options.left ?? 180, top:200, width:20, height:20,
+    hidden:!!options.hidden, disabled:!!options.disabled, children:[svg], onClick:options.onClick });
+}
+
 function harness(options = {}) {
   const log = [];
   let now = 0;
@@ -128,16 +137,25 @@ function harness(options = {}) {
         }
       }
     });
-    button = new Element('synthetic_edit_action', {
-      tag:'button', left:options.buttonLeft ?? 180, top:200, width:20, height:20,
-      hidden:!!options.hiddenButton, disabled:!!options.disabledButton, onClick:viewer.options.onClick
+    const openAction = viewer.options.onClick;
+    button = glyphButton('synthetic_edit_action', EDIT_GLYPH_PATH_D, {
+      left:options.buttonLeft ?? 180, hidden:!!options.hiddenButton,
+      disabled:!!options.disabledButton, onClick:openAction
     });
     viewer.options.onClick = () => { log.push('readonly-content-click'); };
     action = new Element('', { classes:['standard-co-viewer-action'], hidden:!!options.actionAppearsOnHover });
-    if (!options.missingButton) action.append(button);
-    if (options.duplicateButton) action.append(new Element('', { tag:'button' }));
+    const fullscreen = glyphButton('synthetic_fullscreen_action', FULLSCREEN_GLYPH_PATH_D, { left:220 });
+    const unknown = glyphButton('synthetic_unknown_action', 'M0 0L1 1', { left:240 });
+    const buttons = [];
+    if (!options.fullscreenOnly && !options.unknownGlyphOnly && !options.missingButton) buttons.push(button);
+    if (options.fullscreenOnly || options.twoButtons) buttons.push(fullscreen);
+    if (options.unknownGlyphOnly || options.extraUnknownButton) buttons.push(unknown);
+    if (options.duplicateEditGlyph) buttons.push(glyphButton('synthetic_duplicate_edit_action', EDIT_GLYPH_PATH_D, { left:260 }));
+    if (options.duplicateButton) buttons.push(new Element('', { tag:'button' }));
+    if (options.reverseActionOrder) buttons.reverse();
+    buttons.forEach((candidate) => action.append(candidate));
     if (!options.missingAction) viewer.append(action);
-    if (options.duplicateAction) viewer.append(new Element('', { classes:['standard-co-viewer-action'], children:[new Element('', { tag:'button' })] }));
+    if (options.duplicateAction) viewer.append(new Element('', { classes:['standard-co-viewer-action'], children:[glyphButton('synthetic_duplicate_action_button', FULLSCREEN_GLYPH_PATH_D)] }));
     const fieldChildren = [
       ...(options.missingLabel ? [] : [formLabel]),
       ...(options.missingViewer ? [new Element('', { text: '只读内容' })] : [viewer])
@@ -1006,12 +1024,34 @@ test('SVG/path inside the exact action button is an allowed top hit', async () =
   assert.equal((await actionReadiness(h)).result.status, 'EDITOR_OPEN_REQUIRED');
 });
 
+test('real two-button action surface selects edit glyph regardless of button order', async () => {
+  for (const reverseActionOrder of [false, true]) {
+    const h = harness({ display:true, twoButtons:true, reverseActionOrder, buttonSvgHit:true });
+    const { result } = await actionReadiness(h);
+    assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+    assert.equal(result.buttonPoint.x, 190);
+    assert.equal(h.log.includes('open'), false);
+  }
+});
+
+test('extra nonmatching action buttons are allowed when the edit glyph remains unique', async () => {
+  const h = harness({ display:true, twoButtons:true, extraUnknownButton:true });
+  assert.equal((await actionReadiness(h)).result.status, 'EDITOR_OPEN_REQUIRED');
+});
+
+test('duplicate edit glyphs fail closed even with a valid fullscreen sibling', async () => {
+  const h = harness({ display:true, twoButtons:true, duplicateEditGlyph:true });
+  assert.equal((await actionReadiness(h)).result.status, 'VIEWER_EDIT_GLYPH_NOT_UNIQUE');
+});
+
 const actionBlocks = [
   ['missingAction', 'VIEWER_ACTION_NOT_UNIQUE'],
   ['duplicateAction', 'VIEWER_ACTION_NOT_UNIQUE'],
   ['missingButton', 'VIEWER_ACTION_BUTTON_NOT_UNIQUE'],
   ['hiddenButton', 'VIEWER_ACTION_BUTTON_NOT_UNIQUE'],
-  ['duplicateButton', 'VIEWER_ACTION_BUTTON_NOT_UNIQUE'],
+  ['fullscreenOnly', 'VIEWER_EDIT_GLYPH_NOT_UNIQUE'],
+  ['unknownGlyphOnly', 'VIEWER_EDIT_GLYPH_NOT_UNIQUE'],
+  ['duplicateEditGlyph', 'VIEWER_EDIT_GLYPH_NOT_UNIQUE'],
   ['disabledButton', 'VIEWER_ACTION_BUTTON_DISABLED'],
   ['buttonOverlay', 'VIEWER_ACTION_HIT_TEST_MISMATCH'],
   ['emptyButtonHit', 'VIEWER_ACTION_HIT_TEST_EMPTY'],

@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.13"
+assert manifest["version"] == "0.5.14"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -112,9 +112,15 @@ assert executor.count('Input.insertText') == 1
 action = writer.split("function rcPageResolveViewerAction", 1)[1].split("function rcPageClearViewerAction", 1)[0]
 assert 'viewer.querySelectorAll(".standard-co-viewer-action")' in action
 assert 'action.querySelectorAll("button")' in action
+assert 'RC_EDIT_GLYPH_PATH_D' in writer
+assert 'rcNormalizeSvgPath' in writer
+assert 'candidate.querySelectorAll("path")' in action
+assert 'svg.ones-icon.ones-icon-non-scaling-stroke' in action
+assert 'editCandidates.length !== 1' in action
 assert 'button.contains(hits[0])' in action
 assert 'buttonPoint' in action
 assert 'preflight.viewerPoint' not in executor
+assert 'first' not in action and 'last' not in action
 assert executor.index('func:rcPageResolveViewerAction') < executor.index('type:"mousePressed"')
 assert '.click()' not in action
 assert 'dispatchMouseEvent' not in action
@@ -149,4 +155,4 @@ assert save_handler.index("await clearDraft()") < save_handler.index("chrome.per
 assert 'origins:[origin + "/*"]' in save_handler
 assert 'normalizeOrigin(form.onesOrigin)' in save_handler
 assert 'storedDraft?.baseConfig === draftBase' in popup
-print("BROWSER_BRIDGE_PUBLIC_V0513_VIEWER_ACTION_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V0514_EDIT_GLYPH_PASS")
