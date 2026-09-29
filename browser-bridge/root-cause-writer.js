@@ -7,6 +7,12 @@ function rcNorm(value) {
   return String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
 }
 
+const RC_EDIT_GLYPH_PATH_D = "M7.928 3.828 3.174 8.582a1 1 0 0 0-.263.465l-.943 3.771a1 1 0 0 0 1.213 1.213l3.771-.943a1 1 0 0 0 .465-.263l4.754-4.754M7.928 3.828l2.121-2.12a1 1 0 0 1 1.415 0l2.828 2.828a1 1 0 0 1 0 1.414L12.171 8.07M7.928 3.828l4.243 4.243";
+
+function rcNormalizeSvgPath(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
 async function rcSha256Utf8(value) {
   const bytes = new TextEncoder().encode(String(value ?? ""));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -327,8 +333,22 @@ function rcPageResolveViewerAction(expectedDisplayId, fieldId, expectedHref, ope
   if (actions.length !== 1) return fail("VIEWER_ACTION_NOT_UNIQUE", { actionCount:actions.length });
   const action = actions[0];
   const buttons = [...action.querySelectorAll("button")].filter(visible);
-  if (buttons.length !== 1) return fail("VIEWER_ACTION_BUTTON_NOT_UNIQUE", { buttonCount:buttons.length });
-  const button = buttons[0];
+  if (!buttons.length) return fail("VIEWER_ACTION_BUTTON_NOT_UNIQUE", { buttonCount:buttons.length });
+  const editCandidates = buttons.filter((candidate) => {
+    const paths = [...candidate.querySelectorAll("path")]
+      .filter((path) => {
+        const svg = path.closest("svg");
+        return svg && svg.matches("svg.ones-icon.ones-icon-non-scaling-stroke") &&
+          visible(svg) && visible(path) && rcNormalizeSvgPath(path.getAttribute("d")) === RC_EDIT_GLYPH_PATH_D;
+      });
+    return paths.length === 1;
+  });
+  if (editCandidates.length !== 1) {
+    return fail("VIEWER_EDIT_GLYPH_NOT_UNIQUE", {
+      buttonCount:buttons.length, editCandidateCount:editCandidates.length
+    });
+  }
+  const button = editCandidates[0];
   if (!viewer.contains(button) || action.closest(".standard-co-viewer") !== viewer ||
       button.closest(".standard-co-viewer-action") !== action || button.closest(".standard-co-viewer") !== viewer) return fail("VIEWER_ACTION_OWNERSHIP_FAILED");
   if (button.disabled || button.getAttribute("aria-disabled") === "true") return fail("VIEWER_ACTION_BUTTON_DISABLED");
