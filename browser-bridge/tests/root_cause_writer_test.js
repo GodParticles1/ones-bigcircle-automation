@@ -961,17 +961,89 @@ test('hung or failed rendered inspection is bounded and never a success', async 
   }
 });
 
-test('native paragraph normalization is explicit even if computed alignment is already left', () => {
+function alignmentHarness(beforeAlign, options = {}) {
   const h = harness();
-  h.block.append(new Element('', { classes: ['text'], text: desired }));
+  h.block.options.textAlign = beforeAlign;
+  const textNode = new Element('', { classes:['text'], text:desired });
+  h.block.append(textNode);
   h.context.document.createRange = () => ({ selectNodeContents: (block) => assert.equal(block, h.block) });
   h.context.window = { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) };
   let commands = 0;
-  h.context.document.execCommand = (command) => { assert.equal(command, 'justifyLeft'); commands += 1; return true; };
+  h.context.document.execCommand = (command, showUI, value) => {
+    commands += 1;
+    assert.equal(command, 'justifyLeft');
+    assert.equal(showUI, false);
+    assert.equal(value, null);
+    if (options.mutateText) textNode.options.text = 'mutated draft';
+    h.block.options.textAlign = options.postAlign ?? 'left';
+    return options.commandResult !== false;
+  };
+  return { h, textNode, commands: () => commands };
+}
+
+test('exact draft with beforeAlign=left passes without execCommand', () => {
+  const { h, commands } = alignmentHarness('left', { commandResult:false });
   const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
   assert.equal(out.status, 'DRAFT_LEFT_ALIGN_VERIFIED');
-  assert.equal(commands, 1);
-  assert.equal(h.block.innerText, desired);
+  assert.equal(commands(), 0);
+});
+
+test('exact draft with beforeAlign=start passes without execCommand', () => {
+  const { h, commands } = alignmentHarness('start', { commandResult:false });
+  const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+  assert.equal(out.status, 'DRAFT_LEFT_ALIGN_VERIFIED');
+  assert.equal(commands(), 0);
+});
+
+for (const beforeAlign of ['center', 'right']) {
+  for (const postAlign of ['left', 'start']) {
+    test('native alignment verifies exact block ' + beforeAlign + ' -> ' + postAlign, () => {
+      const { h, commands } = alignmentHarness(beforeAlign, { postAlign });
+      // A left ancestor does not prove this exact block is already aligned.
+      h.root.options.textAlign = 'left';
+      const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+      assert.equal(out.status, 'DRAFT_LEFT_ALIGN_VERIFIED');
+      assert.equal(commands(), 1);
+      assert.equal(out.beforeAlign, beforeAlign);
+      assert.equal(out.afterAlign, postAlign);
+      assert.equal(out.draft, desired);
+    });
+  }
+  test('native command false on ' + beforeAlign + ' fails despite a left ancestor', () => {
+    const { h, commands } = alignmentHarness(beforeAlign, { commandResult:false });
+    h.root.options.textAlign = 'left';
+    const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+    assert.equal(out.status, 'LEFT_ALIGN_COMMAND_FAILED');
+    assert.equal(commands(), 1);
+  });
+}
+
+for (const beforeAlign of ['left', 'start', 'center', 'right']) {
+  test('draft mismatch blocks before alignment processing: ' + beforeAlign, () => {
+    const { h, textNode, commands } = alignmentHarness(beforeAlign);
+    textNode.options.text = 'different draft';
+    const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+    assert.equal(out.status, 'DRAFT_DOM_MISMATCH');
+    assert.equal(commands(), 0);
+  });
+}
+
+test('command mutation of exact draft text fails closed', () => {
+  const { h, commands } = alignmentHarness('center', { mutateText:true, postAlign:'left' });
+  const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+  assert.equal(out.status, 'DRAFT_LEFT_ALIGN_FAILED');
+  assert.equal(commands(), 1);
+  assert.notEqual(out.draft, desired);
+});
+
+test('post-command center/right alignment fails closed', () => {
+  for (const postAlign of ['center', 'right']) {
+    const { h, commands } = alignmentHarness('center', { postAlign });
+    const out = h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id);
+    assert.equal(out.status, 'DRAFT_LEFT_ALIGN_FAILED');
+    assert.equal(commands(), 1);
+    assert.equal(out.afterAlign, postAlign);
+  }
 });
 
 
@@ -990,15 +1062,6 @@ for (const mode of ['missing', 'duplicate']) {
   });
 }
 
-test('native alignment command failure cannot be reported as draft alignment success', () => {
-  const h = harness();
-  h.block.append(new Element('', { classes: ['text'], text: desired }));
-  h.context.document.createRange = () => ({ selectNodeContents() {} });
-  h.context.window = { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) };
-  h.context.document.execCommand = () => false;
-  assert.equal(h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id).status, 'LEFT_ALIGN_COMMAND_FAILED');
-  assert.equal(h.block.innerText, desired);
-});
 
 
 async function actionReadiness(h) {

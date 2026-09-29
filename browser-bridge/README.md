@@ -1,4 +1,4 @@
-# Browser Bridge v0.5.15
+# Browser Bridge v0.5.16
 
 Configuration-driven ONES browser executor for a Windows-local loopback Relay.
 

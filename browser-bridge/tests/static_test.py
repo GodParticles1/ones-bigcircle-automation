@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.15"
+assert manifest["version"] == "0.5.16"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -157,4 +157,9 @@ assert save_handler.index("await clearDraft()") < save_handler.index("chrome.per
 assert 'origins:[origin + "/*"]' in save_handler
 assert 'normalizeOrigin(form.onesOrigin)' in save_handler
 assert 'storedDraft?.baseConfig === draftBase' in popup
-print("BROWSER_BRIDGE_PUBLIC_V0515_SELFSERIALIZED_PASS")
+alignment = writer.split("function rcPageNormalizeDraftAlignment", 1)[1].split("function rcPageInspectDraft", 1)[0]
+assert 'beforeAlign === "left" || beforeAlign === "start"' in alignment
+assert alignment.index('beforeAlign === "left" || beforeAlign === "start"') < alignment.index('document.execCommand("justifyLeft"')
+assert 'after === desired' in alignment
+assert 'afterAlign === "left" || afterAlign === "start"' in alignment
+print("BROWSER_BRIDGE_PUBLIC_V0516_LEFT_ALIGN_RUNTIME_PASS")
