@@ -92,6 +92,8 @@ function harness(options = {}) {
   const body = new Element('', { tag: 'body' });
   let container;
   let viewer = null;
+  let action = null;
+  let button = null;
   if (options.display) {
     const labelLeaf = new Element('', { tag: 'span', text: options.bracketLabel ? '【问题根因】' : '问题根因' });
     const labelLeaves = options.duplicateLabelLeaf
@@ -126,6 +128,16 @@ function harness(options = {}) {
         }
       }
     });
+    button = new Element('synthetic_edit_action', {
+      tag:'button', left:options.buttonLeft ?? 180, top:200, width:20, height:20,
+      hidden:!!options.hiddenButton, disabled:!!options.disabledButton, onClick:viewer.options.onClick
+    });
+    viewer.options.onClick = () => { log.push('readonly-content-click'); };
+    action = new Element('', { classes:['standard-co-viewer-action'], hidden:!!options.actionAppearsOnHover });
+    if (!options.missingButton) action.append(button);
+    if (options.duplicateButton) action.append(new Element('', { tag:'button' }));
+    if (!options.missingAction) viewer.append(action);
+    if (options.duplicateAction) viewer.append(new Element('', { classes:['standard-co-viewer-action'], children:[new Element('', { tag:'button' })] }));
     const fieldChildren = [
       ...(options.missingLabel ? [] : [formLabel]),
       ...(options.missingViewer ? [new Element('', { text: '只读内容' })] : [viewer])
@@ -183,6 +195,19 @@ function harness(options = {}) {
       getElementById: (id) => body.querySelectorAll('[id="' + id + '"]')[0] || null,
       querySelectorAll: (selector) => body.querySelectorAll(selector),
       elementsFromPoint: (x, y) => {
+        const br = button?.getBoundingClientRect();
+        if (button && x === Math.round(br.left + br.width / 2) && y === Math.round(br.top + br.height / 2)) {
+          if (options.emptyButtonHit) return [];
+          if (options.buttonOverlay) return [new Element('overlay')];
+          if (options.buttonContentHit) return [viewer];
+          if (options.buttonSvgHit) {
+            const svg = new Element('', { tag:'svg' });
+            const svgPath = new Element('', { tag:'path' });
+            svg.append(svgPath); button.append(svg);
+            return [svgPath, svg, button, action, viewer];
+          }
+          return [button, action, viewer];
+        }
         if (options.emptyHitStack) return [];
         if (options.coveredByOverlay) return [new Element('overlay', { classes:['modal-overlay'] })];
         if (options.hitDescendant && viewer) {
@@ -210,7 +235,19 @@ function harness(options = {}) {
     }
   });
   vm.runInContext(source, context);
-  return { context, log, root, block, save, location, container, viewer, timers };
+  const hover = () => {
+    log.push('hover');
+    if (action) action.options.hidden = false;
+    if (options.driftDuringHover) location.href = href.replace(displayId, 'SYN-102');
+    if (options.originDriftDuringHover) location.origin = 'https://other.invalid';
+    if (options.replaceViewerDuringHover) {
+      container.children = container.children.filter((child) => child !== viewer);
+      viewer.parentElement = null;
+      container.append(new Element('', { classes:['standard-co-viewer'] }));
+    }
+    if (options.duplicateViewerDuringHover) container.append(new Element('', { classes:['standard-co-viewer'] }));
+  };
+  return { context, log, root, block, save, location, container, viewer, action, button, hover, timers };
 }
 
 async function preflight(options = {}) {
@@ -289,32 +326,32 @@ test('duplicate editor IDs fail closed, even when one is hidden', async () => {
 for (const bracketLabel of [false, true]) {
   test('display preflight returns one bounded native viewer point without DOM click: bracket=' + bracketLabel, async () => {
     const { result, log } = await preflight({ display: true, bracketLabel, duplicateLabelLeaf: true, historyLabel: true });
-    assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+    assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
     assert.equal(result.ok, true);
     assert.equal(result.editorOpened, false);
-    assert.equal(result.viewerPoint.x, 110);
-    assert.equal(result.viewerPoint.y, 215);
+    assert.equal(result.hoverPoint.x, 110);
+    assert.equal(result.hoverPoint.y, 215);
     assert.deepEqual(log, ['identity', 'read', 'events', 'read']);
   });
 }
 
 test('duplicate semantic leaves inside one canonical form label de-duplicate cleanly', async () => {
   const { result, log } = await preflight({ display: true, duplicateLabelLeaf: true });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
   assert.equal(log.includes('open'), false);
 });
 
 test('activity/history root-cause text outside the detail form does not create ambiguity', async () => {
   const { result, log } = await preflight({ display: true, historyLabel: true });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
   assert.equal(log.includes('open'), false);
 });
 
 test('offscreen exact viewer is scrolled before post-scroll viewport point is returned', async () => {
   const { result, viewer } = await preflight({ display: true, offscreenViewer: true });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
   assert.equal(viewer.options.scrollCalls, 1);
-  assert.equal(result.viewerPoint.y, 215);
+  assert.equal(result.hoverPoint.y, 215);
   assert.equal(viewer.options.lastScrollOptions.behavior, 'auto');
   assert.equal(viewer.options.lastScrollOptions.block, 'center');
 });
@@ -331,7 +368,7 @@ test('post-scroll unrelated overlay blocks the viewer point', async () => {
 
 test('post-scroll descendant top hit remains bound to the exact viewer', async () => {
   const { result } = await preflight({ display: true, hitDescendant: true });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
 });
 
 test('post-scroll out-of-viewport center blocks before debugger interaction', async () => {
@@ -363,8 +400,8 @@ for (const [option, status] of locatorBlocks) {
 test('bind-only verifier accepts exact configured editor after framework replaces wrapper', async () => {
   const h = harness({ display: true, replaceContainer: true });
   const pre = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(pre.status, 'EDITOR_OPEN_REQUIRED');
-  h.viewer.click();
+  assert.equal(pre.status, 'EDITOR_HOVER_REQUIRED');
+  h.button.click();
   const bound = h.context.rcPageBindOpenedEditor(displayId, fieldId, h.location.href);
   assert.equal(bound.status, 'PREWRITE_READY');
   assert.equal(bound.editorOpened, true);
@@ -381,6 +418,11 @@ function wireExecutor(h, verify, render) {
       if (func.name === 'rcPagePreflightWrite') {
         result = await func(...args);
         h.log.push('preflight:' + result.status);
+      } else if (func.name === 'rcPageResolveViewerAction') {
+        result = func(...args);
+        h.log.push('action:' + result.status);
+      } else if (func.name === 'rcPageClearViewerAction') {
+        result = func(...args);
       } else if (func.name === 'rcPageBindOpenedEditor') {
         result = func(...args);
         h.log.push('bind:' + result.status);
@@ -408,9 +450,10 @@ function wireExecutor(h, verify, render) {
       attach: async () => { h.log.push('attach'); }, detach: async () => {},
       sendCommand: async (_, method, params) => {
         h.log.push({ method, ...params });
+        if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseMoved' && params.x === 110 && params.y === 215 && h.viewer) h.hover();
         if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased' &&
-            params.x === 110 && params.y === 215 && h.viewer) {
-          h.viewer.click();
+            params.x === 190 && params.y === 210 && h.button) {
+          h.button.click();
         }
       }
     }
@@ -448,7 +491,7 @@ test('failed native-open bindings block before text input or Save', async () => 
     assert.equal(h.log.includes('attach'), true, option);
     assert.equal(h.log.some((e) => e?.method === 'Input.insertText'), false, option);
     assert.equal(h.log.some((e) => e?.type === 'mouseReleased' && e.x === 400), false, option);
-    assert.ok(h.log.filter((e) => e?.type === 'mouseReleased' && e.x === 110).length <= 1, option);
+    assert.ok(h.log.filter((e) => e?.type === 'mouseReleased' && e.x === 190).length <= 1, option);
   }
 });
 
@@ -463,7 +506,7 @@ for (const display of [false, true]) {
     assert.ok(input > ready);
     assert.equal(h.log.filter((e) => e.method === 'Input.insertText').length, 1);
     assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
-    assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110 && e.y === 215).length, display ? 1 : 0);
+    assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 190 && e.y === 210).length, display ? 1 : 0);
     assert.equal(h.log.filter((e) => e === 'open').length, display ? 1 : 0);
   });
 }
@@ -473,7 +516,7 @@ test('already-open editor requires no viewer-open click', async () => {
   wireExecutor(h);
   const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
   assert.equal(result.status, 'WRITE_VERIFIED');
-  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110 && e.y === 215).length, 0);
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 190 && e.y === 210).length, 0);
 });
 
 test('opened editor still requires a unique Save before any text input', async () => {
@@ -507,7 +550,7 @@ test('sibling Save controls do not replace the exact field viewer', async () => 
   const h = harness({ display: true });
   h.container.parentElement.append(new Element('', { tag: 'button', text: '保存', onClick: () => { throw new Error('sibling Save clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
   assert.equal(h.log.filter((e) => e === 'open').length, 0);
 });
 
@@ -515,7 +558,7 @@ test('nested interactive descendants do not widen the exact viewer locator', asy
   const h = harness({ display: true });
   h.container.children[1].append(new Element('', { tag: 'span', attrs: { role: 'button' }, text: '嵌套入口', onClick: () => { throw new Error('nested control clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
   assert.equal(h.log.filter((e) => e === 'open').length, 0);
 });
 
@@ -523,7 +566,7 @@ test('pointer icon inherited inside one entry does not cause a second click', as
   const h = harness({ display: true });
   h.container.children[1].append(new Element('', { tag: 'span', cursor: 'pointer' }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.status, 'EDITOR_HOVER_REQUIRED');
   assert.equal(h.log.filter((e) => e === 'open').length, 0);
 });
 
@@ -937,4 +980,130 @@ test('native alignment command failure cannot be reported as draft alignment suc
   h.context.document.execCommand = () => false;
   assert.equal(h.context.rcPageNormalizeDraftAlignment(displayId, fieldId, desired, h.block.id).status, 'LEFT_ALIGN_COMMAND_FAILED');
   assert.equal(h.block.innerText, desired);
+});
+
+
+async function actionReadiness(h) {
+  const pre = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue:desired });
+  assert.equal(pre.status, 'EDITOR_HOVER_REQUIRED');
+  h.hover();
+  const result = h.context.rcPageResolveViewerAction(displayId, fieldId, pre.expectedHref, pre.openBindingId);
+  return { pre, result };
+}
+
+test('unique hover-revealed action button supplies the only open point', async () => {
+  const h = harness({ display:true, actionAppearsOnHover:true, hitDescendant:true });
+  const { pre, result } = await actionReadiness(h);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.buttonPoint.x, 190);
+  assert.equal(result.buttonPoint.y, 210);
+  assert.notEqual(result.buttonPoint.x, pre.hoverPoint.x);
+  assert.equal(h.log.includes('open'), false);
+});
+
+test('SVG/path inside the exact action button is an allowed top hit', async () => {
+  const h = harness({ display:true, buttonSvgHit:true });
+  assert.equal((await actionReadiness(h)).result.status, 'EDITOR_OPEN_REQUIRED');
+});
+
+const actionBlocks = [
+  ['missingAction', 'VIEWER_ACTION_NOT_UNIQUE'],
+  ['duplicateAction', 'VIEWER_ACTION_NOT_UNIQUE'],
+  ['missingButton', 'VIEWER_ACTION_BUTTON_NOT_UNIQUE'],
+  ['hiddenButton', 'VIEWER_ACTION_BUTTON_NOT_UNIQUE'],
+  ['duplicateButton', 'VIEWER_ACTION_BUTTON_NOT_UNIQUE'],
+  ['disabledButton', 'VIEWER_ACTION_BUTTON_DISABLED'],
+  ['buttonOverlay', 'VIEWER_ACTION_HIT_TEST_MISMATCH'],
+  ['emptyButtonHit', 'VIEWER_ACTION_HIT_TEST_EMPTY'],
+  ['buttonContentHit', 'VIEWER_ACTION_HIT_TEST_MISMATCH'],
+  ['driftDuringHover', 'TARGET_GUARD_FAILED'],
+  ['originDriftDuringHover', 'TARGET_GUARD_FAILED'],
+  ['replaceViewerDuringHover', 'VIEWER_BINDING_LOST'],
+  ['duplicateViewerDuringHover', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE']
+];
+for (const [option, status] of actionBlocks) {
+  test('action readiness blocks before any press/input/Save: ' + option, async () => {
+    const h = harness({ display:true, [option]:true });
+    wireExecutor(h);
+    const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+    assert.equal(result.status, 'WRITE_BLOCKED');
+    assert.equal(result.result.blockedBy, status);
+    assert.equal(h.log.filter((e) => e === 'hover').length, 1);
+    assert.equal(h.log.some((e) => e.type === 'mousePressed' || e.type === 'mouseReleased' || e.method === 'Input.insertText'), false);
+    assert.equal(h.context[Symbol.for('onesRootCauseViewerActionV0513')], undefined);
+  });
+}
+
+test('button center outside viewport blocks although viewer hover point is valid', async () => {
+  const h = harness({ display:true, buttonLeft:1500 });
+  assert.equal((await actionReadiness(h)).result.status, 'VIEWER_ACTION_POINT_OUTSIDE_VIEWPORT');
+});
+
+test('action lookup cannot fall back to a sibling field action or arbitrary viewer button', async () => {
+  const h = harness({ display:true, missingAction:true });
+  h.viewer.append(new Element('', { tag:'button' }));
+  h.container.append(new Element('', { classes:['standard-co-viewer-action'], children:[new Element('', { tag:'button' })] }));
+  assert.equal((await actionReadiness(h)).result.status, 'VIEWER_ACTION_NOT_UNIQUE');
+});
+
+test('readiness binding is one-use and may not reopen after an uncertain transition', async () => {
+  const h = harness({ display:true });
+  const { pre } = await actionReadiness(h);
+  assert.equal(h.context.rcPageResolveViewerAction(displayId, fieldId, pre.expectedHref, pre.openBindingId).status, 'VIEWER_BINDING_LOST');
+});
+
+test('successful action performs hover then one native button click, never a content click', async () => {
+  const h = harness({ display:true, buttonSvgHit:true, actionAppearsOnHover:true, hitDescendant:true });
+  wireExecutor(h);
+  const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(result.status, 'WRITE_VERIFIED');
+  const beforeBind = h.log.slice(0, h.log.indexOf('bind:PREWRITE_READY'));
+  const mouse = beforeBind.filter((e) => e.method === 'Input.dispatchMouseEvent');
+  assert.deepEqual(mouse.map((e) => [e.type,e.x,e.y]), [
+    ['mouseMoved',110,215], ['mouseMoved',190,210], ['mousePressed',190,210], ['mouseReleased',190,210]
+  ]);
+  for (const e of mouse.filter((e) => e.type !== 'mouseMoved')) {
+    assert.equal(e.button, 'left'); assert.equal(e.clickCount, 1);
+  }
+  assert.equal(h.log.includes('readonly-content-click'), false);
+  assert.equal(h.log.filter((e) => e === 'open').length, 1);
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
+});
+
+test('already-open exact editor performs neither hover nor action lookup', async () => {
+  const h = harness();
+  wireExecutor(h);
+  assert.equal((await h.context.onesRootCauseWriteExecute(config, acceptedJob())).status, 'WRITE_VERIFIED');
+  assert.equal(h.log.includes('hover'), false);
+  assert.equal(h.log.some((e) => typeof e === 'string' && e.startsWith('action:')), false);
+});
+
+
+test('expired hover readiness cannot yield a click point', async () => {
+  const h = harness({ display:true });
+  const pre = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue:desired });
+  await new Promise((resolve) => h.context.setTimeout(resolve, 10001));
+  assert.equal(h.context.rcPageResolveViewerAction(displayId, fieldId, pre.expectedHref, pre.openBindingId).status, 'TARGET_GUARD_FAILED');
+});
+
+test('failed debugger attach clears retained viewer identity without input', async () => {
+  const h = harness({ display:true });
+  wireExecutor(h);
+  h.context.chrome.debugger.attach = async () => { throw new Error('synthetic attach failure'); };
+  const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(result.status, 'WRITE_BLOCKED');
+  assert.equal(h.context[Symbol.for('onesRootCauseViewerActionV0513')], undefined);
+  assert.equal(h.log.some((e) => e?.method), false);
+});
+
+test('stale readiness and cleanup cannot consume a newer preflight binding', async () => {
+  const h = harness({ display:true });
+  const args = { fieldId, taskUuid, displayId, desiredValue:desired };
+  const first = await h.context.rcPagePreflightWrite(args);
+  // Fresh authoritative reads on both independent preflights.
+  const second = await h.context.rcPagePreflightWrite(args);
+  assert.equal(second.status, 'EDITOR_HOVER_REQUIRED');
+  assert.equal(h.context.rcPageResolveViewerAction(displayId, fieldId, first.expectedHref, first.openBindingId).status, 'VIEWER_BINDING_LOST');
+  h.context.rcPageClearViewerAction(first.openBindingId);
+  assert.equal(h.context.rcPageResolveViewerAction(displayId, fieldId, second.expectedHref, second.openBindingId).status, 'EDITOR_OPEN_REQUIRED');
 });

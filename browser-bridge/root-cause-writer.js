@@ -231,9 +231,16 @@ async function rcPagePreflightWrite(input) {
         topHitId:topHit?.id || null
       });
     }
+    // Retain node identity only across this one hover/readiness handoff. A new
+    // preflight replaces the slot; readiness consumes it and cleanup removes it.
+    const openBindingId = crypto.randomUUID();
+    globalThis[Symbol.for("onesRootCauseViewerActionV0513")] = {
+      openBindingId, viewer, container, label:formLabels[0], fieldId:FIELD_UUID,
+      href:initialHref, origin:ORIGIN, createdAt:performance.now()
+    };
     return {
       ok:true,
-      status:"EDITOR_OPEN_REQUIRED",
+      status:"EDITOR_HOVER_REQUIRED",
       displayId:EXPECTED_DISPLAY_ID,
       taskUuid:EXPECTED_TASK_UUID,
       fieldId:FIELD_UUID,
@@ -241,7 +248,8 @@ async function rcPagePreflightWrite(input) {
       editorOpened:false,
       prewriteSemantic:second.semantic,
       baselineEventIds:events.map((e) => e.uuid).filter(Boolean),
-      viewerPoint:{ x:vx, y:vy },
+      hoverPoint:{ x:vx, y:vy },
+      openBindingId,
       expectedHref:initialHref
     };
   }
@@ -287,6 +295,58 @@ async function rcPagePreflightWrite(input) {
     focusedBlockCount:focusedBlocks.length,
     textBlockId:inputBlock.id || null
   };
+}
+
+function rcPageResolveViewerAction(expectedDisplayId, fieldId, expectedHref, openBindingId) {
+  const key = Symbol.for("onesRootCauseViewerActionV0513");
+  const binding = globalThis[key];
+  const fail = (status, extra = {}) => ({ ok:false, status, ...extra });
+  if (!binding || binding.openBindingId !== openBindingId) return fail("VIEWER_BINDING_LOST");
+  delete globalThis[key]; // One readiness check only; no reuse after uncertainty.
+  const { viewer, container, label } = binding;
+  const targetMatches = () => location.href === expectedHref && location.href === binding.href &&
+    location.origin === binding.origin && location.href.match(/\/issue\/([^/?#]+)/i)?.[1] === expectedDisplayId;
+  if (!targetMatches() || fieldId !== binding.fieldId || performance.now() - binding.createdAt > 10000) return fail("TARGET_GUARD_FAILED");
+  const visible = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || "1") > 0;
+  };
+  const wrapperSelector = ".oac-flex.oac-py-1.oac-items-start.oac-flex-col";
+  if (!viewer.isConnected || !container.isConnected || !label.isConnected ||
+      label.closest(wrapperSelector) !== container || viewer.closest(wrapperSelector) !== container) return fail("VIEWER_BINDING_LOST");
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const semantic = (el) => ["问题根因", "【问题根因】"].includes(norm(el.innerText || el.textContent));
+  const labels = [...document.querySelectorAll(".form-field-label.edit_form_field_label")].filter((el) =>
+    visible(el) && (semantic(el) || [...el.querySelectorAll('label,span,div,p,h1,h2,h3,h4,h5,h6')].some((child) => visible(child) && semantic(child))));
+  if (labels.length !== 1 || labels[0] !== label) return fail("ROOT_CAUSE_LABEL_NOT_UNIQUE");
+  const viewers = [...container.querySelectorAll(".standard-co-viewer")].filter(visible);
+  if (viewers.length !== 1 || viewers[0] !== viewer) return fail("ROOT_CAUSE_VIEWER_NOT_UNIQUE");
+  const actions = [...viewer.querySelectorAll(".standard-co-viewer-action")].filter(visible);
+  if (actions.length !== 1) return fail("VIEWER_ACTION_NOT_UNIQUE", { actionCount:actions.length });
+  const action = actions[0];
+  const buttons = [...action.querySelectorAll("button")].filter(visible);
+  if (buttons.length !== 1) return fail("VIEWER_ACTION_BUTTON_NOT_UNIQUE", { buttonCount:buttons.length });
+  const button = buttons[0];
+  if (!viewer.contains(button) || action.closest(".standard-co-viewer") !== viewer ||
+      button.closest(".standard-co-viewer-action") !== action || button.closest(".standard-co-viewer") !== viewer) return fail("VIEWER_ACTION_OWNERSHIP_FAILED");
+  if (button.disabled || button.getAttribute("aria-disabled") === "true") return fail("VIEWER_ACTION_BUTTON_DISABLED");
+  const rect = button.getBoundingClientRect();
+  const x = Math.round(rect.left + rect.width / 2), y = Math.round(rect.top + rect.height / 2);
+  const width = Number(window.innerWidth || document.documentElement?.clientWidth || 0);
+  const height = Number(window.innerHeight || document.documentElement?.clientHeight || 0);
+  if (!(x >= 0 && y >= 0 && x < width && y < height)) return fail("VIEWER_ACTION_POINT_OUTSIDE_VIEWPORT");
+  const hits = typeof document.elementsFromPoint === "function" ? document.elementsFromPoint(x, y) : [];
+  if (!hits.length) return fail("VIEWER_ACTION_HIT_TEST_EMPTY");
+  if (!(hits[0] === button || button.contains(hits[0]))) return fail("VIEWER_ACTION_HIT_TEST_MISMATCH");
+  if (!targetMatches() || !viewer.isConnected || !button.isConnected || !viewer.contains(button)) return fail("TARGET_GUARD_FAILED");
+  return { ok:true, status:"EDITOR_OPEN_REQUIRED", buttonPoint:{x,y} };
+}
+
+function rcPageClearViewerAction(openBindingId) {
+  const key = Symbol.for("onesRootCauseViewerActionV0513");
+  if (globalThis[key]?.openBindingId === openBindingId) delete globalThis[key];
 }
 
 function rcPageBindOpenedEditor(expectedDisplayId, fieldId, expectedHref) {
@@ -692,7 +752,7 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     if (preflight.status === "CONFLICT_REVIEW") return { status:"CONFLICT_REVIEW", result:{ ...preflight, writeAttempted:false, planSha256:planSha } };
     return { status:"WRITE_BLOCKED", result:{ ...preflight, status:"WRITE_BLOCKED", blockedBy:preflight.status || "PREWRITE_FAILED", writeAttempted:false, planSha256:planSha } };
   }
-  if (preflight.status !== "PREWRITE_READY" && preflight.status !== "EDITOR_OPEN_REQUIRED") {
+  if (preflight.status !== "PREWRITE_READY" && preflight.status !== "EDITOR_HOVER_REQUIRED") {
     return { status:"WRITE_BLOCKED", result:{ ...preflight, status:"WRITE_BLOCKED", blockedBy:preflight.status || "PREWRITE_FAILED", writeAttempted:false, planSha256:planSha } };
   }
 
@@ -704,8 +764,22 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     await chrome.debugger.attach(debuggee, "1.3");
     attached = true;
 
-    if (preflight.status === "EDITOR_OPEN_REQUIRED") {
-      const ox=preflight.viewerPoint?.x, oy=preflight.viewerPoint?.y;
+    if (preflight.status === "EDITOR_HOVER_REQUIRED") {
+      const hx=preflight.hoverPoint?.x, hy=preflight.hoverPoint?.y;
+      if (!Number.isFinite(hx) || !Number.isFinite(hy)) {
+        return { status:"WRITE_BLOCKED", result:{ ...preflight, ok:false, status:"WRITE_BLOCKED", blockedBy:"EDITOR_OPEN_POINT_INVALID", writeAttempted:false, saveDispatched:false, planSha256:planSha } };
+      }
+      await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseMoved",x:hx,y:hy});
+      await new Promise((resolve)=>setTimeout(resolve,150));
+      const [actionExec] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id}, world:"MAIN", func:rcPageResolveViewerAction,
+        args:[String(p.displayId),String(p.fieldId),preflight.expectedHref,preflight.openBindingId]
+      });
+      const action = actionExec?.result || { ok:false, status:"NO_VIEWER_ACTION_RESULT" };
+      if (!action.ok || action.status !== "EDITOR_OPEN_REQUIRED") {
+        return { status:"WRITE_BLOCKED", result:{ ...preflight, ok:false, status:"WRITE_BLOCKED", blockedBy:action.status, action, writeAttempted:false, saveDispatched:false, planSha256:planSha } };
+      }
+      const ox=action.buttonPoint?.x, oy=action.buttonPoint?.y;
       if (!Number.isFinite(ox) || !Number.isFinite(oy)) {
         return { status:"WRITE_BLOCKED", result:{ ...preflight, ok:false, status:"WRITE_BLOCKED", blockedBy:"EDITOR_OPEN_POINT_INVALID", writeAttempted:false, saveDispatched:false, planSha256:planSha } };
       }
@@ -769,6 +843,11 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   } catch (error) {
     return { status:saveDispatched ? "WRITE_UNVERIFIED" : "WRITE_BLOCKED", result:{ok:false,status:saveDispatched?"WRITE_UNVERIFIED":"WRITE_BLOCKED",blockedBy:saveDispatched?null:"NATIVE_INPUT_FAILED",error:String(error),saveDispatched,writeAttempted:saveDispatched,planSha256:planSha,draft} };
   } finally {
+    if (preflight.openBindingId) {
+      try {
+        await chrome.scripting.executeScript({ target:{tabId:tab.id}, world:"MAIN", func:rcPageClearViewerAction, args:[preflight.openBindingId] });
+      } catch (_) {} // Consumed readiness bindings are already cleared; navigation destroys old page state.
+    }
     if (attached) { try { await chrome.debugger.detach(debuggee); } catch (_) {} }
   }
 
