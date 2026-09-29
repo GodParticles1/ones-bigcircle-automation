@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.9"
+assert manifest["version"] == "0.5.10"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -81,10 +81,12 @@ assert not re.search(r"https://[^*\s\"']+", popup)
 # Issue #84: opening is root-cause-specific, one-click, and identity-bound before input.
 preflight = writer.split("async function rcPagePreflightWrite(input) {", 1)[1].split("function rcPageInspectSelection", 1)[0]
 assert 'text === "问题根因" || text === "【问题根因】"' in preflight
-assert preflight.count("entries[0].click()") == 1
+assert preflight.count("viewers[0].click()") == 1
 assert "root.id !== FIELD_UUID" in preflight
-assert "container.querySelectorAll(editorSelector)" in preflight
-assert "ROOT_CAUSE_CONTAINER_LOST" in preflight
+assert "document.querySelectorAll(editorSelector)" in preflight
+assert ".form-field-label.edit_form_field_label" in preflight
+assert ".standard-co-viewer" in preflight
+assert "ROOT_CAUSE_VIEWER_NOT_UNIQUE" in preflight
 assert "EDITOR_FIELD_ID_MISMATCH" in preflight
 assert "location.href !== initialHref" in preflight
 assert preflight.index("root.id !== FIELD_UUID") < preflight.index("const blocks =")
@@ -122,4 +124,4 @@ assert save_handler.index("await clearDraft()") < save_handler.index("chrome.per
 assert 'origins:[origin + "/*"]' in save_handler
 assert 'normalizeOrigin(form.onesOrigin)' in save_handler
 assert 'storedDraft?.baseConfig === draftBase' in popup
-print("BROWSER_BRIDGE_PUBLIC_V059_PERSIST_BEFORE_PERMISSION_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V0510_DETAIL_VIEWER_BINDING_PASS")
