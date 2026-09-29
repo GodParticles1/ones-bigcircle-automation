@@ -76,17 +76,17 @@ jobs:
           [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.3.ps1 -Raw))
           ./scripts/build-root-cause-write-runtime.ps1
           foreach ($zip in @(
-            "dist-root-cause-write/ones-browser-bridge-v0.5.10.zip",
+            "dist-root-cause-write/ones-browser-bridge-v0.5.11.zip",
             "dist-root-cause-write/ones-local-relay-v0.3.4.zip"
           )) {
             if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw ("PACKAGE_MISSING: " + $zip) }
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: ones-root-cause-write-runtime-v0.5.10-v0.3.4
+          name: ones-root-cause-write-runtime-v0.5.11-v0.3.4
           path: |
-            dist-root-cause-write/ones-browser-bridge-v0.5.10.zip
-            dist-root-cause-write/ones-browser-bridge-v0.5.10.zip.sha256
+            dist-root-cause-write/ones-browser-bridge-v0.5.11.zip
+            dist-root-cause-write/ones-browser-bridge-v0.5.11.zip.sha256
             dist-root-cause-write/ones-local-relay-v0.3.4.zip
             dist-root-cause-write/ones-local-relay-v0.3.4.zip.sha256
           if-no-files-found: error

@@ -81,6 +81,7 @@ function harness(options = {}) {
   });
   const body = new Element('', { tag: 'body' });
   let container;
+  let viewer = null;
   if (options.display) {
     const labelLeaf = new Element('', { tag: 'span', text: options.bracketLabel ? '【问题根因】' : '问题根因' });
     const labelLeaves = options.duplicateLabelLeaf
@@ -90,7 +91,7 @@ function harness(options = {}) {
       classes: ['form-field-label', 'edit_form_field_label'],
       children: labelLeaves
     });
-    const viewer = new Element('', {
+    viewer = new Element('', {
       classes: ['standard-co-viewer'],
       text: options.viewerText || '',
       onClick: () => {
@@ -182,7 +183,7 @@ function harness(options = {}) {
     }
   });
   vm.runInContext(source, context);
-  return { context, log, root, block, save, location, container, timers };
+  return { context, log, root, block, save, location, container, viewer, timers };
 }
 
 async function preflight(options = {}) {
@@ -259,54 +260,55 @@ test('duplicate editor IDs fail closed, even when one is hidden', async () => {
 
 
 for (const bracketLabel of [false, true]) {
-  test('canonical detail-form label opens unique viewer and binds exact native field ID: bracket=' + bracketLabel, async () => {
+  test('display preflight returns one bounded native viewer point without DOM click: bracket=' + bracketLabel, async () => {
     const { result, log } = await preflight({ display: true, bracketLabel, duplicateLabelLeaf: true, historyLabel: true });
-    assert.equal(result.status, 'PREWRITE_READY');
-    assert.equal(result.editorOpened, true);
-    assert.deepEqual(log, ['identity', 'read', 'events', 'read', 'open']);
+    assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+    assert.equal(result.ok, true);
+    assert.equal(result.editorOpened, false);
+    assert.equal(result.viewerPoint.x, 110);
+    assert.equal(result.viewerPoint.y, 25);
+    assert.deepEqual(log, ['identity', 'read', 'events', 'read']);
   });
 }
 
 test('duplicate semantic leaves inside one canonical form label de-duplicate cleanly', async () => {
   const { result, log } = await preflight({ display: true, duplicateLabelLeaf: true });
-  assert.equal(result.status, 'PREWRITE_READY');
-  assert.equal(log.filter((event) => event === 'open').length, 1);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(log.includes('open'), false);
 });
 
 test('activity/history root-cause text outside the detail form does not create ambiguity', async () => {
   const { result, log } = await preflight({ display: true, historyLabel: true });
-  assert.equal(result.status, 'PREWRITE_READY');
-  assert.equal(log.filter((event) => event === 'open').length, 1);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(log.includes('open'), false);
 });
 
-test('framework may replace the old field wrapper when exact configured editor root rebinds', async () => {
-  const { result, log } = await preflight({ display: true, replaceContainer: true });
-  assert.equal(result.status, 'PREWRITE_READY');
-  assert.equal(result.editorOpened, true);
-  assert.equal(log.filter((event) => event === 'open').length, 1);
-});
-
-const blockedTransitions = [
-  ['missingLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE', 0],
-  ['duplicateFormLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE', 0],
-  ['missingContainer', 'ROOT_CAUSE_CONTAINER_NOT_UNIQUE', 0],
-  ['missingViewer', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE', 0],
-  ['duplicateViewer', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE', 0],
-  ['noTransition', 'EDITOR_ROOT_NOT_UNIQUE', 1],
-  ['wrongEditorId', 'EDITOR_FIELD_ID_MISMATCH', 1],
-  ['duplicateOpenedRoot', 'EDITOR_ROOT_NOT_UNIQUE', 1],
-  ['hiddenDuplicateRoot', 'EDITOR_ROOT_NOT_UNIQUE', 1],
-  ['driftDuringOpen', 'TARGET_GUARD_FAILED', 1],
-  ['throwOpen', 'EDITOR_OPEN_FAILED', 1]
+const locatorBlocks = [
+  ['missingLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE'],
+  ['duplicateFormLabel', 'ROOT_CAUSE_LABEL_NOT_UNIQUE'],
+  ['missingContainer', 'ROOT_CAUSE_CONTAINER_NOT_UNIQUE'],
+  ['missingViewer', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE'],
+  ['duplicateViewer', 'ROOT_CAUSE_VIEWER_NOT_UNIQUE']
 ];
-for (const [option, status, clicks] of blockedTransitions) {
-  test('fail closed without repeated viewer clicks: ' + option, async () => {
+for (const [option, status] of locatorBlocks) {
+  test('display locator fails closed before debugger attach: ' + option, async () => {
     const { result, log } = await preflight({ display: true, [option]: true });
     assert.equal(result.ok, false);
     assert.equal(result.status, status);
-    assert.equal(log.filter((event) => event === 'open').length, clicks);
+    assert.equal(log.includes('open'), false);
   });
 }
+
+test('bind-only verifier accepts exact configured editor after framework replaces wrapper', async () => {
+  const h = harness({ display: true, replaceContainer: true });
+  const pre = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
+  assert.equal(pre.status, 'EDITOR_OPEN_REQUIRED');
+  h.viewer.click();
+  const bound = h.context.rcPageBindOpenedEditor(displayId, fieldId, h.location.href);
+  assert.equal(bound.status, 'PREWRITE_READY');
+  assert.equal(bound.editorOpened, true);
+  assert.equal(bound.textBlockId, 'synthetic_text_block');
+});
 
 function wireExecutor(h, verify, render) {
   let verifyAttempts = 0;
@@ -318,6 +320,9 @@ function wireExecutor(h, verify, render) {
       if (func.name === 'rcPagePreflightWrite') {
         result = await func(...args);
         h.log.push('preflight:' + result.status);
+      } else if (func.name === 'rcPageBindOpenedEditor') {
+        result = func(...args);
+        h.log.push('bind:' + result.status);
       } else if (func.name === 'rcPageInspectSelection') result = { ok: true, anchorInside: true, focusInside: true, selectedText: '' };
       else if (func.name === 'rcPageNormalizeDraftAlignment') result = { ok: true, status: 'DRAFT_LEFT_ALIGN_VERIFIED' };
       else if (func.name === 'rcPageInspectDraft') result = { ok: true, status: 'DRAFT_DOM_VERIFIED', savePoint: { x: 400, y: 25 } };
@@ -340,39 +345,77 @@ function wireExecutor(h, verify, render) {
     } },
     debugger: {
       attach: async () => { h.log.push('attach'); }, detach: async () => {},
-      sendCommand: async (_, method, params) => { h.log.push({ method, ...params }); }
+      sendCommand: async (_, method, params) => {
+        h.log.push({ method, ...params });
+        if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased' &&
+            params.x === 110 && params.y === 25 && h.viewer) {
+          h.viewer.click();
+        }
+      }
     }
   };
 }
 const config = { rootCauseFieldId: fieldId, onesOrigin: 'https://synthetic.invalid' };
 
-test('all failed post-open bindings block executor before text input or Save', async () => {
-  for (const [option, status] of blockedTransitions) {
+test('locator failures block before debugger attach', async () => {
+  for (const [option, status] of locatorBlocks) {
     const h = harness({ display: true, [option]: true });
     wireExecutor(h);
     const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
     assert.equal(result.status, 'WRITE_BLOCKED', option);
     assert.equal(result.result.blockedBy, status, option);
-    assert.equal(h.log.some((e) => typeof e === 'object' || e === 'attach'), false, option);
+    assert.equal(h.log.includes('attach'), false, option);
+    assert.equal(h.log.some((e) => e?.method === 'Input.insertText'), false, option);
+  }
+});
+
+const postOpenBlocks = [
+  ['noTransition', 'EDITOR_ROOT_NOT_UNIQUE'],
+  ['wrongEditorId', 'EDITOR_FIELD_ID_MISMATCH'],
+  ['duplicateOpenedRoot', 'EDITOR_ROOT_NOT_UNIQUE'],
+  ['hiddenDuplicateRoot', 'EDITOR_ROOT_NOT_UNIQUE'],
+  ['driftDuringOpen', 'TARGET_GUARD_FAILED'],
+  ['throwOpen', 'EDITOR_OPEN_FAILED']
+];
+test('failed native-open bindings block before text input or Save', async () => {
+  for (const [option, status] of postOpenBlocks) {
+    const h = harness({ display: true, [option]: true });
+    wireExecutor(h);
+    const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+    assert.equal(result.status, 'WRITE_BLOCKED', option);
+    assert.equal(result.result.blockedBy, status, option);
+    assert.equal(h.log.includes('attach'), true, option);
+    assert.equal(h.log.some((e) => e?.method === 'Input.insertText'), false, option);
+    assert.equal(h.log.some((e) => e?.type === 'mouseReleased' && e.x === 400), false, option);
+    assert.ok(h.log.filter((e) => e?.type === 'mouseReleased' && e.x === 110).length <= 1, option);
   }
 });
 
 for (const display of [false, true]) {
-  test('executor inputs only after binding and dispatches exactly one Save: display=' + display, async () => {
+  test('executor binds before input and dispatches exactly one Save: display=' + display, async () => {
     const h = harness({ display });
     wireExecutor(h);
     const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
     assert.equal(result.status, 'WRITE_VERIFIED');
     const input = h.log.findIndex((e) => e.method === 'Input.insertText');
-    assert.ok(input > h.log.indexOf('preflight:PREWRITE_READY'));
+    const ready = display ? h.log.indexOf('bind:PREWRITE_READY') : h.log.indexOf('preflight:PREWRITE_READY');
+    assert.ok(input > ready);
     assert.equal(h.log.filter((e) => e.method === 'Input.insertText').length, 1);
     assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
+    assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110).length, display ? 1 : 0);
     assert.equal(h.log.filter((e) => e === 'open').length, display ? 1 : 0);
   });
 }
 
+test('already-open editor requires no viewer-open click', async () => {
+  const h = harness({ display: false });
+  wireExecutor(h);
+  const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(result.status, 'WRITE_VERIFIED');
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110).length, 0);
+});
 
-test('opened editor still requires a unique Save before any native input', async () => {
+test('opened editor still requires a unique Save before any text input', async () => {
   const h = harness({ display: true, saves: [
     new Element('save1', { tag: 'button', text: '保存' }),
     new Element('save2', { tag: 'button', text: '保存' })
@@ -380,7 +423,8 @@ test('opened editor still requires a unique Save before any native input', async
   wireExecutor(h);
   const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
   assert.equal(result.result.blockedBy, 'SAVE_CONTROL_NOT_UNIQUE');
-  assert.equal(h.log.includes('attach'), false);
+  assert.equal(h.log.includes('attach'), true);
+  assert.equal(h.log.some((e) => e?.method === 'Input.insertText'), false);
 });
 
 test('display-mode equal/conflict/concurrent values do not open an editor', async () => {
@@ -402,24 +446,24 @@ test('sibling Save controls do not replace the exact field viewer', async () => 
   const h = harness({ display: true });
   h.container.parentElement.append(new Element('', { tag: 'button', text: '保存', onClick: () => { throw new Error('sibling Save clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'PREWRITE_READY');
-  assert.equal(h.log.filter((e) => e === 'open').length, 1);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(h.log.filter((e) => e === 'open').length, 0);
 });
 
 test('nested interactive descendants do not widen the exact viewer locator', async () => {
   const h = harness({ display: true });
   h.container.children[1].append(new Element('', { tag: 'span', attrs: { role: 'button' }, text: '嵌套入口', onClick: () => { throw new Error('nested control clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'PREWRITE_READY');
-  assert.equal(h.log.filter((e) => e === 'open').length, 1);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(h.log.filter((e) => e === 'open').length, 0);
 });
 
 test('pointer icon inherited inside one entry does not cause a second click', async () => {
   const h = harness({ display: true });
   h.container.children[1].append(new Element('', { tag: 'span', cursor: 'pointer' }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'PREWRITE_READY');
-  assert.equal(h.log.filter((e) => e === 'open').length, 1);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(h.log.filter((e) => e === 'open').length, 0);
 });
 
 

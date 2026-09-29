@@ -149,7 +149,6 @@ async function rcPagePreflightWrite(input) {
   let roots = exactRoots();
   if (roots.length > 1) return fail("EDITOR_ROOT_NOT_UNIQUE", "root-cause editor root is not unique", { editorRootCount:roots.length });
   let root = roots[0];
-  let editorOpened = false;
   if (!root || !visible(root) || !root.matches(editorSelector)) {
     // Real ONES detail pages can repeat the semantic text in activity/history.
     // Canonicalize only labels that belong to the detail-form field lineage.
@@ -185,34 +184,22 @@ async function rcPagePreflightWrite(input) {
       });
     }
     if (location.href !== initialHref || location.origin !== ORIGIN || !container.isConnected) {
-      return fail("TARGET_GUARD_FAILED", "root-cause target changed before editor open");
+      return fail("TARGET_GUARD_FAILED", "root-cause target changed before native editor open");
     }
-    try {
-      viewers[0].click(); // One native editor-open interaction; never a Save.
-      editorOpened = true;
-      // One bounded transition wait, no click retry or mutation polling.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    } catch (error) {
-      return fail("EDITOR_OPEN_FAILED", error);
-    }
-    if (location.href !== initialHref || location.origin !== ORIGIN) {
-      return fail("TARGET_GUARD_FAILED", "detail page changed during editor open");
-    }
-
-    // React may replace the display wrapper during the native edit transition.
-    // Re-bind identity only from the exact page plus one unique native editor root.
-    const openedRoots = [...document.querySelectorAll(editorSelector)].filter(visible);
-    if (openedRoots.length !== 1) {
-      return fail("EDITOR_ROOT_NOT_UNIQUE", "native editor transition did not produce one visible editor root", {
-        editorRootCount:openedRoots.length
-      });
-    }
-    root = openedRoots[0];
-    if (root.id !== FIELD_UUID) return fail("EDITOR_FIELD_ID_MISMATCH", "opened editor is not the configured root-cause field");
-    roots = exactRoots();
-    if (roots.length !== 1 || roots[0] !== root) {
-      return fail("EDITOR_ROOT_NOT_UNIQUE", "configured field root is not unique", { editorRootCount:roots.length });
-    }
+    const vr = viewers[0].getBoundingClientRect();
+    return {
+      ok:true,
+      status:"EDITOR_OPEN_REQUIRED",
+      displayId:EXPECTED_DISPLAY_ID,
+      taskUuid:EXPECTED_TASK_UUID,
+      fieldId:FIELD_UUID,
+      desired,
+      editorOpened:false,
+      prewriteSemantic:second.semantic,
+      baselineEventIds:events.map((e) => e.uuid).filter(Boolean),
+      viewerPoint:{ x:Math.round(vr.left + vr.width / 2), y:Math.round(vr.top + vr.height / 2) },
+      expectedHref:initialHref
+    };
   }
   if (!visible(root) || !root.matches(editorSelector)) return fail("EDITOR_NOT_READY", "root-cause native editor is not visible");
 
@@ -246,9 +233,85 @@ async function rcPagePreflightWrite(input) {
     taskUuid:EXPECTED_TASK_UUID,
     fieldId:FIELD_UUID,
     desired,
-    editorOpened,
+    editorOpened:false,
     prewriteSemantic:second.semantic,
     baselineEventIds:events.map((e) => e.uuid).filter(Boolean),
+    inputPoint:{ x:Math.round(Math.min(br.right - 8, br.left + 18)), y:Math.round(br.top + br.height / 2) },
+    savePoint:{ x:Math.round(sr.left + sr.width / 2), y:Math.round(sr.top + sr.height / 2) },
+    blockSelection,
+    blockCount:blocks.length,
+    focusedBlockCount:focusedBlocks.length,
+    textBlockId:inputBlock.id || null
+  };
+}
+
+function rcPageBindOpenedEditor(expectedDisplayId, fieldId, expectedHref) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
+  const currentDisplayId = currentMatch ? currentMatch[1] : null;
+  const fail = (status, error, extra = {}) => ({
+    ok:false, status, error:String(error || status),
+    currentDisplayId, expectedDisplayId, fieldId, ...extra
+  });
+  if ((expectedHref && location.href !== expectedHref) || currentDisplayId !== expectedDisplayId) {
+    return fail("TARGET_GUARD_FAILED", "detail page changed during native editor open");
+  }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(fieldId || ""))) return fail("INPUT_REJECTED", "invalid configured field identifier");
+
+  const visible = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity || "1") > 0;
+  };
+  const editorSelector = 'div.standard-co-editor-editing.task-rich-text-edit';
+  const openedRoots = [...document.querySelectorAll(editorSelector)].filter(visible);
+  if (openedRoots.length !== 1) {
+    return fail("EDITOR_ROOT_NOT_UNIQUE", "native editor transition did not produce one visible editor root", {
+      editorRootCount:openedRoots.length
+    });
+  }
+  const root = openedRoots[0];
+  if (root.id !== fieldId) return fail("EDITOR_FIELD_ID_MISMATCH", "opened editor is not the configured root-cause field");
+  const exactRoots = [...document.querySelectorAll('[id="' + fieldId + '"]')];
+  if (exactRoots.length !== 1 || exactRoots[0] !== root) {
+    return fail("EDITOR_ROOT_NOT_UNIQUE", "configured field root is not unique", { editorRootCount:exactRoots.length });
+  }
+
+  const blocks = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible);
+  const focusedBlocks = blocks.filter((el) => el.classList.contains("focused"));
+  let inputBlock = null;
+  let blockSelection = null;
+  if (focusedBlocks.length === 1) {
+    inputBlock = focusedBlocks[0];
+    blockSelection = "UNIQUE_FOCUSED";
+  } else if (blocks.length === 1) {
+    inputBlock = blocks[0];
+    blockSelection = "ONLY_VISIBLE";
+  } else {
+    return fail("EDITOR_ACTIVE_BLOCK_NOT_UNIQUE", "root-cause text block is not unique", {
+      blockCount:blocks.length, focusedBlockCount:focusedBlocks.length,
+      blockIds:blocks.map((el) => el.id || null)
+    });
+  }
+
+  const saveControls = [...root.querySelectorAll("button,[role=button]")]
+    .filter((el) => visible(el) && norm(el.innerText || el.textContent) === "保存");
+  if (saveControls.length !== 1) {
+    return fail("SAVE_CONTROL_NOT_UNIQUE", "root-cause save control is not unique", { saveControlCount:saveControls.length });
+  }
+
+  if ((expectedHref && location.href !== expectedHref) || currentDisplayId !== expectedDisplayId || !root.isConnected) {
+    return fail("TARGET_GUARD_FAILED", "detail page changed while binding native editor");
+  }
+  const br = inputBlock.getBoundingClientRect();
+  const sr = saveControls[0].getBoundingClientRect();
+  return {
+    ok:true,
+    status:"PREWRITE_READY",
+    displayId:expectedDisplayId,
+    fieldId,
+    editorOpened:true,
     inputPoint:{ x:Math.round(Math.min(br.right - 8, br.left + 18)), y:Math.round(br.top + br.height / 2) },
     savePoint:{ x:Math.round(sr.left + sr.width / 2), y:Math.round(sr.top + sr.height / 2) },
     blockSelection,
@@ -577,12 +640,15 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   const preArgs = [{ displayId:String(p.displayId), taskUuid:String(p.taskUuid), fieldId:String(p.fieldId), desiredValue:desired }];
 
   const [preExec] = await chrome.scripting.executeScript({ target:{tabId:tab.id}, world:"MAIN", func:rcPagePreflightWrite, args:preArgs });
-  const preflight = preExec?.result || { ok:false, status:"NO_PREFLIGHT_RESULT" };
+  let preflight = preExec?.result || { ok:false, status:"NO_PREFLIGHT_RESULT" };
   if (preflight.ok && preflight.status === "NOOP_VERIFIED") {
     return { status:"NOOP_VERIFIED", result:{ ...preflight, writeAttempted:false, planSha256:planSha, decision:p.decision, writeMode:p.writeMode } };
   }
   if (!preflight.ok) {
     if (preflight.status === "CONFLICT_REVIEW") return { status:"CONFLICT_REVIEW", result:{ ...preflight, writeAttempted:false, planSha256:planSha } };
+    return { status:"WRITE_BLOCKED", result:{ ...preflight, status:"WRITE_BLOCKED", blockedBy:preflight.status || "PREWRITE_FAILED", writeAttempted:false, planSha256:planSha } };
+  }
+  if (preflight.status !== "PREWRITE_READY" && preflight.status !== "EDITOR_OPEN_REQUIRED") {
     return { status:"WRITE_BLOCKED", result:{ ...preflight, status:"WRITE_BLOCKED", blockedBy:preflight.status || "PREWRITE_FAILED", writeAttempted:false, planSha256:planSha } };
   }
 
@@ -593,6 +659,31 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
   try {
     await chrome.debugger.attach(debuggee, "1.3");
     attached = true;
+
+    if (preflight.status === "EDITOR_OPEN_REQUIRED") {
+      const ox=preflight.viewerPoint?.x, oy=preflight.viewerPoint?.y;
+      if (!Number.isFinite(ox) || !Number.isFinite(oy)) {
+        return { status:"WRITE_BLOCKED", result:{ ...preflight, ok:false, status:"WRITE_BLOCKED", blockedBy:"EDITOR_OPEN_POINT_INVALID", writeAttempted:false, saveDispatched:false, planSha256:planSha } };
+      }
+      try {
+        await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseMoved",x:ox,y:oy});
+        await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mousePressed",x:ox,y:oy,button:"left",clickCount:1});
+        await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseReleased",x:ox,y:oy,button:"left",clickCount:1});
+      } catch (error) {
+        return { status:"WRITE_BLOCKED", result:{ ...preflight, ok:false, status:"WRITE_BLOCKED", blockedBy:"EDITOR_OPEN_FAILED", error:String(error), writeAttempted:false, saveDispatched:false, planSha256:planSha } };
+      }
+      await new Promise((resolve)=>setTimeout(resolve,1000));
+      const [bindExec] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id}, world:"MAIN", func:rcPageBindOpenedEditor,
+        args:[String(p.displayId),String(p.fieldId),tab.url]
+      });
+      const bound = bindExec?.result || { ok:false, status:"NO_EDITOR_BIND_RESULT" };
+      if (!bound.ok || bound.status !== "PREWRITE_READY") {
+        return { status:"WRITE_BLOCKED", result:{ ...preflight, ...bound, ok:false, status:"WRITE_BLOCKED", blockedBy:bound.status || "EDITOR_BIND_FAILED", writeAttempted:false, saveDispatched:false, planSha256:planSha } };
+      }
+      preflight = { ...preflight, ...bound, status:"PREWRITE_READY", editorOpened:true };
+    }
+
     const x=preflight.inputPoint.x, y=preflight.inputPoint.y;
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mouseMoved",x,y});
     await chrome.debugger.sendCommand(debuggee,"Input.dispatchMouseEvent",{type:"mousePressed",x,y,button:"left",clickCount:1});
