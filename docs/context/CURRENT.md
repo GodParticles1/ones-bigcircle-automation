@@ -439,3 +439,23 @@ Provider boundary:
 Live deployment is not claimed. No Cloudflare connector/authenticated execution channel is available in the current Lead environment, so staging resource creation, secret injection, deploy/readback and real HTTPS synthetic smoke remain `ENVIRONMENT_BLOCKED`. The integrated P4i runbook is the exact continuation point.
 
 Production CASE_FEED over the remote provider remains disabled until the real Cloudflare staging deployment and synthetic-only smoke are accepted. Production ONES mutation remains disabled. Issue #20 remains independent.
+
+
+## 2026-09-29 current Gate F state
+
+`GATE_F2_SELF_OPEN_EDITOR_RUNTIME_ACCEPTANCE=PASS`
+
+Current main: `18c64c6cfc2117656ba4917ee53183ff0e38f0d8`
+Browser Bridge: `0.5.15`
+Local Relay: `0.3.4`
+
+Issue state:
+- #84: CLOSED / completed; automatic exact root-cause editor open runtime PASS, one native open click, exact bind PREWRITE_READY, zero input/Save during acceptance.
+- #85: implementation integrated (PR #89 / merge `c75c5f3cc1ff931dffccae9472efe0b4b5809bc8`), runtime presentation acceptance pending.
+- #86: implementation integrated (PR #88 / merge `b711a198fc1f7d6c69b6977cf41e51d2242387e9`), runtime convergence acceptance pending.
+- #97: QUEUED, no implementation/Writer yet; task-driven multi-target navigation/orchestration after #85/#86 runtime resolution.
+
+Exact next product action:
+one fresh eligible unique task-level SET_CANDIDATE -> one bounded write acceptance -> collect both #85 rendered-left and #86 convergence evidence without rewriting the already-used YF-12439 target. Then decide #85/#86 closure independently. After that, freeze and activate #97.
+
+Manual pre-opening of a ticket is acceptance scaffolding only and is not the intended production model.
