@@ -1009,6 +1009,37 @@ async function actionReadiness(h) {
   return { pre, result };
 }
 
+test('serialized MAIN-world resolver is self-contained without file-scope glyph helpers', async () => {
+  const h = harness({ display:true, twoButtons:true, reverseActionOrder:true });
+  const pre = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue:desired });
+  assert.equal(pre.status, 'EDITOR_HOVER_REQUIRED');
+  const serialized = h.context.rcPageResolveViewerAction.toString();
+  const isolated = vm.createContext({
+    Element: h.context.Element,
+    document: h.context.document,
+    getComputedStyle: h.context.getComputedStyle,
+    location: h.location,
+    performance: h.context.performance,
+    window: h.context.window
+  });
+  const actionKey = Symbol.for('onesRootCauseViewerActionV0513');
+  isolated[actionKey] = {
+    openBindingId:pre.openBindingId,
+    viewer:h.viewer,
+    container:h.container,
+    label:h.container.children[0],
+    fieldId,
+    href:h.location.href,
+    origin:h.location.origin,
+    createdAt:h.context.performance.now()
+  };
+  const resolver = vm.runInContext('(' + serialized + ')', isolated);
+  const result = resolver(displayId, fieldId, pre.expectedHref, pre.openBindingId);
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(result.buttonPoint.x, 190);
+  assert.equal(result.buttonPoint.y, 210);
+});
+
 test('unique hover-revealed action button supplies the only open point', async () => {
   const h = harness({ display:true, actionAppearsOnHover:true, hitDescendant:true });
   const { pre, result } = await actionReadiness(h);

@@ -7,12 +7,6 @@ function rcNorm(value) {
   return String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
 }
 
-const RC_EDIT_GLYPH_PATH_D = "M7.928 3.828 3.174 8.582a1 1 0 0 0-.263.465l-.943 3.771a1 1 0 0 0 1.213 1.213l3.771-.943a1 1 0 0 0 .465-.263l4.754-4.754M7.928 3.828l2.121-2.12a1 1 0 0 1 1.415 0l2.828 2.828a1 1 0 0 1 0 1.414L12.171 8.07M7.928 3.828l4.243 4.243";
-
-function rcNormalizeSvgPath(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
 async function rcSha256Utf8(value) {
   const bytes = new TextEncoder().encode(String(value ?? ""));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -304,6 +298,11 @@ async function rcPagePreflightWrite(input) {
 }
 
 function rcPageResolveViewerAction(expectedDisplayId, fieldId, expectedHref, openBindingId) {
+  // This function is serialized into the MAIN world by chrome.scripting.
+  // Keep the frozen pencil signature and normalization inside the function so
+  // no file-scope helper/constant is required at the injection boundary.
+  const editGlyphPathD = "M7.928 3.828 3.174 8.582a1 1 0 0 0-.263.465l-.943 3.771a1 1 0 0 0 1.213 1.213l3.771-.943a1 1 0 0 0 .465-.263l4.754-4.754M7.928 3.828l2.121-2.12a1 1 0 0 1 1.415 0l2.828 2.828a1 1 0 0 1 0 1.414L12.171 8.07M7.928 3.828l4.243 4.243";
+  const normalizeSvgPath = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const key = Symbol.for("onesRootCauseViewerActionV0513");
   const binding = globalThis[key];
   const fail = (status, extra = {}) => ({ ok:false, status, ...extra });
@@ -339,7 +338,7 @@ function rcPageResolveViewerAction(expectedDisplayId, fieldId, expectedHref, ope
       .filter((path) => {
         const svg = path.closest("svg");
         return svg && svg.matches("svg.ones-icon.ones-icon-non-scaling-stroke") &&
-          visible(svg) && visible(path) && rcNormalizeSvgPath(path.getAttribute("d")) === RC_EDIT_GLYPH_PATH_D;
+          visible(svg) && visible(path) && normalizeSvgPath(path.getAttribute("d")) === editGlyphPathD;
       });
     return paths.length === 1;
   });
