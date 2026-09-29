@@ -213,6 +213,7 @@ async function rcPagePreflightWrite(input) {
     if (roots.length !== 1 || roots[0] !== root) {
       return fail("EDITOR_ROOT_NOT_UNIQUE", "configured field root is not unique", { editorRootCount:roots.length });
     }
+  }
   if (!visible(root) || !root.matches(editorSelector)) return fail("EDITOR_NOT_READY", "root-cause native editor is not visible");
 
   const blocks = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible);
