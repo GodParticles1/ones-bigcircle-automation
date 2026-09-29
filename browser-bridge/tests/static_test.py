@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.10"
+assert manifest["version"] == "0.5.11"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -78,21 +78,31 @@ assert not re.search(r"https://[^*\s\"']+", worker)
 assert not re.search(r"https://[^*\s\"']+", popup)
 
 
-# Issue #84: opening is root-cause-specific, one-click, and identity-bound before input.
-preflight = writer.split("async function rcPagePreflightWrite(input) {", 1)[1].split("function rcPageInspectSelection", 1)[0]
+# Issue #84: display-mode opening is exact-viewer + one native debugger click, then bind-only proof.
+preflight = writer.split("async function rcPagePreflightWrite(input) {", 1)[1].split("function rcPageBindOpenedEditor", 1)[0]
+bind_opened = writer.split("function rcPageBindOpenedEditor", 1)[1].split("function rcPageInspectSelection", 1)[0]
+executor = writer.split("globalThis.onesRootCauseWriteExecute", 1)[1].split("async function rcPagePreflightFormatRepair", 1)[0]
 assert 'text === "问题根因" || text === "【问题根因】"' in preflight
-assert preflight.count("viewers[0].click()") == 1
-assert "root.id !== FIELD_UUID" in preflight
-assert "document.querySelectorAll(editorSelector)" in preflight
 assert ".form-field-label.edit_form_field_label" in preflight
 assert ".standard-co-viewer" in preflight
 assert "ROOT_CAUSE_VIEWER_NOT_UNIQUE" in preflight
-assert "EDITOR_FIELD_ID_MISMATCH" in preflight
-assert "location.href !== initialHref" in preflight
-assert preflight.index("root.id !== FIELD_UUID") < preflight.index("const blocks =")
+assert 'status:"EDITOR_OPEN_REQUIRED"' in preflight
+assert "viewerPoint" in preflight
+assert ".click()" not in preflight
 assert "Input.insertText" not in preflight
 assert "dispatchMouseEvent" not in preflight
 assert "setInterval" not in preflight
+assert "EDITOR_FIELD_ID_MISMATCH" in bind_opened
+assert "document.querySelectorAll(editorSelector)" in bind_opened
+assert "SAVE_CONTROL_NOT_UNIQUE" in bind_opened
+assert "PREWRITE_READY" in bind_opened
+assert executor.count('params.type') == 0
+assert executor.count('type:"mousePressed"') >= 2
+assert executor.count('type:"mouseReleased"') >= 2
+assert 'preflight.status === "EDITOR_OPEN_REQUIRED"' in executor
+assert 'func:rcPageBindOpenedEditor' in executor
+assert executor.index('func:rcPageBindOpenedEditor') < executor.index('Input.insertText')
+assert executor.count('Input.insertText') == 1
 
 # Issue #86 convergence may read only and must remain bounded.
 convergence = writer.split("async function rcVerifyRootCauseAfterSave", 1)[1].split("globalThis.onesRootCauseWriteExecute", 1)[0]
@@ -124,4 +134,4 @@ assert save_handler.index("await clearDraft()") < save_handler.index("chrome.per
 assert 'origins:[origin + "/*"]' in save_handler
 assert 'normalizeOrigin(form.onesOrigin)' in save_handler
 assert 'storedDraft?.baseConfig === draftBase' in popup
-print("BROWSER_BRIDGE_PUBLIC_V0510_DETAIL_VIEWER_BINDING_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V0511_NATIVE_VIEWER_OPEN_PASS")
