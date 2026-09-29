@@ -342,3 +342,53 @@ Exact next gate:
 7. accept only if exact forward bytes + RESULT/CHECKPOINT reverse path pass with `productionDataUsed=false`, `browserRelayUsed=false`, `onesMutationUsed=false`.
 
 No Cloudflare plugin/authenticated execution channel is available to this Lead environment. Do not claim staging deployed until external runtime evidence exists.
+
+
+## 2026-09-29 Gate F2 self-open closure / next-Leader handoff
+
+Current live main:
+`18c64c6cfc2117656ba4917ee53183ff0e38f0d8`
+
+Current runtime pair:
+- Browser Bridge `0.5.15`;
+- Local Relay `0.3.4`;
+- open PRs: none.
+
+Accepted and closed:
+- Issue #84 self-open root-cause editor primitive is CLOSED / runtime PASS.
+- Final runtime evidence: preflight `EDITOR_HOVER_REQUIRED` -> action `EDITOR_OPEN_REQUIRED` -> exactly one native open click -> exact field bind `PREWRITE_READY`; editor opened automatically; textInput=0; Save=0.
+- Do not reopen #84, viewport/focus/trusted-event/center-click/selector-expansion branches without contradictory exact evidence.
+
+Important integrated-but-not-runtime-closed lanes:
+- Issue #86 post-save convergence is already implemented on main via PR #88 / merge `b711a198fc1f7d6c69b6977cf41e51d2242387e9`; exact-head CI `36387512775` PASS. Runtime acceptance remains pending. Old v0.5.7 Writer Dispatch is consumed.
+- Issue #85 rendered presentation verification is already implemented on main via PR #89 / merge `c75c5f3cc1ff931dffccae9472efe0b4b5809bc8`; exact-head CI `36389593929` PASS. Runtime acceptance remains pending. Old v0.5.8 Writer Dispatch is consumed.
+- Current v0.5.15 preserves both #85 and #86 code.
+
+Next execution order:
+1. Obtain one **fresh eligible unique task-level SET_CANDIDATE** from current accepted planner/reconciliation inputs. Do not rewrite YF-12439 merely for acceptance.
+2. Use that one fresh target for one bounded real write acceptance that can collect evidence for #85 and #86 together:
+   - exact semantic persistence;
+   - one Save only;
+   - convergence metadata;
+   - final normal rendered root-cause view left/start.
+3. Close #85 and/or #86 only if each issue's own runtime acceptance contract is satisfied. No automatic retry after uncertain delivery.
+4. Only after #85/#86 are runtime-resolved, activate Issue #97.
+
+Issue #97 — Gate F3 task-driven multi-target navigation/orchestration:
+- state: QUEUED;
+- implementation has not started;
+- no Writer lane active;
+- base must be refreshed from live main when activated;
+- product goal is to remove the human pre-open-ticket dependency;
+- consume only unique task-level planner targets (closed Issue #56), never raw case-level SET_CANDIDATE rows;
+- initial batch executor is sequential, not concurrent;
+- each target gets exact navigation, displayId->taskUuid identity proof, fresh pre-read, bounded writer primitive, durable result/checkpoint;
+- NOOP/CONFLICT_REVIEW/pre-write BLOCK may continue;
+- navigation drift, uncertain post-Save state, or unknown delivery stops the batch immediately;
+- no hidden retry, no second Save, no automatic create/import.
+
+Runtime page-state lesson:
+- `?isHideDialog=1` removes the detail-form field from DOM and correctly yields zero canonical root-cause labels; restore normal visible detail before per-target execution.
+- Normal visible detail can contain many repeated root-cause strings in activity/history. Canonical detail-form label dedupe yields exactly one accepted label/wrapper/viewer.
+
+New Leader must not start by redesigning architecture or redispatching stale #85/#86 branches. Refresh live state, then continue from the exact order above.
