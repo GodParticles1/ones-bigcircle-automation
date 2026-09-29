@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.11"
+assert manifest["version"] == "0.5.12"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -88,6 +88,11 @@ assert ".standard-co-viewer" in preflight
 assert "ROOT_CAUSE_VIEWER_NOT_UNIQUE" in preflight
 assert 'status:"EDITOR_OPEN_REQUIRED"' in preflight
 assert "viewerPoint" in preflight
+assert "scrollIntoView" in preflight
+assert "elementsFromPoint" in preflight
+assert "VIEWER_POINT_OUTSIDE_VIEWPORT" in preflight
+assert "VIEWER_HIT_TEST_EMPTY" in preflight
+assert "VIEWER_HIT_TEST_MISMATCH" in preflight
 assert ".click()" not in preflight
 assert "Input.insertText" not in preflight
 assert "dispatchMouseEvent" not in preflight
@@ -134,4 +139,4 @@ assert save_handler.index("await clearDraft()") < save_handler.index("chrome.per
 assert 'origins:[origin + "/*"]' in save_handler
 assert 'normalizeOrigin(form.onesOrigin)' in save_handler
 assert 'storedDraft?.baseConfig === draftBase' in popup
-print("BROWSER_BRIDGE_PUBLIC_V0511_NATIVE_VIEWER_OPEN_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V0512_VIEWPORT_HIT_TEST_PASS")

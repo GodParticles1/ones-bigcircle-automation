@@ -186,7 +186,51 @@ async function rcPagePreflightWrite(input) {
     if (location.href !== initialHref || location.origin !== ORIGIN || !container.isConnected) {
       return fail("TARGET_GUARD_FAILED", "root-cause target changed before native editor open");
     }
-    const vr = viewers[0].getBoundingClientRect();
+
+    // The live ONES detail form can place this field far below the current viewport.
+    // A CDP mouse point is viewport-relative, so scroll the exact accepted viewer first,
+    // then recompute and hit-test the post-scroll geometry. Never click an offscreen point.
+    const viewer = viewers[0];
+    try {
+      viewer.scrollIntoView({ behavior:"auto", block:"center", inline:"nearest" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } catch (error) {
+      return fail("VIEWER_SCROLL_FAILED", error);
+    }
+    if (location.href !== initialHref || location.origin !== ORIGIN || !container.isConnected || !viewer.isConnected) {
+      return fail("TARGET_GUARD_FAILED", "root-cause target changed during viewer scroll");
+    }
+    const reboundViewers = [...container.querySelectorAll(".standard-co-viewer")].filter(visible);
+    if (reboundViewers.length !== 1 || reboundViewers[0] !== viewer) {
+      return fail("ROOT_CAUSE_VIEWER_NOT_UNIQUE", "root-cause viewer changed during bounded scroll", {
+        viewerCount:reboundViewers.length
+      });
+    }
+
+    const vr = viewer.getBoundingClientRect();
+    const vx = Math.round(vr.left + vr.width / 2);
+    const vy = Math.round(vr.top + vr.height / 2);
+    const viewportWidth = Number(window.innerWidth || document.documentElement?.clientWidth || 0);
+    const viewportHeight = Number(window.innerHeight || document.documentElement?.clientHeight || 0);
+    if (!(vx >= 0 && vy >= 0 && vx < viewportWidth && vy < viewportHeight)) {
+      return fail("VIEWER_POINT_OUTSIDE_VIEWPORT", "root-cause viewer center is outside the current viewport", {
+        viewerPoint:{x:vx,y:vy}, viewport:{width:viewportWidth,height:viewportHeight}
+      });
+    }
+    const hitStack = typeof document.elementsFromPoint === "function" ? document.elementsFromPoint(vx, vy) : [];
+    if (!hitStack.length) {
+      return fail("VIEWER_HIT_TEST_EMPTY", "root-cause viewer point has no viewport hit target", {
+        viewerPoint:{x:vx,y:vy}
+      });
+    }
+    const topHit = hitStack[0];
+    if (!(topHit === viewer || viewer.contains(topHit))) {
+      return fail("VIEWER_HIT_TEST_MISMATCH", "root-cause viewer point is covered by an unrelated element", {
+        viewerPoint:{x:vx,y:vy},
+        topHitTag:topHit?.tagName || null,
+        topHitId:topHit?.id || null
+      });
+    }
     return {
       ok:true,
       status:"EDITOR_OPEN_REQUIRED",
@@ -197,7 +241,7 @@ async function rcPagePreflightWrite(input) {
       editorOpened:false,
       prewriteSemantic:second.semantic,
       baselineEventIds:events.map((e) => e.uuid).filter(Boolean),
-      viewerPoint:{ x:Math.round(vr.left + vr.width / 2), y:Math.round(vr.top + vr.height / 2) },
+      viewerPoint:{ x:vx, y:vy },
       expectedHref:initialHref
     };
   }
