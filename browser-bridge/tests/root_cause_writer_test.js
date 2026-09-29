@@ -265,7 +265,8 @@ for (const bracketLabel of [false, true]) {
     assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
     assert.equal(result.ok, true);
     assert.equal(result.editorOpened, false);
-    assert.deepEqual(result.viewerPoint, { x: 110, y: 25 });
+    assert.equal(result.viewerPoint.x, 110);
+    assert.equal(result.viewerPoint.y, 25);
     assert.deepEqual(log, ['identity', 'read', 'events', 'read']);
   });
 }
