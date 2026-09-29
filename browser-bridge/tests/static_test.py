@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.12"
+assert manifest["version"] == "0.5.13"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -87,7 +87,7 @@ assert ".form-field-label.edit_form_field_label" in preflight
 assert ".standard-co-viewer" in preflight
 assert "ROOT_CAUSE_VIEWER_NOT_UNIQUE" in preflight
 assert 'status:"EDITOR_OPEN_REQUIRED"' in preflight
-assert "viewerPoint" in preflight
+assert "hoverPoint" in preflight
 assert "scrollIntoView" in preflight
 assert "elementsFromPoint" in preflight
 assert "VIEWER_POINT_OUTSIDE_VIEWPORT" in preflight
@@ -104,10 +104,20 @@ assert "PREWRITE_READY" in bind_opened
 assert executor.count('params.type') == 0
 assert executor.count('type:"mousePressed"') >= 2
 assert executor.count('type:"mouseReleased"') >= 2
-assert 'preflight.status === "EDITOR_OPEN_REQUIRED"' in executor
+assert 'preflight.status === "EDITOR_HOVER_REQUIRED"' in executor
 assert 'func:rcPageBindOpenedEditor' in executor
 assert executor.index('func:rcPageBindOpenedEditor') < executor.index('Input.insertText')
 assert executor.count('Input.insertText') == 1
+
+action = writer.split("function rcPageResolveViewerAction", 1)[1].split("function rcPageClearViewerAction", 1)[0]
+assert 'viewer.querySelectorAll(".standard-co-viewer-action")' in action
+assert 'action.querySelectorAll("button")' in action
+assert 'button.contains(hits[0])' in action
+assert 'buttonPoint' in action
+assert 'preflight.viewerPoint' not in executor
+assert executor.index('func:rcPageResolveViewerAction') < executor.index('type:"mousePressed"')
+assert '.click()' not in action
+assert 'dispatchMouseEvent' not in action
 
 # Issue #86 convergence may read only and must remain bounded.
 convergence = writer.split("async function rcVerifyRootCauseAfterSave", 1)[1].split("globalThis.onesRootCauseWriteExecute", 1)[0]
@@ -139,4 +149,4 @@ assert save_handler.index("await clearDraft()") < save_handler.index("chrome.per
 assert 'origins:[origin + "/*"]' in save_handler
 assert 'normalizeOrigin(form.onesOrigin)' in save_handler
 assert 'storedDraft?.baseConfig === draftBase' in popup
-print("BROWSER_BRIDGE_PUBLIC_V0512_VIEWPORT_HIT_TEST_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V0513_VIEWER_ACTION_PASS")
