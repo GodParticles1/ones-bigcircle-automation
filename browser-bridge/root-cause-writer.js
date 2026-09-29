@@ -485,9 +485,20 @@ function rcPageNormalizeDraftAlignment(expectedDisplayId, fieldId, desiredText, 
   if (before !== desired) return { ok:false, status:"DRAFT_DOM_MISMATCH", draft:before, desired };
 
   const beforeAlign = String(getComputedStyle(block).textAlign || "").toLowerCase();
-  // Persist an explicit native paragraph alignment even when inherited CSS
-  // already looks left-aligned. Keep the accepted single paragraph verbatim:
-  // no splitting, headings, reordering, or inferred solution/next-step facts.
+  // The exact bound text block is authoritative. A computed left/start state is
+  // already aligned and must not depend on execCommand success in Chrome.
+  if (beforeAlign === "left" || beforeAlign === "start") {
+    return {
+      ok:true,
+      status:"DRAFT_LEFT_ALIGN_VERIFIED",
+      draft:before,
+      desired,
+      beforeAlign,
+      afterAlign:beforeAlign,
+      textBlockId:block.id || null
+    };
+  }
+  // Non-left/start content may use the existing bounded native command only.
   const range = document.createRange();
   range.selectNodeContents(block);
   const selection = window.getSelection();
