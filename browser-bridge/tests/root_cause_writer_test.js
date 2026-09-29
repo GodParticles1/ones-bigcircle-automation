@@ -30,7 +30,17 @@ class Element {
   get textContent() { return this.innerText; }
   get isConnected() { return this.tagName === 'BODY' || !!this.parentElement?.isConnected; }
   getBoundingClientRect() {
-    return { left: this.options.save ? 300 : 10, top: 10, right: 210, width: this.options.hidden ? 0 : 200, height: 30 };
+    const width = this.options.width ?? 200;
+    const height = this.options.hidden ? 0 : (this.options.height ?? 30);
+    const left = this.options.left ?? (this.options.save ? 300 : 10);
+    const top = this.options.scrolled ? (this.options.scrolledTop ?? 200) : (this.options.top ?? 10);
+    return { left, top, right:left + width, bottom:top + height, x:left, y:top, width, height };
+  }
+  scrollIntoView(options) {
+    this.options.scrollCalls = (this.options.scrollCalls || 0) + 1;
+    if (this.options.throwScroll) throw new Error('synthetic scroll failure');
+    this.options.scrolled = true;
+    this.options.lastScrollOptions = options;
   }
   getAttribute(name) { return name === 'id' ? this.id : (this.options.attrs || {})[name] ?? null; }
   matches(selector) {
@@ -94,6 +104,12 @@ function harness(options = {}) {
     viewer = new Element('', {
       classes: ['standard-co-viewer'],
       text: options.viewerText || '',
+      left: options.viewerLeft ?? 10,
+      top: options.offscreenViewer ? 3163 : (options.viewerTop ?? 10),
+      width: options.viewerWidth ?? 200,
+      height: options.viewerHeight ?? 30,
+      scrolledTop: options.viewerScrolledTop ?? 200,
+      throwScroll: !!options.throwScroll,
       onClick: () => {
         log.push('open');
         if (options.throwOpen) throw new Error('synthetic click failure');
@@ -148,6 +164,7 @@ function harness(options = {}) {
   const location = { origin: 'https://synthetic.invalid', href };
   const context = vm.createContext({
     Element, TextEncoder, TextDecoder, crypto: webcrypto, URL, location, AbortController,
+    window: { innerWidth: options.viewportWidth ?? 1280, innerHeight: options.viewportHeight ?? 720 },
     performance: { now: () => now },
     setTimeout: (fn, delay = 0) => {
       const id = ++nextTimer;
@@ -162,9 +179,19 @@ function harness(options = {}) {
       return { display: el.options.display || (el.tagName === 'SPAN' ? 'inline' : 'block'), visibility: 'visible', opacity: '1', cursor: el.options.cursor || 'auto', textAlign: owner?.options.textAlign || 'left' };
     },
     document: {
-      body, documentElement: new Element('', { tag: 'html' }),
+      body, documentElement: Object.assign(new Element('', { tag: 'html' }), { clientWidth: options.viewportWidth ?? 1280, clientHeight: options.viewportHeight ?? 720 }),
       getElementById: (id) => body.querySelectorAll('[id="' + id + '"]')[0] || null,
-      querySelectorAll: (selector) => body.querySelectorAll(selector)
+      querySelectorAll: (selector) => body.querySelectorAll(selector),
+      elementsFromPoint: (x, y) => {
+        if (options.emptyHitStack) return [];
+        if (options.coveredByOverlay) return [new Element('overlay', { classes:['modal-overlay'] })];
+        if (options.hitDescendant && viewer) {
+          const child = new Element('viewer-child', { tag:'span' });
+          viewer.append(child);
+          return [child, viewer];
+        }
+        return viewer ? [viewer] : [];
+      }
     },
     fetch: async (url, init) => {
       log.push(url.endsWith('/onesql') ? 'read' : url.endsWith('/identifier') ? 'identity' : 'events');
@@ -266,7 +293,7 @@ for (const bracketLabel of [false, true]) {
     assert.equal(result.ok, true);
     assert.equal(result.editorOpened, false);
     assert.equal(result.viewerPoint.x, 110);
-    assert.equal(result.viewerPoint.y, 25);
+    assert.equal(result.viewerPoint.y, 215);
     assert.deepEqual(log, ['identity', 'read', 'events', 'read']);
   });
 }
@@ -281,6 +308,40 @@ test('activity/history root-cause text outside the detail form does not create a
   const { result, log } = await preflight({ display: true, historyLabel: true });
   assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
   assert.equal(log.includes('open'), false);
+});
+
+test('offscreen exact viewer is scrolled before post-scroll viewport point is returned', async () => {
+  const { result, viewer } = await preflight({ display: true, offscreenViewer: true });
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+  assert.equal(viewer.options.scrollCalls, 1);
+  assert.equal(result.viewerPoint.y, 215);
+  assert.equal(viewer.options.lastScrollOptions.behavior, 'auto');
+  assert.equal(viewer.options.lastScrollOptions.block, 'center');
+});
+
+test('post-scroll empty hit stack blocks before debugger interaction', async () => {
+  const { result } = await preflight({ display: true, emptyHitStack: true });
+  assert.equal(result.status, 'VIEWER_HIT_TEST_EMPTY');
+});
+
+test('post-scroll unrelated overlay blocks the viewer point', async () => {
+  const { result } = await preflight({ display: true, coveredByOverlay: true });
+  assert.equal(result.status, 'VIEWER_HIT_TEST_MISMATCH');
+});
+
+test('post-scroll descendant top hit remains bound to the exact viewer', async () => {
+  const { result } = await preflight({ display: true, hitDescendant: true });
+  assert.equal(result.status, 'EDITOR_OPEN_REQUIRED');
+});
+
+test('post-scroll out-of-viewport center blocks before debugger interaction', async () => {
+  const { result } = await preflight({ display: true, viewerLeft: 1500, viewportWidth: 1280 });
+  assert.equal(result.status, 'VIEWER_POINT_OUTSIDE_VIEWPORT');
+});
+
+test('viewer scroll failure is explicit and fail-closed', async () => {
+  const { result } = await preflight({ display: true, throwScroll: true });
+  assert.equal(result.status, 'VIEWER_SCROLL_FAILED');
 });
 
 const locatorBlocks = [
@@ -348,7 +409,7 @@ function wireExecutor(h, verify, render) {
       sendCommand: async (_, method, params) => {
         h.log.push({ method, ...params });
         if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased' &&
-            params.x === 110 && params.y === 25 && h.viewer) {
+            params.x === 110 && params.y === 215 && h.viewer) {
           h.viewer.click();
         }
       }
@@ -402,7 +463,7 @@ for (const display of [false, true]) {
     assert.ok(input > ready);
     assert.equal(h.log.filter((e) => e.method === 'Input.insertText').length, 1);
     assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 400).length, 1);
-    assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110).length, display ? 1 : 0);
+    assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110 && e.y === 215).length, display ? 1 : 0);
     assert.equal(h.log.filter((e) => e === 'open').length, display ? 1 : 0);
   });
 }
@@ -412,7 +473,7 @@ test('already-open editor requires no viewer-open click', async () => {
   wireExecutor(h);
   const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
   assert.equal(result.status, 'WRITE_VERIFIED');
-  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110).length, 0);
+  assert.equal(h.log.filter((e) => e.type === 'mouseReleased' && e.x === 110 && e.y === 215).length, 0);
 });
 
 test('opened editor still requires a unique Save before any text input', async () => {
