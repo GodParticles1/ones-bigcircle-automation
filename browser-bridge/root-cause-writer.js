@@ -151,45 +151,44 @@ async function rcPagePreflightWrite(input) {
   let root = roots[0];
   let editorOpened = false;
   if (!root || !visible(root) || !root.matches(editorSelector)) {
-    // Historical native-editor lineage: the display surface is label-bound;
-    // only the resulting native editor can prove the configured field UUID.
-    const isRootCauseLabel = (el) => {
+    // Real ONES detail pages can repeat the semantic text in activity/history.
+    // Canonicalize only labels that belong to the detail-form field lineage.
+    const isRootCauseText = (el) => {
       const text = norm(el.innerText || el.textContent);
       return text === "问题根因" || text === "【问题根因】";
     };
-    const labels = [...document.querySelectorAll('label,span,div,p')]
-      .filter((el) => visible(el) && isRootCauseLabel(el))
-      .filter((el) => ![...el.querySelectorAll('label,span,div,p')].some((child) => visible(child) && isRootCauseLabel(child)));
-    if (labels.length !== 1) return fail("ROOT_CAUSE_LABEL_NOT_UNIQUE", "root-cause display label is missing or ambiguous", { labelCount:labels.length });
+    const rawLabels = [...document.querySelectorAll('label,span,div,p,h1,h2,h3,h4,h5,h6')]
+      .filter((el) => visible(el) && isRootCauseText(el));
+    const formLabels = [...new Set(rawLabels
+      .map((el) => el.closest(".form-field-label.edit_form_field_label"))
+      .filter((el) => el && visible(el)))];
+    if (formLabels.length !== 1) {
+      return fail("ROOT_CAUSE_LABEL_NOT_UNIQUE", "root-cause detail-form label is missing or ambiguous", {
+        rawLabelCount:rawLabels.length, labelCount:formLabels.length
+      });
+    }
 
-    // Strip label-only wrappers. Never search successive ancestors for a
-    // convenient button: the first parent containing other content is the bound.
-    let labelBranch = labels[0];
-    while (labelBranch.parentElement && labelBranch.parentElement.children.length === 1 && isRootCauseLabel(labelBranch.parentElement)) {
-      labelBranch = labelBranch.parentElement;
+    const fieldWrapperSelector = ".oac-flex.oac-py-1.oac-items-start.oac-flex-col";
+    const containers = [...new Set(formLabels
+      .map((el) => el.closest(fieldWrapperSelector))
+      .filter((el) => el && el !== document.body && el !== document.documentElement && visible(el)))];
+    if (containers.length !== 1) {
+      return fail("ROOT_CAUSE_CONTAINER_NOT_UNIQUE", "root-cause detail field wrapper is missing or ambiguous", {
+        containerCount:containers.length
+      });
     }
-    const container = labelBranch.parentElement;
-    if (!container || container === document.body || container === document.documentElement ||
-        container.matches('main,[role="main"]') || !visible(container)) {
-      return fail("ROOT_CAUSE_CONTAINER_NOT_UNIQUE", "no bounded local root-cause field container");
+    const container = containers[0];
+    const viewers = [...container.querySelectorAll(".standard-co-viewer")].filter(visible);
+    if (viewers.length !== 1) {
+      return fail("ROOT_CAUSE_VIEWER_NOT_UNIQUE", "root-cause native viewer surface is missing or ambiguous", {
+        viewerCount:viewers.length
+      });
     }
-    const candidates = [...container.querySelectorAll('*')].filter((el) => {
-      if (!visible(el) || labelBranch.contains(el) || el.contains(labelBranch)) return false;
-      if (el.matches('a,input,select,textarea,[contenteditable="true"]') || el.closest(editorSelector)) return false;
-      if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
-      const text = norm(el.innerText || el.textContent);
-      if (text === "保存" || text === "取消") return false;
-      return el.matches('button,[role="button"],[tabindex="0"]') || getComputedStyle(el).cursor === 'pointer';
-    });
-    // Cursor inheritance / nested icons are one entry surface, not extra clicks.
-    const entries = candidates.filter((el) => el.matches('button,[role="button"],[tabindex="0"]') ||
-      !candidates.some((parent) => parent !== el && parent.contains(el)));
-    if (entries.length !== 1) return fail("ROOT_CAUSE_ENTRY_NOT_UNIQUE", "root-cause native edit entry is missing or ambiguous", { entryCount:entries.length });
     if (location.href !== initialHref || location.origin !== ORIGIN || !container.isConnected) {
       return fail("TARGET_GUARD_FAILED", "root-cause target changed before editor open");
     }
     try {
-      entries[0].click(); // One native editor-open interaction; never a Save.
+      viewers[0].click(); // One native editor-open interaction; never a Save.
       editorOpened = true;
       // One bounded transition wait, no click retry or mutation polling.
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -199,14 +198,21 @@ async function rcPagePreflightWrite(input) {
     if (location.href !== initialHref || location.origin !== ORIGIN) {
       return fail("TARGET_GUARD_FAILED", "detail page changed during editor open");
     }
-    // A detached/replaced field container is not assumed to preserve identity.
-    if (!container.isConnected) return fail("ROOT_CAUSE_CONTAINER_LOST", "root-cause field container was replaced during editor open");
-    const openedRoots = [...container.querySelectorAll(editorSelector)].filter(visible);
-    if (openedRoots.length !== 1) return fail("EDITOR_ROOT_NOT_UNIQUE", "native editor transition did not produce one root", { editorRootCount:openedRoots.length });
+
+    // React may replace the display wrapper during the native edit transition.
+    // Re-bind identity only from the exact page plus one unique native editor root.
+    const openedRoots = [...document.querySelectorAll(editorSelector)].filter(visible);
+    if (openedRoots.length !== 1) {
+      return fail("EDITOR_ROOT_NOT_UNIQUE", "native editor transition did not produce one visible editor root", {
+        editorRootCount:openedRoots.length
+      });
+    }
     root = openedRoots[0];
     if (root.id !== FIELD_UUID) return fail("EDITOR_FIELD_ID_MISMATCH", "opened editor is not the configured root-cause field");
     roots = exactRoots();
-    if (roots.length !== 1 || roots[0] !== root) return fail("EDITOR_ROOT_NOT_UNIQUE", "configured field root is not unique", { editorRootCount:roots.length });
+    if (roots.length !== 1 || roots[0] !== root) {
+      return fail("EDITOR_ROOT_NOT_UNIQUE", "configured field root is not unique", { editorRootCount:roots.length });
+    }
   }
   if (!visible(root) || !root.matches(editorSelector)) return fail("EDITOR_NOT_READY", "root-cause native editor is not visible");
 
