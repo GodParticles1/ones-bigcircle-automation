@@ -390,29 +390,28 @@ test('display-mode equal/conflict/concurrent values do not open an editor', asyn
   }
 });
 
-test('a missing local entry never falls back to a button in a sibling field', async () => {
-  const h = harness({ display: true, missingEntry: true });
+test('a missing local viewer never falls back to a button in a sibling field', async () => {
+  const h = harness({ display: true, missingViewer: true });
   h.container.parentElement.append(new Element('', { tag: 'button', text: '编辑另一个字段', onClick: () => { throw new Error('wrong field clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'ROOT_CAUSE_ENTRY_NOT_UNIQUE');
+  assert.equal(result.status, 'ROOT_CAUSE_VIEWER_NOT_UNIQUE');
   assert.equal(h.log.includes('open'), false);
 });
 
-test('Save-only display surface cannot be mistaken for an edit entry', async () => {
+test('sibling Save controls do not replace the exact field viewer', async () => {
   const h = harness({ display: true });
-  h.container.children[1].options.text = '保存';
+  h.container.parentElement.append(new Element('', { tag: 'button', text: '保存', onClick: () => { throw new Error('sibling Save clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'ROOT_CAUSE_ENTRY_NOT_UNIQUE');
-  assert.equal(h.log.includes('open'), false);
+  assert.equal(result.status, 'PREWRITE_READY');
+  assert.equal(h.log.filter((e) => e === 'open').length, 1);
 });
 
-
-test('nested independently interactive entries are ambiguous, not collapsed as icons', async () => {
+test('nested interactive descendants do not widen the exact viewer locator', async () => {
   const h = harness({ display: true });
-  h.container.children[1].append(new Element('', { tag: 'span', attrs: { role: 'button' }, text: '嵌套入口' }));
+  h.container.children[1].append(new Element('', { tag: 'span', attrs: { role: 'button' }, text: '嵌套入口', onClick: () => { throw new Error('nested control clicked'); } }));
   const result = await h.context.rcPagePreflightWrite({ fieldId, taskUuid, displayId, desiredValue: desired });
-  assert.equal(result.status, 'ROOT_CAUSE_ENTRY_NOT_UNIQUE');
-  assert.equal(h.log.includes('open'), false);
+  assert.equal(result.status, 'PREWRITE_READY');
+  assert.equal(h.log.filter((e) => e === 'open').length, 1);
 });
 
 test('pointer icon inherited inside one entry does not cause a second click', async () => {
