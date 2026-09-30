@@ -1,4 +1,9 @@
+from contextlib import closing
+import hashlib
 import json
+import os
+import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -27,6 +32,106 @@ def request(method, path, token=None, payload=None):
         return e.code, json.loads(raw) if raw else None
 
 
+
+def capture_canonical_write(td, name, task="synthetic_task", field="synthetic_field", desired="Synthetic root cause: \u6839\u56e0", plan_note="baseline"):
+    # All files and credentials here belong to the temporary synthetic test run.
+    shell = shutil.which("powershell.exe" if os.name == "nt" else "pwsh")
+    assert shell, "PowerShell is required to exercise the canonical enqueue helper"
+    plan = {
+        "status": "PLAN_READY", "taskTargetPolicy": "UNIQUE_ONES_TASK_ONLY", "note": plan_note,
+        "taskTargets": [{
+            "matchedOnesTaskUuid": task, "fieldId": field, "decision": "SET_CANDIDATE",
+            "distinctConfirmedRootCauseCount": 1, "currentValue": "", "proposedValue": desired,
+        }],
+    }
+    plan_file = Path(td) / (name + "-plan.json")
+    plan_bytes = json.dumps(plan, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    plan_file.write_bytes(plan_bytes)
+    plan_sha = hashlib.sha256(plan_bytes).hexdigest()
+    token_file = Path(td) / "helper-token.txt"
+    token_file.write_text("synthetic-helper-token", encoding="ascii")
+    capture_file = Path(td) / (name + "-captured.json")
+    # Windows PowerShell must build its own module path, not inherit pwsh's.
+    child_env = {key: value for key, value in os.environ.items() if key.lower() != "psmodulepath"} if os.name == "nt" else None
+    captured = subprocess.run([
+        shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+        str(ROOT / "tests" / "capture_write_helper.ps1"),
+        "-HelperPath", str(ROOT / "enqueue-root-cause-write.ps1"),
+        "-PlanFile", str(plan_file), "-ExpectedPlanSha256", plan_sha,
+        "-TaskUuid", task, "-DisplayId", "SYN-101",
+        "-TokenFile", str(token_file), "-CaptureFile", str(capture_file),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, env=child_env)
+    assert captured.returncode == 0, captured.stderr.decode("utf-8", errors="replace")
+    body = json.loads(capture_file.read_text(encoding="utf-8"))
+    desired_sha = hashlib.sha256(desired.encode("utf-8")).hexdigest()
+    assert body["jobType"] == "ONES_ROOT_CAUSE_WRITE"
+    assert body["payload"] == {
+        "planSha256": plan_sha, "taskTargetPolicy": "UNIQUE_ONES_TASK_ONLY",
+        "decision": "SET_CANDIDATE", "writeMode": "fill_empty_only",
+        "displayId": "SYN-101", "taskUuid": task, "fieldId": field,
+        "desiredValue": desired, "desiredSha256": desired_sha,
+    }
+    assert body["idempotencyKey"] == f"root-cause-write-utf8v3-{plan_sha[:12]}-{task}-{field}-{desired_sha[:16]}"
+    return body
+
+
+def test_write_namespace(td, token):
+    corrected = capture_canonical_write(td, "first")
+    repeat = capture_canonical_write(td, "repeat")
+    assert repeat == corrected, "same payload must produce a stable key across independent helper runs"
+    legacy = {**corrected, "idempotencyKey": corrected["idempotencyKey"].replace("utf8v3-", "utf8v2-", 1)}
+    assert legacy["payload"] == corrected["payload"]
+    assert legacy["idempotencyKey"] != corrected["idempotencyKey"]
+    status, old = request("POST", "/v1/jobs", token, legacy)
+    assert status == 201 and old["deduplicated"] is False
+    old_id = old["job"]["jobId"]
+    status, claim = request("POST", "/v1/extension/claim", token, {
+        "executorId": "synthetic-namespace-executor", "capabilities": ["ONES_ROOT_CAUSE_WRITE"],
+    })
+    assert status == 200 and claim["job"]["jobId"] == old_id
+    status, blocked = request("POST", "/v1/extension/result", token, {
+        "jobId": old_id, "executorId": "synthetic-namespace-executor", "status": "WRITE_BLOCKED",
+        "result": {"ok": False, "writeAttempted": False, "saveDispatched": False},
+    })
+    assert status == 200 and blocked["job"]["state"] == "WRITE_BLOCKED"
+    db_uri = (Path(td) / "relay.db").as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+        old_row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (old_id,)).fetchone()
+        schema = conn.execute("SELECT sql FROM sqlite_master WHERE name='jobs'").fetchone()
+        assert "idempotency_key TEXT NOT NULL UNIQUE" in schema[0]
+    status, new = request("POST", "/v1/jobs", token, corrected)
+    assert status == 201 and new["deduplicated"] is False
+    assert new["job"]["jobId"] != old_id
+    assert new["job"]["payload"] == corrected["payload"]
+    status, again = request("POST", "/v1/jobs", token, repeat)
+    assert status == 200 and again["deduplicated"] is True
+    assert again["job"] == new["job"]
+
+    # Each input dimension continues to use the existing deterministic key formula.
+    keys = {corrected["idempotencyKey"]}
+    for name, changes in [
+        ("plan", {"plan_note": "changed"}),
+        ("task", {"task": "synthetic_other_task"}),
+        ("field", {"field": "synthetic_other_field"}),
+        ("desired", {"desired": "Synthetic distinct confirmed cause"}),
+    ]:
+        variant = capture_canonical_write(td, name, **changes)
+        assert variant["idempotencyKey"] not in keys
+        keys.add(variant["idempotencyKey"])
+        status, created = request("POST", "/v1/jobs", token, variant)
+        assert status == 201 and created["deduplicated"] is False
+        status, duplicated = request("POST", "/v1/jobs", token, variant)
+        assert status == 200 and duplicated["job"]["jobId"] == created["job"]["jobId"]
+    status, preserved = request("POST", "/v1/jobs", token, legacy)
+    assert status == 200 and preserved["deduplicated"] is True
+    assert preserved["job"] == blocked["job"]
+    with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+        assert conn.execute("SELECT * FROM jobs WHERE job_id=?", (old_id,)).fetchone() == old_row
+        assert conn.execute("SELECT sql FROM sqlite_master WHERE name='jobs'").fetchone() == schema
+        assert conn.execute("SELECT COUNT(*) FROM jobs WHERE idempotency_key=?", (corrected["idempotencyKey"],)).fetchone()[0] == 1
+    print("CANONICAL_UTF8V3_NAMESPACE_AND_PRESERVED_UTF8V2_JOB_PASS")
+
+
 def main():
     with tempfile.TemporaryDirectory() as td:
         error_log = Path(td) / "relay-error.log"
@@ -50,7 +155,7 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.3.4"
+            assert health["version"] == "0.3.5"
             assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_FORMAT_REPAIR", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
@@ -156,9 +261,11 @@ def main():
             assert stats["jobsByState"]["FIELD_READ_VERIFIED"] == 1
             assert stats["jobsByState"]["WRITE_VERIFIED"] == 1
 
+            test_write_namespace(td, token)
+
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V034_FORMAT_REPAIR_IDEMPOTENCY_TEST_PASS")
+            print("RELAY_V035_WRITE_IDEMPOTENCY_TEST_PASS")
         finally:
             proc.terminate()
             try:
