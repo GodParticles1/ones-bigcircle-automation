@@ -75,7 +75,7 @@ if (-not [string]::IsNullOrWhiteSpace($PreviousBlockedJobId)) {
   }
   if ($null -eq $parent.result -or $parent.result.writeAttempted -ne $false) { throw "PREVIOUS_JOB_WRITE_ATTEMPTED" }
   if ($parent.result.saveDispatched -eq $true) { throw "PREVIOUS_JOB_SAVE_DISPATCHED" }
-  $allowed = @("ROOT_CAUSE_LABEL_NOT_UNIQUE")
+  $allowed = @("ROOT_CAUSE_LABEL_NOT_UNIQUE", "DRAFT_DOM_MISMATCH")
   if ($allowed -notcontains [string]$parent.result.blockedBy) { throw "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED" }
   $idempotencyKey += "-after-" + $PreviousBlockedJobId
 }
