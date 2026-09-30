@@ -146,6 +146,18 @@ def run_preinput_helper(td, token, plan_file, plan_sha, task, field, previous_id
     return result
 
 
+def claim_until(token, target_id, executor_id):
+    for _ in range(20):
+        status, claim = request("POST", "/v1/extension/claim", token, {"executorId":executor_id,"capabilities":["ONES_ROOT_CAUSE_WRITE"]})
+        assert status == 200, (status, claim)
+        claimed = claim["job"]
+        if claimed["jobId"] == target_id:
+            return claimed
+        status, _ = request("POST", "/v1/extension/result", token, {"jobId":claimed["jobId"],"executorId":executor_id,"status":"WRITE_BLOCKED","result":{"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}})
+        assert status == 200
+    raise AssertionError("target job was not claimable")
+
+
 def test_preinput_child_authorization_and_rejections(td, token):
     task, field, desired = "child-task", "root-cause", "Synthetic confirmed root cause"
     plan = {"status":"PLAN_READY", "taskTargetPolicy":"UNIQUE_ONES_TASK_ONLY", "taskTargets":[{
@@ -161,8 +173,7 @@ def test_preinput_child_authorization_and_rejections(td, token):
     status,parent = request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-preinput-1","payload":payload})
     assert status == 201
     parent_id=parent["job"]["jobId"]
-    status,blocked=request("POST","/v1/extension/claim",token,{"executorId":"preinput-test","capabilities":["ONES_ROOT_CAUSE_WRITE"]})
-    assert status==200 and blocked["job"]["jobId"]==parent_id
+    claim_until(token, parent_id, "preinput-test")
     status,blocked=request("POST","/v1/extension/result",token,{"jobId":parent_id,"executorId":"preinput-test","status":"WRITE_BLOCKED","result":{"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}})
     assert status==200
     status,before=request("GET","/v1/jobs/"+parent_id,token)
@@ -186,7 +197,7 @@ def test_preinput_child_authorization_and_rejections(td, token):
       status,row=request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-"+name,"payload":payload})
       assert status==201
       pid=row["job"]["jobId"]
-      status,_=request("POST","/v1/extension/claim",token,{"executorId":"preinput-test-"+name,"capabilities":["ONES_ROOT_CAUSE_WRITE"]}); assert status==200
+      claim_until(token, pid, "preinput-test-"+name)
       blocked_result={"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}; blocked_result.update(result_patch)
       status,_=request("POST","/v1/extension/result",token,{"jobId":pid,"executorId":"preinput-test-"+name,"status":"WRITE_BLOCKED","result":blocked_result}); assert status==200
       rejected=run_preinput_helper(td,token,plan_file,plan_sha,task,field,pid)
