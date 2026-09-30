@@ -201,7 +201,7 @@ def test_preinput_child_authorization_and_rejections(td, token):
       blocked_result={"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}; blocked_result.update(result_patch)
       status,_=request("POST","/v1/extension/result",token,{"jobId":pid,"executorId":"preinput-test-"+name,"status":"WRITE_BLOCKED","result":blocked_result}); assert status==200
       rejected=run_preinput_helper(td,token,plan_file,plan_sha,task,field,pid)
-      assert rejected.returncode != 0 and expected in (rejected.stdout+rejected.stderr).decode(errors="replace")
+      assert rejected.returncode != 0 and expected in (rejected.stdout+rejected.stderr).decode(errors="replace"), name+" REJECT_OUTPUT: "+(rejected.stdout+rejected.stderr).decode(errors="replace")
     print("PREINPUT_CHILD_AUTHORIZATION_AND_REJECTION_MATRIX_PASS")
 
 def main():
