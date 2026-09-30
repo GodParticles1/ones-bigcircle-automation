@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PORT = 18731
+PORT = 18732
 BASE = f"http://127.0.0.1:{PORT}"
 
 
@@ -136,9 +136,9 @@ def test_write_namespace(td, token):
 def run_preinput_helper(td, token, plan_file, plan_sha, task, field, previous_id=None):
     shell = shutil.which("powershell.exe" if os.name == "nt" else "pwsh")
     capture = Path(td) / ("child-" + (previous_id or "initial") + ".out")
-    args = [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "enqueue-root-cause-write.ps1"),
+    args = [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "tests" / "proxy_write_helper.ps1"),
             "-PlanFile", str(plan_file), "-ExpectedPlanSha256", plan_sha, "-TaskUuid", task,
-            "-DisplayId", "SYN-101", "-RelayUrl", BASE, "-TokenFile", str(Path(td) / "helper-token.txt")]
+            "-DisplayId", "SYN-101", "-RelayPort", str(PORT), "-TokenFile", str(Path(td) / "helper-token.txt")]
     if previous_id:
         args += ["-PreviousBlockedJobId", previous_id]
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
