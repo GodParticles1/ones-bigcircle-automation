@@ -16,7 +16,8 @@ if ($ExpectedPlanSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw "EXPECTED_PLAN_SH
 if ($TaskUuid -notmatch '^[A-Za-z0-9_-]{1,128}$') { throw "TASK_UUID_INVALID" }
 if ($DisplayId -notmatch '^[A-Za-z0-9_.-]{1,128}$') { throw "DISPLAY_ID_INVALID" }
 
-$actualPlanSha = (Get-FileHash -LiteralPath $PlanFile -Algorithm SHA256).Hash.ToLowerInvariant()
+$planSha = [Security.Cryptography.SHA256]::Create()
+try { $actualPlanSha = ([BitConverter]::ToString($planSha.ComputeHash([IO.File]::ReadAllBytes($PlanFile)))).Replace("-","").ToLowerInvariant() } finally { $planSha.Dispose() }
 if ($actualPlanSha -ne $ExpectedPlanSha256.ToLowerInvariant()) { throw ("PLAN_SHA256_MISMATCH actual=" + $actualPlanSha) }
 
 $plan = Get-Content -LiteralPath $PlanFile -Raw -Encoding UTF8 | ConvertFrom-Json
