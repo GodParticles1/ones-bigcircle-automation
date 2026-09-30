@@ -172,7 +172,7 @@ def test_preinput_child_authorization_and_rejections(td, token):
     output=result.stdout.decode(errors="replace")
     assert "-after-"+parent_id in output
     status,child=request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"root-cause-write-utf8v3-"+plan_sha[:12]+"-"+task+"-"+field+"-"+payload["desiredSha256"][:16]+"-after-"+parent_id,"payload":payload})
-    assert status==201 and child["deduplicated"] is True
+    assert status==200 and child["deduplicated"] is True
     status,after=request("GET","/v1/jobs/"+parent_id,token)
     assert before==after
 
