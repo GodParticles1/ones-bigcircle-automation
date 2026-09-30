@@ -62,9 +62,17 @@ if (-not [string]::IsNullOrWhiteSpace($PreviousBlockedJobId)) {
   if ($null -eq $parent) { throw "PREVIOUS_BLOCKED_JOB_NOT_FOUND" }
   if ([string]$parent.jobType -ne "ONES_ROOT_CAUSE_WRITE") { throw "PREVIOUS_JOB_TYPE_INVALID" }
   if ([string]$parent.state -ne "WRITE_BLOCKED") { throw "PREVIOUS_JOB_STATE_INVALID" }
-  $parentPayload = ($parent.payload | ConvertTo-Json -Depth 20 -Compress)
-  $currentPayload = ($payload | ConvertTo-Json -Depth 20 -Compress)
-  if ($parentPayload -cne $currentPayload) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
+  # JSON member order is irrelevant. The canonical nine string fields are not.
+  if ($parent.payload -isnot [PSCustomObject]) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
+  $parentFields = @($parent.payload.PSObject.Properties.Name)
+  if ($parentFields.Count -ne $payload.Count) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
+  foreach ($field in $payload.Keys) {
+    if ($parentFields -cnotcontains $field) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
+    $parentValue = $parent.payload.PSObject.Properties[$field].Value
+    if ($parentValue -isnot [string] -or -not [string]::Equals($parentValue, $payload[$field], [StringComparison]::Ordinal)) {
+      throw "PREVIOUS_JOB_PAYLOAD_MISMATCH"
+    }
+  }
   if ($null -eq $parent.result -or $parent.result.writeAttempted -ne $false) { throw "PREVIOUS_JOB_WRITE_ATTEMPTED" }
   if ($parent.result.saveDispatched -eq $true) { throw "PREVIOUS_JOB_SAVE_DISPATCHED" }
   $allowed = @("ROOT_CAUSE_LABEL_NOT_UNIQUE")

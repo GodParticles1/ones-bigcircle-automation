@@ -175,7 +175,11 @@ def test_preinput_child_authorization_and_rejections(td, token):
     payload = {"taskTargetPolicy":"UNIQUE_ONES_TASK_ONLY","decision":"SET_CANDIDATE","writeMode":"fill_empty_only",
                "planSha256":plan_sha,"displayId":"SYN-101","taskUuid":task,"fieldId":field,
                "desiredValue":desired,"desiredSha256":hashlib.sha256(desired.encode()).hexdigest()}
-    status,parent = request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-preinput-1","payload":payload})
+    # Same values, deliberately different JSON property order after Relay round-trip.
+    shuffled_payload = dict(reversed(list(payload.items())))
+    assert shuffled_payload == payload
+    assert json.dumps(shuffled_payload) != json.dumps(payload)
+    status,parent = request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-preinput-1","payload":shuffled_payload})
     assert status == 201
     parent_id=parent["job"]["jobId"]
     claim_until(token, parent_id, "preinput-test")
@@ -183,15 +187,26 @@ def test_preinput_child_authorization_and_rejections(td, token):
     assert status==200
     status,before=request("GET","/v1/jobs/"+parent_id,token)
     assert status==200
+    assert list(before["job"]["payload"]) == list(shuffled_payload)
+    db_uri = (Path(td) / "relay.db").as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+        parent_row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (parent_id,)).fetchone()
     result=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
     assert result.returncode==0, (result.stdout+result.stderr).decode(errors="replace")
     output=result.stdout.decode(errors="replace")
-    assert "-after-"+parent_id in output, "CHILD_KEY_OUTPUT: "+output
+    child = json.loads(output[output.index("{"):])
+    expected_key = f"root-cause-write-utf8v3-{plan_sha[:12]}-{task}-{field}-{payload['desiredSha256'][:16]}-after-{parent_id}"
+    assert child["idempotencyKey"] == expected_key
+    assert child["payload"] == payload
     repeat=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
     assert repeat.returncode==0, "REPEAT_HELPER_FAILED: "+(repeat.stdout+repeat.stderr).decode(errors="replace")
     assert "DEDUPLICATED=True" in repeat.stdout.decode(errors="replace"), "REPEAT_DEDUPE_OUTPUT: "+repeat.stdout.decode(errors="replace")
     status,after=request("GET","/v1/jobs/"+parent_id,token)
-    assert before==after, "PARENT_MUTATED before="+json.dumps(before)+" after="+json.dumps(after)
+    assert before==after, "parent resource mutated"
+    with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+        assert conn.execute("SELECT * FROM jobs WHERE job_id=?", (parent_id,)).fetchone() == parent_row
+        assert conn.execute("SELECT COUNT(*) FROM jobs WHERE idempotency_key=?", (expected_key,)).fetchone()[0] == 1
+    print("SHUFFLED_PARENT_ACCEPTED_CHILD_KEY_EXACT_DEDUP_PARENT_ROW_UNCHANGED_PASS")
 
     for name, result_patch, expected in [
       ("write", {"writeAttempted":True}, "PREVIOUS_JOB_WRITE_ATTEMPTED"),
@@ -207,6 +222,37 @@ def test_preinput_child_authorization_and_rejections(td, token):
       status,_=request("POST","/v1/extension/result",token,{"jobId":pid,"executorId":"preinput-test-"+name,"status":"WRITE_BLOCKED","result":blocked_result}); assert status==200
       rejected=run_preinput_helper(td,token,plan_file,plan_sha,task,field,pid)
       assert rejected.returncode != 0 and expected in (rejected.stdout+rejected.stderr).decode(errors="replace"), name+" REJECT_OUTPUT: "+(rejected.stdout+rejected.stderr).decode(errors="replace")
+    # Every required field is checked, not just the desired value or hash.
+    variants = []
+    for field_name in payload:
+        variants.append(("missing-" + field_name, {k:v for k,v in payload.items() if k != field_name}, "WRITE_BLOCKED"))
+        variants.append(("value-" + field_name, {**payload, field_name:payload[field_name] + "changed"}, "WRITE_BLOCKED"))
+    variants.extend([
+        ("extra", {**payload, "unexpected":"extra"}, "WRITE_BLOCKED"),
+        ("field-name-case", {**{k:v for k,v in payload.items() if k != "decision"}, "Decision":payload["decision"]}, "WRITE_BLOCKED"),
+        ("value-case", {**payload, "decision":"set_candidate"}, "WRITE_BLOCKED"),
+        ("value-null", {**payload, "desiredValue":None}, "WRITE_BLOCKED"),
+        ("value-array", {**payload, "desiredValue":[desired]}, "WRITE_BLOCKED"),
+        ("non-blocked", payload, "WRITE_UNVERIFIED"),
+    ])
+    for name, parent_payload, parent_state in variants:
+        status,row=request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-shape-"+name,"payload":parent_payload})
+        assert status == 201
+        pid = row["job"]["jobId"]
+        executor_id = "shape-executor-" + name
+        claim_until(token, pid, executor_id)
+        status,_=request("POST","/v1/extension/result",token,{
+            "jobId":pid,"executorId":executor_id,"status":parent_state,
+            "result":{"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}})
+        assert status == 200
+        with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+            before_rows = conn.execute("SELECT * FROM jobs ORDER BY job_id").fetchall()
+        rejected = run_preinput_helper(td, token, plan_file, plan_sha, task, field, pid)
+        expected = "PREVIOUS_JOB_STATE_INVALID" if parent_state != "WRITE_BLOCKED" else "PREVIOUS_JOB_PAYLOAD_MISMATCH"
+        assert rejected.returncode != 0 and expected in (rejected.stdout+rejected.stderr).decode(errors="replace"), name
+        with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+            assert conn.execute("SELECT * FROM jobs ORDER BY job_id").fetchall() == before_rows
+    print("EXACT_NINE_FIELDS_MISSING_EXTRA_CASE_VALUE_REJECTIONS_PASS")
     print("PREINPUT_CHILD_AUTHORIZATION_AND_REJECTION_MATRIX_PASS")
 
 def main():
@@ -232,7 +278,7 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.3.6"
+            assert health["version"] == "0.3.7"
             assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_FORMAT_REPAIR", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
@@ -341,9 +387,19 @@ def main():
             test_preinput_child_authorization_and_rejections(td, token)
             test_write_namespace(td, token)
 
+            shell = shutil.which("powershell.exe" if os.name == "nt" else "pwsh")
+            child_env = {key:value for key,value in os.environ.items() if key.lower() != "psmodulepath"} if os.name == "nt" else None
+            upgrade = subprocess.run([
+                shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+                str(ROOT / "tests" / "test_upgrade_v037.ps1"), "-FixtureRoot", td,
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, env=child_env)
+            assert upgrade.returncode == 0, (upgrade.stdout+upgrade.stderr).decode(errors="replace")
+            assert b"UPGRADE_V036_TO_V037_DB_WAL_SHM_TOKEN_PRESERVED_PASS" in upgrade.stdout
+            print("UPGRADE_V036_TO_V037_DB_WAL_SHM_TOKEN_PRESERVED_PASS")
+
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V036_WRITE_IDEMPOTENCY_TEST_PASS")
+            print("RELAY_V037_WRITE_IDEMPOTENCY_TEST_PASS")
         finally:
             proc.terminate()
             try:
