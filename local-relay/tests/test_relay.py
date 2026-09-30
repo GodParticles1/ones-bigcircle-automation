@@ -159,6 +159,11 @@ def claim_until(token, target_id, executor_id):
 
 
 def test_preinput_child_authorization_and_rejections(td, token):
+    proxy_text = (ROOT / "tests" / "proxy_write_helper.ps1").read_text(encoding="utf-8")
+    assert '$productionBase = "http://127.0.0.1:18731"' in proxy_text
+    assert '$testBase = "http://127.0.0.1:$RelayPort"' in proxy_text
+    assert 'if ($Method -notin @("Get", "Post"))' in proxy_text
+    assert 'TEST_PROXY_UNEXPECTED_URI' in proxy_text
     task, field, desired = "child-task", "root-cause", "Synthetic confirmed root cause"
     plan = {"status":"PLAN_READY", "taskTargetPolicy":"UNIQUE_ONES_TASK_ONLY", "taskTargets":[{
         "matchedOnesTaskUuid":task,"fieldId":field,"decision":"SET_CANDIDATE",
