@@ -170,12 +170,12 @@ def test_preinput_child_authorization_and_rejections(td, token):
     result=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
     assert result.returncode==0, (result.stdout+result.stderr).decode(errors="replace")
     output=result.stdout.decode(errors="replace")
-    assert "-after-"+parent_id in output
+    assert "-after-"+parent_id in output, "CHILD_KEY_OUTPUT: "+output
     repeat=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
     assert repeat.returncode==0, "REPEAT_HELPER_FAILED: "+(repeat.stdout+repeat.stderr).decode(errors="replace")
     assert "DEDUPLICATED=True" in repeat.stdout.decode(errors="replace"), "REPEAT_DEDUPE_OUTPUT: "+repeat.stdout.decode(errors="replace")
     status,after=request("GET","/v1/jobs/"+parent_id,token)
-    assert before==after
+    assert before==after, "PARENT_MUTATED before="+json.dumps(before)+" after="+json.dumps(after)
 
     for name, result_patch, expected in [
       ("write", {"writeAttempted":True}, "PREVIOUS_JOB_WRITE_ATTEMPTED"),
