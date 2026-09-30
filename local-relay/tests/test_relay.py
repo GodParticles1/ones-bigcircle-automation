@@ -132,6 +132,83 @@ def test_write_namespace(td, token):
     print("CANONICAL_UTF8V3_NAMESPACE_AND_PRESERVED_UTF8V2_JOB_PASS")
 
 
+
+def run_preinput_helper(td, token, plan_file, plan_sha, task, field, previous_id=None):
+    shell = shutil.which("powershell.exe" if os.name == "nt" else "pwsh")
+    capture = Path(td) / ("child-" + (previous_id or "initial") + ".out")
+    args = [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(ROOT / "tests" / "proxy_write_helper.ps1"),
+            "-PlanFile", str(plan_file), "-ExpectedPlanSha256", plan_sha, "-TaskUuid", task,
+            "-DisplayId", "SYN-101", "-RelayPort", str(PORT), "-TokenFile", str(Path(td) / "helper-token.txt")]
+    if previous_id:
+        args += ["-PreviousBlockedJobId", previous_id]
+    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    capture.write_bytes(result.stdout + result.stderr)
+    return result
+
+
+def claim_until(token, target_id, executor_id):
+    for _ in range(20):
+        status, claim = request("POST", "/v1/extension/claim", token, {"executorId":executor_id,"capabilities":["ONES_ROOT_CAUSE_WRITE"]})
+        assert status == 200, (status, claim)
+        claimed = claim["job"]
+        if claimed["jobId"] == target_id:
+            return claimed
+        status, _ = request("POST", "/v1/extension/result", token, {"jobId":claimed["jobId"],"executorId":executor_id,"status":"WRITE_BLOCKED","result":{"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}})
+        assert status == 200
+    raise AssertionError("target job was not claimable")
+
+
+def test_preinput_child_authorization_and_rejections(td, token):
+    proxy_text = (ROOT / "tests" / "proxy_write_helper.ps1").read_text(encoding="utf-8")
+    assert '$productionBase = "http://127.0.0.1:18731"' in proxy_text
+    assert '$testBase = "http://127.0.0.1:$RelayPort"' in proxy_text
+    assert 'if ($Method -notin @("Get", "Post"))' in proxy_text
+    assert 'TEST_PROXY_UNEXPECTED_URI' in proxy_text
+    task, field, desired = "child-task", "root-cause", "Synthetic confirmed root cause"
+    plan = {"status":"PLAN_READY", "taskTargetPolicy":"UNIQUE_ONES_TASK_ONLY", "taskTargets":[{
+        "matchedOnesTaskUuid":task,"fieldId":field,"decision":"SET_CANDIDATE",
+        "distinctConfirmedRootCauseCount":1,"currentValue":"","proposedValue":desired}]}
+    plan_file = Path(td) / "child-plan.json"
+    raw = json.dumps(plan, ensure_ascii=False, separators=(",", ":")).encode()
+    plan_file.write_bytes(raw); plan_sha=hashlib.sha256(raw).hexdigest()
+    (Path(td)/"helper-token.txt").write_text(token, encoding="ascii")
+    payload = {"taskTargetPolicy":"UNIQUE_ONES_TASK_ONLY","decision":"SET_CANDIDATE","writeMode":"fill_empty_only",
+               "planSha256":plan_sha,"displayId":"SYN-101","taskUuid":task,"fieldId":field,
+               "desiredValue":desired,"desiredSha256":hashlib.sha256(desired.encode()).hexdigest()}
+    status,parent = request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-preinput-1","payload":payload})
+    assert status == 201
+    parent_id=parent["job"]["jobId"]
+    claim_until(token, parent_id, "preinput-test")
+    status,blocked=request("POST","/v1/extension/result",token,{"jobId":parent_id,"executorId":"preinput-test","status":"WRITE_BLOCKED","result":{"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}})
+    assert status==200
+    status,before=request("GET","/v1/jobs/"+parent_id,token)
+    assert status==200
+    result=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
+    assert result.returncode==0, (result.stdout+result.stderr).decode(errors="replace")
+    output=result.stdout.decode(errors="replace")
+    assert "-after-"+parent_id in output, "CHILD_KEY_OUTPUT: "+output
+    repeat=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
+    assert repeat.returncode==0, "REPEAT_HELPER_FAILED: "+(repeat.stdout+repeat.stderr).decode(errors="replace")
+    assert "DEDUPLICATED=True" in repeat.stdout.decode(errors="replace"), "REPEAT_DEDUPE_OUTPUT: "+repeat.stdout.decode(errors="replace")
+    status,after=request("GET","/v1/jobs/"+parent_id,token)
+    assert before==after, "PARENT_MUTATED before="+json.dumps(before)+" after="+json.dumps(after)
+
+    for name, result_patch, expected in [
+      ("write", {"writeAttempted":True}, "PREVIOUS_JOB_WRITE_ATTEMPTED"),
+      ("save", {"saveDispatched":True}, "PREVIOUS_JOB_SAVE_DISPATCHED"),
+      ("left", {"blockedBy":"LEFT_ALIGN_COMMAND_FAILED"}, "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED"),
+      ("unknown", {"blockedBy":"UNKNOWN_BLOCKER"}, "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED"),
+    ]:
+      status,row=request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-"+name,"payload":payload})
+      assert status==201
+      pid=row["job"]["jobId"]
+      claim_until(token, pid, "preinput-test-"+name)
+      blocked_result={"ok":False,"blockedBy":"ROOT_CAUSE_LABEL_NOT_UNIQUE","writeAttempted":False,"saveDispatched":False}; blocked_result.update(result_patch)
+      status,_=request("POST","/v1/extension/result",token,{"jobId":pid,"executorId":"preinput-test-"+name,"status":"WRITE_BLOCKED","result":blocked_result}); assert status==200
+      rejected=run_preinput_helper(td,token,plan_file,plan_sha,task,field,pid)
+      assert rejected.returncode != 0 and expected in (rejected.stdout+rejected.stderr).decode(errors="replace"), name+" REJECT_OUTPUT: "+(rejected.stdout+rejected.stderr).decode(errors="replace")
+    print("PREINPUT_CHILD_AUTHORIZATION_AND_REJECTION_MATRIX_PASS")
+
 def main():
     with tempfile.TemporaryDirectory() as td:
         error_log = Path(td) / "relay-error.log"
@@ -155,7 +232,7 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.3.5"
+            assert health["version"] == "0.3.6"
             assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_FORMAT_REPAIR", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
@@ -261,11 +338,12 @@ def main():
             assert stats["jobsByState"]["FIELD_READ_VERIFIED"] == 1
             assert stats["jobsByState"]["WRITE_VERIFIED"] == 1
 
+            test_preinput_child_authorization_and_rejections(td, token)
             test_write_namespace(td, token)
 
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V035_WRITE_IDEMPOTENCY_TEST_PASS")
+            print("RELAY_V036_WRITE_IDEMPOTENCY_TEST_PASS")
         finally:
             proc.terminate()
             try:

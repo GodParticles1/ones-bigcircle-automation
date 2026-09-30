@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 DEFAULT_PORT = 18731
 MAX_BODY_BYTES = 256 * 1024
 TOKEN_HEADER = "X-Relay-Token"
@@ -303,7 +303,7 @@ class RelayApp:
 
 
 class RelayHandler(BaseHTTPRequestHandler):
-    server_version = "ONESLocalRelay/0.3.5"
+    server_version = "ONESLocalRelay/0.3.6"
 
     @property
     def app(self):
@@ -427,7 +427,7 @@ class RelayHTTPServer(ThreadingHTTPServer):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ONES local relay v0.3.5")
+    parser = argparse.ArgumentParser(description="ONES Local Relay v0.3.6")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--data-dir", default=str(Path(__file__).resolve().parent / "data"))
     parser.add_argument("--error-log", default="")
