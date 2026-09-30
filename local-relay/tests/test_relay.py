@@ -214,18 +214,35 @@ def test_preinput_child_authorization_and_rejections(td, token):
     claim_until(token, draft_parent_id, "draft-executor")
     status,_=request("POST","/v1/extension/result",token,{"jobId":draft_parent_id,"executorId":"draft-executor","status":"WRITE_BLOCKED","result":{"ok":False,"blockedBy":"DRAFT_DOM_MISMATCH","writeAttempted":False,"saveDispatched":False}})
     assert status == 200
+    status,draft_before=request("GET","/v1/jobs/"+draft_parent_id,token)
+    assert status == 200
+    with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+        draft_parent_row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (draft_parent_id,)).fetchone()
     draft_child=run_preinput_helper(td,token,plan_file,plan_sha,task,field,draft_parent_id)
     assert draft_child.returncode == 0, (draft_child.stdout+draft_child.stderr).decode(errors="replace")
     draft_output=json.loads(draft_child.stdout.decode(errors="replace")[draft_child.stdout.decode(errors="replace").index("{"):])
     assert draft_output["jobId"] != draft_parent_id
-    assert draft_output["idempotencyKey"] == expected_key.replace(parent_id,draft_parent_id)
+    draft_expected_key = f"root-cause-write-utf8v3-{plan_sha[:12]}-{task}-{field}-{payload['desiredSha256'][:16]}-after-{draft_parent_id}"
+    assert draft_output["idempotencyKey"] == draft_expected_key
+    assert draft_output["payload"] == payload
     draft_repeat=run_preinput_helper(td,token,plan_file,plan_sha,task,field,draft_parent_id)
-    assert "DEDUPLICATED=True" in draft_repeat.stdout.decode(errors="replace")
+    assert draft_repeat.returncode == 0, (draft_repeat.stdout+draft_repeat.stderr).decode(errors="replace")
+    repeated_output = draft_repeat.stdout.decode(errors="replace")
+    assert "DEDUPLICATED=True" in repeated_output
+    assert json.loads(repeated_output[repeated_output.index("{"):]) == draft_output
+    status,draft_after=request("GET","/v1/jobs/"+draft_parent_id,token)
+    assert status == 200 and draft_after == draft_before, "draft-blocked parent resource mutated"
+    with closing(sqlite3.connect(db_uri, uri=True)) as conn:
+        assert conn.execute("SELECT * FROM jobs WHERE job_id=?", (draft_parent_id,)).fetchone() == draft_parent_row
+        assert conn.execute("SELECT COUNT(*) FROM jobs WHERE idempotency_key=?", (draft_expected_key,)).fetchone()[0] == 1
     print("DRAFT_DOM_MISMATCH_PARENT_AUTHORIZATION_PASS")
+    print("DRAFT_PARENT_RESOURCE_AND_ROW_IMMUTABLE_CHILD_KEY_EXACT_DEDUP_PASS")
 
     for name, result_patch, expected in [
       ("write", {"writeAttempted":True}, "PREVIOUS_JOB_WRITE_ATTEMPTED"),
       ("save", {"saveDispatched":True}, "PREVIOUS_JOB_SAVE_DISPATCHED"),
+      ("draft-write", {"blockedBy":"DRAFT_DOM_MISMATCH","writeAttempted":True}, "PREVIOUS_JOB_WRITE_ATTEMPTED"),
+      ("draft-save", {"blockedBy":"DRAFT_DOM_MISMATCH","saveDispatched":True}, "PREVIOUS_JOB_SAVE_DISPATCHED"),
       ("left", {"blockedBy":"LEFT_ALIGN_COMMAND_FAILED"}, "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED"),
       ("unknown", {"blockedBy":"UNKNOWN_BLOCKER"}, "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED"),
     ]:
