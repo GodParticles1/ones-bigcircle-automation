@@ -172,8 +172,8 @@ def test_preinput_child_authorization_and_rejections(td, token):
     output=result.stdout.decode(errors="replace")
     assert "-after-"+parent_id in output
     repeat=run_preinput_helper(td,token,plan_file,plan_sha,task,field,parent_id)
-    assert repeat.returncode==0, (repeat.stdout+repeat.stderr).decode(errors="replace")
-    assert "DEDUPLICATED=True" in repeat.stdout.decode(errors="replace")
+    assert repeat.returncode==0, "REPEAT_HELPER_FAILED: "+(repeat.stdout+repeat.stderr).decode(errors="replace")
+    assert "DEDUPLICATED=True" in repeat.stdout.decode(errors="replace"), "REPEAT_DEDUPE_OUTPUT: "+repeat.stdout.decode(errors="replace")
     status,after=request("GET","/v1/jobs/"+parent_id,token)
     assert before==after
 
