@@ -426,9 +426,11 @@ test('bind-only verifier accepts exact configured editor after framework replace
   assert.equal(bound.textBlockId, 'synthetic_text_block');
 });
 
-function wireExecutor(h, verify, render) {
+function wireExecutor(h, verify, render, nativeInput = {}) {
   let verifyAttempts = 0;
   let renderAttempts = 0;
+  let draftReadAttempts = 0;
+  let insertDispatched = false;
   h.context.chrome = {
     tabs: { query: async () => [{ id: 42, url: h.location.href }] },
     scripting: { executeScript: async ({ func, args }) => {
@@ -445,6 +447,26 @@ function wireExecutor(h, verify, render) {
         result = func(...args);
         h.log.push('bind:' + result.status);
       } else if (func.name === 'rcPageInspectSelection') result = { ok: true, anchorInside: true, focusInside: true, selectedText: '' };
+      else if (func.name === 'rcPageInspectDraftText') {
+        assert.equal(insertDispatched, true, 'draft convergence starts only after native insert');
+        draftReadAttempts += 1;
+        const driftAt = Number(nativeInput.driftAt || 0);
+        if (driftAt && draftReadAttempts >= driftAt) {
+          result = { ok:false, status:nativeInput.driftStatus || 'ACTIVE_BLOCK_LOST', textBlockId:'synthetic_text_block' };
+        } else {
+          const sequence = nativeInput.drafts || [desired];
+          const draftValue = sequence[Math.min(draftReadAttempts - 1, sequence.length - 1)];
+          const exact = draftValue === desired;
+          result = {
+            ok: exact,
+            status: exact ? 'DRAFT_TEXT_EXACT' : 'DRAFT_TEXT_PENDING',
+            draft: draftValue,
+            desired,
+            textBlockId:'synthetic_text_block'
+          };
+        }
+        h.log.push('draft-read:' + draftReadAttempts + ':' + result.status);
+      }
       else if (func.name === 'rcPageNormalizeDraftAlignment') result = { ok: true, status: 'DRAFT_LEFT_ALIGN_VERIFIED' };
       else if (func.name === 'rcPageInspectDraft') result = { ok: true, status: 'DRAFT_DOM_VERIFIED', savePoint: { x: 400, y: 25 } };
       else if (func.name === 'rcPageVerifyWrite') {
@@ -468,6 +490,7 @@ function wireExecutor(h, verify, render) {
       attach: async () => { h.log.push('attach'); }, detach: async () => {},
       sendCommand: async (_, method, params) => {
         h.log.push({ method, ...params });
+        if (method === 'Input.insertText') insertDispatched = true;
         if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseMoved' && params.x === 110 && params.y === 215 && h.viewer) h.hover();
         if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased' &&
             params.x === 190 && params.y === 210 && h.button) {
@@ -528,6 +551,47 @@ for (const display of [false, true]) {
     assert.equal(h.log.filter((e) => e === 'open').length, display ? 1 : 0);
   });
 }
+
+test('transient duplicated native draft converges read-only before the single Save', async () => {
+  const h = harness({ display: true });
+  wireExecutor(h, undefined, undefined, {
+    drafts: [desired + desired, 'prefix-' + desired, desired]
+  });
+  const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(result.status, 'WRITE_VERIFIED');
+  assert.equal(h.log.filter((e) => e?.method === 'Input.insertText').length, 1);
+  assert.equal(h.log.filter((e) => e?.type === 'mouseReleased' && e.x === 400).length, 1);
+  assert.deepEqual(
+    h.log.filter((e) => typeof e === 'string' && e.startsWith('draft-read:')),
+    ['draft-read:1:DRAFT_TEXT_PENDING', 'draft-read:2:DRAFT_TEXT_PENDING', 'draft-read:3:DRAFT_TEXT_EXACT']
+  );
+});
+
+test('permanent duplicated native draft blocks before Save without a second input mutation', async () => {
+  const h = harness({ display: true });
+  wireExecutor(h, undefined, undefined, { drafts: [desired + desired] });
+  const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+  assert.equal(result.status, 'WRITE_BLOCKED');
+  assert.equal(result.result.blockedBy, 'DRAFT_DOM_MISMATCH');
+  assert.equal(result.result.writeAttempted, false);
+  assert.equal(result.result.saveDispatched, false);
+  assert.equal(h.log.filter((e) => e?.method === 'Input.insertText').length, 1);
+  assert.equal(h.log.filter((e) => e?.type === 'mouseReleased' && e.x === 400).length, 0);
+});
+
+test('draft binding or focus drift during convergence fails closed before Save', async () => {
+  for (const driftStatus of ['ACTIVE_BLOCK_LOST', 'ACTIVE_BLOCK_FOCUS_LOST', 'TARGET_GUARD_FAILED']) {
+    const h = harness({ display: true });
+    wireExecutor(h, undefined, undefined, { drafts:[desired + desired], driftAt:2, driftStatus });
+    const result = await h.context.onesRootCauseWriteExecute(config, acceptedJob());
+    assert.equal(result.status, 'WRITE_BLOCKED', driftStatus);
+    assert.equal(result.result.blockedBy, driftStatus, driftStatus);
+    assert.equal(result.result.writeAttempted, false, driftStatus);
+    assert.equal(result.result.saveDispatched, false, driftStatus);
+    assert.equal(h.log.filter((e) => e?.method === 'Input.insertText').length, 1, driftStatus);
+    assert.equal(h.log.filter((e) => e?.type === 'mouseReleased' && e.x === 400).length, 0, driftStatus);
+  }
+});
 
 test('already-open editor requires no viewer-open click', async () => {
   const h = harness({ display: false });
