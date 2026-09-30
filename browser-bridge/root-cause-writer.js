@@ -464,6 +464,77 @@ function rcPageInspectSelection(expectedDisplayId, fieldId) {
   };
 }
 
+function rcPageInspectDraftText(expectedDisplayId, fieldId, desiredText, expectedTextBlockId) {
+  const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
+  const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
+  const currentDisplayId = currentMatch ? currentMatch[1] : null;
+  if (currentDisplayId !== expectedDisplayId) {
+    return { ok:false, status:"TARGET_GUARD_FAILED", currentDisplayId, expectedDisplayId };
+  }
+  const root = document.getElementById(fieldId);
+  if (!root) return { ok:false, status:"EDITOR_NOT_READY" };
+  const block = expectedTextBlockId ? document.getElementById(expectedTextBlockId) : null;
+  if (!block || !root.contains(block) || !block.matches('.text-block[data-type="editor-block"][data-block-type="text"]')) {
+    return { ok:false, status:"ACTIVE_BLOCK_LOST", expectedTextBlockId:expectedTextBlockId || null };
+  }
+  if (!block.classList.contains("focused")) {
+    return { ok:false, status:"ACTIVE_BLOCK_FOCUS_LOST", textBlockId:block.id || null };
+  }
+  const textNodes = [...block.querySelectorAll(".text")].filter((el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.display !== "none" && cs.visibility !== "hidden";
+  });
+  if (textNodes.length !== 1) {
+    return { ok:false, status:"DRAFT_TEXT_SURFACE_NOT_UNIQUE", textNodeCount:textNodes.length };
+  }
+  const draft = norm(textNodes[0].innerText || textNodes[0].textContent || "");
+  const desired = norm(desiredText);
+  const exact = draft === desired;
+  return {
+    ok:exact,
+    status:exact ? "DRAFT_TEXT_EXACT" : "DRAFT_TEXT_PENDING",
+    draft,
+    desired,
+    textBlockId:block.id || null
+  };
+}
+
+async function rcWaitForExactDraft(tabId, input) {
+  const delays = [0, 80, 120, 180, 260, 360];
+  let last = null;
+  let attempts = 0;
+  for (const delay of delays) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    attempts += 1;
+    let execution;
+    try {
+      [execution] = await chrome.scripting.executeScript({
+        target:{tabId},
+        world:"MAIN",
+        func:rcPageInspectDraftText,
+        args:[String(input.displayId), String(input.fieldId), String(input.desiredValue), input.textBlockId]
+      });
+    } catch (error) {
+      return {
+        ok:false,
+        status:"DRAFT_CONVERGENCE_EXECUTION_FAILED",
+        attempts,
+        error:String(error),
+        last
+      };
+    }
+    last = execution?.result || { ok:false, status:"NO_DRAFT_CONVERGENCE_RESULT" };
+    if (last.ok && last.status === "DRAFT_TEXT_EXACT") {
+      return { ok:true, status:"DRAFT_TEXT_EXACT", attempts, last };
+    }
+    if (last.status !== "DRAFT_TEXT_PENDING") {
+      return { ok:false, status:last.status || "DRAFT_CONVERGENCE_FAILED", attempts, last };
+    }
+  }
+  return { ok:false, status:"DRAFT_DOM_MISMATCH", attempts, last };
+}
+
 function rcPageNormalizeDraftAlignment(expectedDisplayId, fieldId, desiredText, expectedTextBlockId) {
   const norm = (value) => String(value ?? "").replace(/\u200B|\uFEFF/g, "").replace(/\r\n?/g, "\n").trim();
   const currentMatch = location.href.match(/\/issue\/([^/?#]+)/i);
@@ -847,7 +918,28 @@ globalThis.onesRootCauseWriteExecute = async function(config, job) {
     }
 
     await chrome.debugger.sendCommand(debuggee,"Input.insertText",{text:desired});
-    await new Promise((resolve)=>setTimeout(resolve,250));
+
+    const draftConvergence = await rcWaitForExactDraft(tab.id, {
+      displayId:String(p.displayId),
+      fieldId:String(p.fieldId),
+      desiredValue:desired,
+      textBlockId:preflight.textBlockId
+    });
+    if (!draftConvergence.ok) {
+      return {
+        status:"WRITE_BLOCKED",
+        result:{
+          ok:false,
+          ...preflight,
+          status:"WRITE_BLOCKED",
+          blockedBy:draftConvergence.status || "DRAFT_DOM_MISMATCH",
+          draftConvergence,
+          writeAttempted:false,
+          saveDispatched:false,
+          planSha256:planSha
+        }
+      };
+    }
 
     const [alignExec] = await chrome.scripting.executeScript({
       target:{tabId:tab.id}, world:"MAIN", func:rcPageNormalizeDraftAlignment,
