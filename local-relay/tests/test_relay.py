@@ -208,6 +208,21 @@ def test_preinput_child_authorization_and_rejections(td, token):
         assert conn.execute("SELECT COUNT(*) FROM jobs WHERE idempotency_key=?", (expected_key,)).fetchone()[0] == 1
     print("SHUFFLED_PARENT_ACCEPTED_CHILD_KEY_EXACT_DEDUP_PARENT_ROW_UNCHANGED_PASS")
 
+    status,draft_row=request("POST","/v1/jobs",token,{"jobType":"ONES_ROOT_CAUSE_WRITE","idempotencyKey":"parent-draft-mismatch","payload":payload})
+    assert status == 201
+    draft_parent_id=draft_row["job"]["jobId"]
+    claim_until(token, draft_parent_id, "draft-executor")
+    status,_=request("POST","/v1/extension/result",token,{"jobId":draft_parent_id,"executorId":"draft-executor","status":"WRITE_BLOCKED","result":{"ok":False,"blockedBy":"DRAFT_DOM_MISMATCH","writeAttempted":False,"saveDispatched":False}})
+    assert status == 200
+    draft_child=run_preinput_helper(td,token,plan_file,plan_sha,task,field,draft_parent_id)
+    assert draft_child.returncode == 0, (draft_child.stdout+draft_child.stderr).decode(errors="replace")
+    draft_output=json.loads(draft_child.stdout.decode(errors="replace")[draft_child.stdout.decode(errors="replace").index("{"):])
+    assert draft_output["jobId"] != draft_parent_id
+    assert draft_output["idempotencyKey"] == expected_key.replace(parent_id,draft_parent_id)
+    draft_repeat=run_preinput_helper(td,token,plan_file,plan_sha,task,field,draft_parent_id)
+    assert "DEDUPLICATED=True" in draft_repeat.stdout.decode(errors="replace")
+    print("DRAFT_DOM_MISMATCH_PARENT_AUTHORIZATION_PASS")
+
     for name, result_patch, expected in [
       ("write", {"writeAttempted":True}, "PREVIOUS_JOB_WRITE_ATTEMPTED"),
       ("save", {"saveDispatched":True}, "PREVIOUS_JOB_SAVE_DISPATCHED"),
@@ -278,7 +293,7 @@ def main():
 
             token = (Path(td) / "relay-token.txt").read_text().strip()
             assert health["ok"] is True
-            assert health["version"] == "0.3.7"
+            assert health["version"] == "0.3.8"
             assert health["allowedJobTypes"] == ["ONES_FIELD_READ", "ONES_INVENTORY_READ", "ONES_ROOT_CAUSE_FORMAT_REPAIR", "ONES_ROOT_CAUSE_WRITE", "RELAY_PING"]
             assert int(health["pid"]) > 0
 
@@ -391,15 +406,15 @@ def main():
             child_env = {key:value for key,value in os.environ.items() if key.lower() != "psmodulepath"} if os.name == "nt" else None
             upgrade = subprocess.run([
                 shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-                str(ROOT / "tests" / "test_upgrade_v037.ps1"), "-FixtureRoot", td,
+                str(ROOT / "tests" / "test_upgrade_v038.ps1"), "-FixtureRoot", td,
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, env=child_env)
             assert upgrade.returncode == 0, (upgrade.stdout+upgrade.stderr).decode(errors="replace")
-            assert b"UPGRADE_V036_TO_V037_DB_WAL_SHM_TOKEN_PRESERVED_PASS" in upgrade.stdout
-            print("UPGRADE_V036_TO_V037_DB_WAL_SHM_TOKEN_PRESERVED_PASS")
+            assert b"UPGRADE_V037_TO_V038_DB_WAL_SHM_TOKEN_PRESERVED_PASS" in upgrade.stdout
+            print("UPGRADE_V037_TO_V038_DB_WAL_SHM_TOKEN_PRESERVED_PASS")
 
             # Routine success traffic must not generate normal request logs.
             assert not error_log.exists() or error_log.stat().st_size == 0
-            print("RELAY_V037_WRITE_IDEMPOTENCY_TEST_PASS")
+            print("RELAY_V038_WRITE_IDEMPOTENCY_TEST_PASS")
         finally:
             proc.terminate()
             try:
