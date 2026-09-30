@@ -19,4 +19,4 @@ function Invoke-RestMethod {
   if ($PSBoundParameters.ContainsKey("Body")) { $args.Body=$Body }
   Microsoft.PowerShell.Utility\Invoke-RestMethod @args
 }
-& (Join-Path $PSScriptRoot "..\enqueue-root-cause-write.ps1") -PlanFile $PlanFile -ExpectedPlanSha256 \$ExpectedPlanSha256 -TaskUuid $TaskUuid -DisplayId $DisplayId -TokenFile $TokenFile -PreviousBlockedJobId $PreviousBlockedJobId
+& (Join-Path $PSScriptRoot "..\enqueue-root-cause-write.ps1") -PlanFile $PlanFile -ExpectedPlanSha256 $ExpectedPlanSha256 -TaskUuid $TaskUuid -DisplayId $DisplayId -TokenFile $TokenFile -PreviousBlockedJobId $PreviousBlockedJobId
