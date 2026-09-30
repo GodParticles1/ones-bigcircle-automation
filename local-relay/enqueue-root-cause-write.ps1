@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ExpectedPlanSha256,
   [Parameter(Mandatory=$true)][string]$TaskUuid,
   [Parameter(Mandatory=$true)][string]$DisplayId,
+  [string]$PreviousBlockedJobId = "",
   [string]$RelayUrl = "http://127.0.0.1:18731",
   [string]$TokenFile = (Join-Path $PSScriptRoot "data\relay-token.txt")
 )
@@ -41,21 +42,39 @@ $desiredBytes = [Text.Encoding]::UTF8.GetBytes($desiredValue)
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $desiredHash = ([BitConverter]::ToString($sha.ComputeHash($desiredBytes))).Replace("-","").ToLowerInvariant() } finally { $sha.Dispose() }
 
+$payload = [ordered]@{
+  taskTargetPolicy = $plan.taskTargetPolicy
+  decision = $target.decision
+  writeMode = "fill_empty_only"
+  planSha256 = $actualPlanSha
+  displayId = $DisplayId
+  taskUuid = $TaskUuid
+  fieldId = [string]$target.fieldId
+  desiredValue = $desiredValue
+  desiredSha256 = $desiredHash
+}
 $idempotencyKey = "root-cause-write-utf8v3-" + $actualPlanSha.Substring(0,12) + "-" + $TaskUuid + "-" + $target.fieldId + "-" + $desiredHash.Substring(0,16)
+if (-not [string]::IsNullOrWhiteSpace($PreviousBlockedJobId)) {
+  if ($PreviousBlockedJobId -notmatch '^[A-Za-z0-9-]{1,128}$') { throw "PREVIOUS_BLOCKED_JOB_ID_INVALID" }
+  $parentResponse = Invoke-RestMethod -Method Get -Uri "$RelayUrl/v1/jobs/$PreviousBlockedJobId" -Headers $headers
+  $parent = $parentResponse.job
+  if ($null -eq $parent) { throw "PREVIOUS_BLOCKED_JOB_NOT_FOUND" }
+  if ([string]$parent.jobType -ne "ONES_ROOT_CAUSE_WRITE") { throw "PREVIOUS_JOB_TYPE_INVALID" }
+  if ([string]$parent.state -ne "WRITE_BLOCKED") { throw "PREVIOUS_JOB_STATE_INVALID" }
+  $parentPayload = ($parent.payload | ConvertTo-Json -Depth 20 -Compress)
+  $currentPayload = ($payload | ConvertTo-Json -Depth 20 -Compress)
+  if ($parentPayload -cne $currentPayload) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
+  if ($null -eq $parent.result -or $parent.result.writeAttempted -ne $false) { throw "PREVIOUS_JOB_WRITE_ATTEMPTED" }
+  if ($parent.result.saveDispatched -eq $true) { throw "PREVIOUS_JOB_SAVE_DISPATCHED" }
+  $allowed = @("ROOT_CAUSE_LABEL_NOT_UNIQUE")
+  if ($allowed -notcontains [string]$parent.result.blockedBy) { throw "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED" }
+  $idempotencyKey += "-after-" + $PreviousBlockedJobId
+}
 $body = @{
+
   jobType = "ONES_ROOT_CAUSE_WRITE"
   idempotencyKey = $idempotencyKey
-  payload = @{
-    taskTargetPolicy = $plan.taskTargetPolicy
-    decision = $target.decision
-    writeMode = "fill_empty_only"
-    planSha256 = $actualPlanSha
-    displayId = $DisplayId
-    taskUuid = $TaskUuid
-    fieldId = [string]$target.fieldId
-    desiredValue = $desiredValue
-    desiredSha256 = $desiredHash
-  }
+  payload = $payload
 } | ConvertTo-Json -Depth 20
 
 $bodyBytes = [Text.Encoding]::UTF8.GetBytes($body)
