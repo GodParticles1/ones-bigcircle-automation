@@ -13,7 +13,7 @@ all_text = "\n".join(
     and p.suffix in {".js", ".json", ".md", ".html", ".css", ".py"}
 )
 
-assert manifest["version"] == "0.5.16"
+assert manifest["version"] == "0.5.17"
 assert manifest["host_permissions"] == ["http://127.0.0.1/*"]
 assert "https://*/*" in manifest["optional_host_permissions"]
 
@@ -108,6 +108,9 @@ assert 'preflight.status === "EDITOR_HOVER_REQUIRED"' in executor
 assert 'func:rcPageBindOpenedEditor' in executor
 assert executor.index('func:rcPageBindOpenedEditor') < executor.index('Input.insertText')
 assert executor.count('Input.insertText') == 1
+assert 'rcWaitForExactDraft' in executor
+assert 'draftConvergence' in executor
+assert 'DRAFT_DOM_MISMATCH' in writer
 
 action = writer.split("function rcPageResolveViewerAction", 1)[1].split("function rcPageClearViewerAction", 1)[0]
 assert 'viewer.querySelectorAll(".standard-co-viewer-action")' in action
@@ -162,4 +165,4 @@ assert 'beforeAlign === "left" || beforeAlign === "start"' in alignment
 assert alignment.index('beforeAlign === "left" || beforeAlign === "start"') < alignment.index('document.execCommand("justifyLeft"')
 assert 'after === desired' in alignment
 assert 'afterAlign === "left" || afterAlign === "start"' in alignment
-print("BROWSER_BRIDGE_PUBLIC_V0516_LEFT_ALIGN_RUNTIME_PASS")
+print("BROWSER_BRIDGE_PUBLIC_V0517_DRAFT_CONVERGENCE_PASS")
