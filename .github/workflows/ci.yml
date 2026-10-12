@@ -15,6 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -31,6 +32,12 @@ jobs:
       - run: node --check browser-bridge/root-cause-writer.js
       - run: node --check browser-bridge/popup.js
       - run: python browser-bridge/tests/static_test.py
+      - run: python release/root-cause-fresh-install/tests/static_test.py
+      - shell: pwsh
+        run: |
+          foreach ($file in @(Get-ChildItem release/root-cause-fresh-install -Filter '*.ps1') + @(Get-Item scripts/build-root-cause-fresh-install.ps1, scripts/tests/test-root-cause-fresh-install.ps1)) {
+            [void][scriptblock]::Create((Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8))
+          }
       - run: python periodic-alignment/tests/static_test.py
       - run: python root-cause/tests/test_extract.py
       - run: python root-cause-sync/tests/test_plan.py
@@ -59,6 +66,18 @@ jobs:
       - run: node --test browser-bridge/tests/popup_save_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
       - run: python local-relay/tests/test_relay.py
+      - shell: powershell
+        run: |
+          ./scripts/build-root-cause-fresh-install.ps1 -OutputDir "$env:RUNNER_TEMP/fresh-install-package"
+          $bundle = Get-ChildItem "$env:RUNNER_TEMP/fresh-install-package/*.zip"
+          ./scripts/tests/test-root-cause-fresh-install.ps1 -BundlePath $bundle.FullName -PythonPath (Get-Command python.exe).Source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ones-root-cause-fresh-install-v0.1.0-b0.5.17-r0.3.8-p0.2.0
+          path: |
+            ${{ runner.temp }}/fresh-install-package/*.zip
+            ${{ runner.temp }}/fresh-install-package/*.zip.sha256
+          if-no-files-found: error
       - run: python transport-spool/tests/test_spool.py
       - run: python windows-agent/tests/test_materialize_case_feed.py
       - run: python windows-agent/tests/test_run_once.py
