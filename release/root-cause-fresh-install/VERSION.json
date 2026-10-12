@@ -1,0 +1,9 @@
+{
+  "packageVersion": "0.1.0",
+  "packageName": "ones-root-cause-fresh-install-v0.1.0-b0.5.17-r0.3.8-p0.2.0",
+  "bridgeVersion": "0.5.17",
+  "relayVersion": "0.3.8",
+  "plannerVersion": "0.2.0",
+  "operatorRelease": "HOLD_WRITER_FIX",
+  "writeEnabled": false
+}
