@@ -164,3 +164,36 @@ $("testRelay").addEventListener("click", async () => show(await chrome.runtime.s
 $("pollNow").addEventListener("click", async () => show(await chrome.runtime.sendMessage({ type:"ONES_RELAY_POLL_NOW" })));
 
 load().catch((error) => show({ok:false,error:String(error)}));
+
+let nativeDiagBusy = false;
+function nativeDiagReceipt(value) {
+  // The worker returns only approved metadata; never render raw browser errors.
+  const accepted = ["ok","status","diagnosticOnly","writeGate","saveDispatched",
+    "insertTextCount","noSaveDispatched","serverVerification","warning","trace"];
+  return Object.fromEntries(accepted.filter((k) => Object.prototype.hasOwnProperty.call(value || {},k))
+    .map((k) => [k,value[k]]));
+}
+async function nativeDiagAction(type) {
+  if (nativeDiagBusy) return;
+  nativeDiagBusy = true;
+  $("nativeDiagRun").disabled = true;
+  $("nativeDiagVerify").disabled = true;
+  try {
+    const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+    if (!tab?.id) return show({ok:false,status:"BLOCKED_NO_ACTIVE_TAB"});
+    if (type === "ONES_NATIVE_DIAGNOSTIC_RUN") {
+      const config = await chrome.runtime.sendMessage({type:"ONES_RELAY_GET_CONFIG"});
+      if (!config?.ok || config.config?.writeEnabled !== false)
+        return show({ok:false,status:"BLOCKED_WRITE_GATE"});
+      if (!confirm("仅允许一个工单一个问题根因字段、一次合成文本输入，绝不点击保存。ONES 协作草稿可能自动同步；取消后还必须独立核查服务端。确认开始？"))
+        return show({ok:false,status:"OPERATOR_CANCELLED"});
+    } else if (!confirm("请先在 ONES 页面点击取消，保持同一工单页面。现在只读核查服务器字段，继续？")) {
+      return show({ok:false,status:"OPERATOR_CANCELLED"});
+    }
+    const result = await chrome.runtime.sendMessage({type,tabId:tab.id});
+    show(nativeDiagReceipt(result));
+  } catch (_) { show({ok:false,status:"BLOCKED_UNCERTAIN"}); }
+  finally { nativeDiagBusy=false; $("nativeDiagRun").disabled=false; $("nativeDiagVerify").disabled=false; }
+}
+$("nativeDiagRun").addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_RUN"));
+$("nativeDiagVerify").addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_VERIFY"));
