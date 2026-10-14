@@ -33,6 +33,8 @@
 
     <section aria-label="Native editor diagnostic">
       <p class="hint">诊断专用：仅在 WRITE_GATE=OFF 且权威字段为空时，尝试一次原生文本输入；不会保存。ONES 在线协作草稿可能自动同步，取消不代表服务端已回滚。</p>
+      <div id="nativeDiagStatus" class="state">诊断状态：读取中</div>
+      <pre id="nativeDiagOutput">{}</pre>
       <div class="row">
         <button id="nativeDiagRun">单次原生编辑器诊断</button>
         <button id="nativeDiagVerify">取消后核查服务端</button>
