@@ -4,7 +4,7 @@ const vm = require("node:vm");
 const {test} = require("node:test");
 const {webcrypto} = require("node:crypto");
 const source = fs.readFileSync(require("node:path").join(__dirname,"..","native-editor-diagnostic.js"),"utf8");
-const href="https://synthetic.invalid/team/t/project/p/issue/SYN-1";
+const href="https://synthetic.invalid/project/#/team/t/project/p/issue/SYN-1";
 const config={writeEnabled:false,rootCauseFieldId:"f",onesOrigin:"https://synthetic.invalid",teamUuid:"t",projectUuid:"p",issueTypeUuid:"i"};
 function harness(opts={}) {
   const sent=[],store={},events={},observers=[];
@@ -30,7 +30,7 @@ function harness(opts={}) {
     createRange:()=>{let n=0;return{selectNodeContents(){},setEnd(_x,v){n=v},toString:()=>"a".repeat(n)}},
     addEventListener:(n,f)=>(events[n] ||= []).push(f),removeEventListener:(n,f)=>events[n]=(events[n]||[]).filter(x=>x!==f)};
   const location={href,origin:config.onesOrigin,pathname:new URL(href).pathname};
-  const chrome={tabs:{query:async()=>[{id:1,url:href}],get:async()=>({url:opts.badTab?href+"/wrong":href,status:"complete"})},
+  const chrome={tabs:{query:async()=>[{id:1,url:opts.changedHash?href.replace("/team/t/","/team/other/"):href}],get:async()=>({url:opts.badTab?href+"/wrong":opts.changedHash?href.replace("/team/t/","/team/other/"):href,status:"complete"})},
     permissions:{contains:async()=>true},storage:{session:{get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)}},
     scripting:{executeScript:async({func,args})=>[{result:await func(...args)}]},
     debugger:{attach:async()=>{if(opts.conflict)throw Error("private debugger details")},detach:async()=>{},
@@ -120,4 +120,14 @@ test("LAST is metadata only; pending, completed and interrupted states do not re
   assert.equal(done.pendingServerVerification,false);
   assert.equal(done.serverVerification,"SERVER_BLANK_OBSERVED");
   assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+});
+
+test("real-shaped hash route reaches exactly one diagnostic input",async()=>{
+ const h=harness();const r=await h.run();
+ assert.equal(r.status,"TRACE_EXACT_ONCE");
+ assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+});
+test("cross-team hash and hash navigation fail before insertion",async()=>{
+ const h=harness({changedHash:true});const r=await h.run();
+ assert.match(r.status,/^BLOCKED_/);assert.equal(h.sent.includes("Input.insertText"),false);
 });
