@@ -371,9 +371,11 @@ async function nedVerify(config,tabId) {
     const b=await nedAuthoritativeBlank(config,tabId,old.taskUuid,old.field);
     const status=(a==='NONEMPTY'||b==='NONEMPTY')?'SERVER_CHANGED_ESCALATE':
       (a==='BLANK'&&b==='BLANK')?'SERVER_BLANK_OBSERVED':'SERVER_UNVERIFIED';
-    if (status==='SERVER_BLANK_OBSERVED') await nedSaveState({...old,pending:false,verified:true});
-    return nedRedacted(status,old.lastReceipt?.insertTextCount || 0,{
+    const receipt=nedRedacted(status,old.lastReceipt?.insertTextCount || 0,{
       serverVerification:status,warning:'CANCEL_DOES_NOT_PROVE_AUTOSYNC_ABSENT'});
+    await nedSaveState({...old,pending:status!=='SERVER_BLANK_OBSERVED',
+      verified:status==='SERVER_BLANK_OBSERVED',lastReceipt:receipt});
+    return receipt;
   } catch (_) {return nedRedacted('SERVER_UNVERIFIED');}
   finally {nedInFlight=false;}
 }
@@ -383,5 +385,14 @@ globalThis.onesNativeEditorDiagnosticVerify = nedVerify;
 globalThis.onesNativeEditorDiagnosticLast = async () => {
   const state=await nedLoadState();
   if (!state) return nedRedacted('NOT_RUN');
-  return state.lastReceipt || nedRedacted(state.pending?'PENDING_SERVER_VERIFICATION':'NOT_RUN');
+  const receipt=state.lastReceipt || nedRedacted(state.pending?'DIAGNOSTIC_INTERRUPTED':'NOT_RUN');
+  const pending=state.pending===true && state.verified!==true;
+  return nedRedacted(receipt.status,receipt.insertTextCount||0,{
+    trace:receipt.trace,
+    serverVerification:state.verified===true?'SERVER_BLANK_OBSERVED':
+      (receipt.serverVerification==='SERVER_CHANGED_ESCALATE'?'SERVER_CHANGED_ESCALATE':'PENDING_CANCEL_AND_INDEPENDENT_READ'),
+    pendingServerVerification:pending,
+    interrupted:pending && !state.lastReceipt,
+    warning:receipt.warning || (pending?'CANCEL_DOES_NOT_PROVE_AUTOSYNC_ABSENT':undefined)
+  });
 };
