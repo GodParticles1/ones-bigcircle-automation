@@ -1,4 +1,4 @@
-importScripts("root-cause-writer.js");
+importScripts("root-cause-writer.js", "native-editor-diagnostic.js");
 const RELAY_CONFIG_KEY = "onesRelayConfig";
 const RELAY_RUNTIME_KEY = "onesRelayRuntime";
 const RELAY_ALARM = "onesRelayPollV02";
@@ -831,6 +831,30 @@ chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === RELAY_ALARM) p
 ensureRelayAlarm().catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "ONES_NATIVE_DIAGNOSTIC_RUN" || message?.type === "ONES_NATIVE_DIAGNOSTIC_VERIFY" || message?.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
+    (async () => {
+      const config = await getRelayConfig();
+      if (message.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
+        sendResponse(await globalThis.onesNativeEditorDiagnosticLast());
+        return;
+      }
+      if (config.writeEnabled !== false) {
+        sendResponse({ok:false,status:"BLOCKED_WRITE_GATE",diagnosticOnly:true,saveDispatched:false});
+        return;
+      }
+      const active = await chrome.tabs.query({active:true,currentWindow:true});
+      if (active.length !== 1 || !Number.isInteger(active[0]?.id) || active[0].id !== message.tabId) {
+        sendResponse({ok:false,status:"BLOCKED_ACTIVE_TAB",diagnosticOnly:true,saveDispatched:false});
+        return;
+      }
+      if (message.type === "ONES_NATIVE_DIAGNOSTIC_RUN") {
+        sendResponse(await globalThis.onesNativeEditorDiagnosticRun(config,message.tabId));
+      } else {
+        sendResponse(await globalThis.onesNativeEditorDiagnosticVerify(config,message.tabId));
+      }
+    })().catch(() => sendResponse({ok:false,status:"BLOCKED_UNCERTAIN",diagnosticOnly:true,saveDispatched:false}));
+    return true;
+  }
   if (message?.type === "ONES_RELAY_GET_CONFIG") {
     (async () => {
       const config = await getRelayConfig();
