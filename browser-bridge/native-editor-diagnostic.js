@@ -76,15 +76,48 @@ async function nedPageControl(request) {
     if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
     const block = focused[0];
     const active = document.activeElement;
-    if (!active || (!root.contains(active) && active !== root)) return fail('BLOCKED_FOCUS');
-    const editorHost = active.closest?.('[contenteditable="true"]') || (active.isContentEditable ? active : null);
-    if (!editorHost || !root.contains(editorHost) || (!editorHost.contains(block) && !block.contains(editorHost))) return fail('BLOCKED_EDIT_HOST');
+    // ONES may use a same-root sibling textarea.editor-input as its native input host.
+    // A popup can also blur the page before this background MAIN-world probe runs.
+    // Do not infer an arbitrary host from the DOM: require one exact-root candidate,
+    // a uniquely focused text block and the independently checked collapsed selection.
+    const textareas = [...root.querySelectorAll('textarea.editor-input')]
+      .filter((el) => el.isConnected && el.tagName === 'TEXTAREA' && !el.disabled && !el.readOnly);
+    if (textareas.length > 1) return fail('BLOCKED_EDIT_HOST_AMBIGUOUS');
+    const editable = [...root.querySelectorAll('[contenteditable="true"]')]
+      .filter((el) => el.isConnected && (el.contains(block) || block.contains(el)));
+    const activeEditable = active?.closest?.('[contenteditable="true"]') ||
+      (active?.isContentEditable ? active : null);
+    const activeTextarea = textareas.length === 1 && active === textareas[0] ? active : null;
+    let editorHost = null;
+    let hostKind = null;
+    let focusDeferred = false;
+    if (activeTextarea) {
+      editorHost = activeTextarea;
+      hostKind = 'TEXTAREA';
+    } else if (activeEditable && root.contains(activeEditable) &&
+        (activeEditable.contains(block) || block.contains(activeEditable)) &&
+        editable.length === 1 && editable[0] === activeEditable) {
+      editorHost = activeEditable;
+      hostKind = 'CONTENTEDITABLE';
+    } else {
+      const candidates = [...textareas, ...editable];
+      const pageBlurred = document.hasFocus?.() === false;
+      const neutralActive = !active || active === document.body || active === document.documentElement;
+      if (!pageBlurred || !neutralActive || candidates.length !== 1) return fail('BLOCKED_EDIT_HOST');
+      editorHost = candidates[0];
+      hostKind = textareas.includes(editorHost) ? 'TEXTAREA' : 'CONTENTEDITABLE';
+      focusDeferred = true;
+    }
+    if (!root.contains(editorHost) || !editorHost.isConnected) return fail('BLOCKED_EDIT_HOST');
+    if (hostKind === 'TEXTAREA' &&
+        (editorHost.value !== '' || !Number.isInteger(editorHost.selectionStart) ||
+         editorHost.selectionStart !== editorHost.selectionEnd)) return fail('BLOCKED_TEXTAREA_SELECTION');
     const selection = window.getSelection();
     const anchor = selection?.anchorNode;
     const focus = selection?.focusNode;
     if (!selection || selection.rangeCount !== 1 || !selection.isCollapsed ||
         !anchor || !focus || !block.contains(anchor) || !block.contains(focus)) return fail('BLOCKED_SELECTION');
-    const next = {run:request.run, root, block, host:editorHost, marker:request.marker,
+    const next = {run:request.run, root, block, host:editorHost, hostKind, focusDeferred, marker:request.marker,
       href:request.href, team:request.team, field:request.field, display:request.display,
       started:Date.now(), samples:[], events:[], pending:Promise.resolve(), listeners:[], changed:0, inserted:false};
     const sample = (kind) => {
@@ -138,8 +171,22 @@ async function nedPageControl(request) {
   if (!finishing && (!visible(state.block) || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight ||
       !state.block.contains(document.elementFromPoint(x,y)))) return fail('BLOCKED_COORDINATE_DRIFT');
   const active = document.activeElement;
-  if (!finishing && (!active || !root.contains(active) || !state.host.isConnected ||
-      !(state.host === active || state.host.contains(active)))) return fail('BLOCKED_EDIT_HOST_DRIFT');
+  const hasNativeFocus = !!active && !!state.host && state.host.isConnected &&
+    root.contains(state.host) && (state.host === active ||
+      (state.hostKind === 'CONTENTEDITABLE' && state.host.contains(active)));
+  // During pre-click INSPECT only, accept a browser-popup blur if the unique
+  // host is still bound and no unrelated page control is the active element.
+  // AFTER_SELECT must prove the native click reacquired the exact bound host.
+  const neutralBlur = state.focusDeferred && request.action === 'INSPECT' &&
+    document.hasFocus?.() === false &&
+    (!active || active === document.body || active === document.documentElement);
+  if (!finishing && !hasNativeFocus && !neutralBlur) return fail('BLOCKED_EDIT_HOST_DRIFT');
+  if (!finishing && state.hostKind === 'TEXTAREA' &&
+      (state.host.tagName !== 'TEXTAREA' || state.host.disabled || state.host.readOnly ||
+       state.host.value !== '' || !Number.isInteger(state.host.selectionStart) ||
+       state.host.selectionStart !== state.host.selectionEnd ||
+       [...root.querySelectorAll('textarea.editor-input')].filter((el) => el.isConnected).length !== 1 ||
+       root.querySelectorAll('textarea.editor-input')[0] !== state.host)) return fail('BLOCKED_TEXTAREA_SELECTION');
   const selection = window.getSelection();
   if (!finishing && (!selection || selection.rangeCount !== 1 || !selection.isCollapsed ||
       !state.block.contains(selection.anchorNode) || !state.block.contains(selection.focusNode))) return fail('BLOCKED_SELECTION_DRIFT');
@@ -154,7 +201,7 @@ async function nedPageControl(request) {
     if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
     state.sample('PREFLIGHT');
     return {ok:true,status:'READY',point:{x,y},blockCount:blocks.length,focusedCount:focused.length,
-      anchorOffset,focusOffset,collapsed:true,elapsedMs:Date.now()-state.started};
+      anchorOffset,focusOffset,collapsed:true,hostKind:state.hostKind,focusDeferred:state.focusDeferred,elapsedMs:Date.now()-state.started};
   }
   if (request.action === 'AFTER_SELECT') {
     if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
@@ -177,7 +224,7 @@ async function nedPageControl(request) {
   else semantic = 'MISMATCH';
   const trace = {semantic,events:state.events.slice(),samples:state.samples.slice(),
     mutationCount:state.changed,selection:{anchorOffset,focusOffset,collapsed:true},
-    hostBound:true,blockCount:blocks.length,focusedCount:focused.length,
+    hostBound:true,hostKind:state.hostKind,focusDeferred:state.focusDeferred,blockCount:blocks.length,focusedCount:focused.length,
     frontendVersion:(() => { const v = document.querySelector('meta[name="app-version"]')?.content || window.APP_VERSION;
       return /^\d{1,4}(?:\.\d{1,4}){1,3}$/.test(String(v||'')) ? String(v) : null; })()};
   return {ok:semantic==='EXACT_ONCE',status:semantic==='EXACT_ONCE'?'TRACE_EXACT_ONCE':'TRACE_MISMATCH',trace};
