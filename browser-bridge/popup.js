@@ -116,6 +116,7 @@ async function load() {
     capabilities:result.capabilities,
     draftPresent:!!draft
   });
+  await nativeDiagRestore();
 }
 
 for (const id of DRAFT_INPUT_IDS) {
@@ -166,10 +167,24 @@ $("pollNow").addEventListener("click", async () => show(await chrome.runtime.sen
 load().catch((error) => show({ok:false,error:String(error)}));
 
 let nativeDiagBusy = false;
+async function nativeDiagRestore() {
+  try {
+    const result=await chrome.runtime.sendMessage({type:"ONES_NATIVE_DIAGNOSTIC_LAST"});
+    const receipt=nativeDiagReceipt(result);
+    const pending=receipt.pendingServerVerification === true;
+    if ($("nativeDiagStatus")) $("nativeDiagStatus").textContent =
+      pending ? "诊断待服务端独立复核（不得再次输入）" :
+      receipt.status==="NOT_RUN" ? "尚无诊断结果" :
+      "上次诊断状态：" + (receipt.status || "UNKNOWN");
+    if ($("nativeDiagOutput")) $("nativeDiagOutput").textContent=JSON.stringify(receipt,null,2);
+  } catch (_) {
+    if ($("nativeDiagStatus")) $("nativeDiagStatus").textContent="诊断状态读取失败，请停止输入";
+  }
+}
 function nativeDiagReceipt(value) {
   // The worker returns only approved metadata; never render raw browser errors.
   const accepted = ["ok","status","diagnosticOnly","writeGate","saveDispatched",
-    "insertTextCount","noSaveDispatched","serverVerification","warning","trace"];
+    "insertTextCount","noSaveDispatched","serverVerification","pendingServerVerification","interrupted","warning","trace"];
   return Object.fromEntries(accepted.filter((k) => Object.prototype.hasOwnProperty.call(value || {},k))
     .map((k) => [k,value[k]]));
 }
@@ -192,6 +207,7 @@ async function nativeDiagAction(type) {
     }
     const result = await chrome.runtime.sendMessage({type,tabId:tab.id});
     show(nativeDiagReceipt(result));
+    await nativeDiagRestore();
   } catch (_) { show({ok:false,status:"BLOCKED_UNCERTAIN"}); }
   finally { nativeDiagBusy=false; $("nativeDiagRun").disabled=false; $("nativeDiagVerify").disabled=false; }
 }
