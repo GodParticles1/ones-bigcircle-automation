@@ -13,10 +13,19 @@ function harness(opts={}) {
     getBoundingClientRect:()=>rect,contains:(x)=>x===block||x===anchor};
   const anchor={nodeType:3,parentElement:block};
   const selection={anchorNode:anchor,focusNode:anchor,anchorOffset:0,focusOffset:0,rangeCount:1,isCollapsed:true};
+  const textarea={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0,
+    disabled:false,readOnly:false,isConnected:true,contains:()=>false,closest:()=>null};
   const host={isConnected:true,contains:x=>x===block,closest:()=>host,isContentEditable:true};
-  const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor].includes(x),
-    querySelectorAll:()=>[block],getBoundingClientRect:()=>rect};
-  const doc={activeElement:host,querySelectorAll:q=>q==="[id]"?[root]:q.startsWith("div.standard-")?opts.noEditor?[]:[root]:[],
+  let active=opts.textarea?textarea:host;
+  if(opts.popupBlur) active=null;
+  if(opts.wrongHost) active={tagName:"INPUT"};
+  if(opts.siblingHost) active={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0};
+  if(opts.badTextarea) textarea.value="dirty";
+  if(opts.badTextareaSelection) textarea.selectionEnd=1;
+  const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor,...(opts.textarea?[textarea]:[])].includes(x),
+    querySelectorAll:q=>q==="textarea.editor-input"?opts.textarea?[textarea,...(opts.twoTextareas?[{...textarea}]:[])]:[]:
+      q==='[contenteditable="true"]'?opts.textarea?[]:[host]:[block],getBoundingClientRect:()=>rect};
+  const doc={get activeElement(){return active},body:{},documentElement:{},hasFocus:()=>!opts.popupBlur,querySelectorAll:q=>q==="[id]"?[root]:q.startsWith("div.standard-")?opts.noEditor?[]:[root]:[],
     querySelector:()=>null,elementFromPoint:()=>block,
     createRange:()=>{let n=0;return{selectNodeContents(){},setEnd(_x,v){n=v},toString:()=>"a".repeat(n)}},
     addEventListener:(n,f)=>(events[n] ||= []).push(f),removeEventListener:(n,f)=>events[n]=(events[n]||[]).filter(x=>x!==f)};
@@ -27,6 +36,7 @@ function harness(opts={}) {
     debugger:{attach:async()=>{if(opts.conflict)throw Error("private debugger details")},detach:async()=>{},
       sendCommand:async(_t,method,args)=>{
         sent.push(method);
+        if(method==="Input.dispatchMouseEvent" && args.type==="mouseReleased" && opts.popupBlur) { active=opts.textarea?textarea:host; opts.popupBlur=false; }
         if(method==="Input.insertText"){
           const event={target:block,isTrusted:true,inputType:"insertText",cancelable:true,defaultPrevented:false,isComposing:false};
           for(const f of events.beforeinput||[]) f(event);
@@ -46,8 +56,8 @@ function harness(opts={}) {
       reads:[{status:"READ_VERIFIED",onesTaskUuid:"task",fieldId:p.fieldId,value:opts.nonempty?"something":""}]}),
     validatedOnesScope:()=>config});
   vm.runInContext(source,context);
-  return {sent,root,opts,run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
-    verify:()=>context.onesNativeEditorDiagnosticVerify(config,1)};
+  return {sent,root,opts,blur:()=>{active=null;opts.popupBlur=true},run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
+    verify:()=>context.onesNativeEditorDiagnosticVerify(config,1),last:()=>context.onesNativeEditorDiagnosticLast()};
 }
 test("one insert, metadata-only events, zero Save",async()=>{const h=harness(),r=await h.run();
   assert.equal(r.status,"TRACE_EXACT_ONCE");assert.equal(r.trace.semantic,"EXACT_ONCE");
@@ -80,4 +90,34 @@ test("uncertain delivery does not retry, server change is escalated",async()=>{
 });
 test("synthetic multi-ticket uses independent one-item fixtures, no real batch",async()=>{
   for(let i=0;i<3;i++){const h=harness({duplicate:i===1});await h.run();assert.ok(h.sent.filter(x=>x==="Input.insertText").length<=1);assert.equal(h.sent.includes("Save"),false)}
+});
+
+test("textarea native host and popup blur recover only by exact click reacquisition",async()=>{
+  for(const opts of [{textarea:true},{textarea:true,popupBlur:true},{popupBlur:true}]) {
+    const h=harness(opts),r=await h.run();
+    assert.equal(r.status,"TRACE_EXACT_ONCE");
+    assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+    assert.equal(r.saveDispatched,false);
+  }
+});
+test("wrong textarea/sibling/ambiguous host and selection fail closed",async()=>{
+  for(const opts of [{textarea:true,twoTextareas:true},{textarea:true,badTextarea:true},
+    {textarea:true,badTextareaSelection:true},{textarea:true,siblingHost:true},
+    {wrongHost:true},{textarea:true,wrongHost:true}]) {
+    const h=harness(opts),r=await h.run();
+    assert.match(r.status,/^BLOCKED_/);
+    assert.equal(h.sent.filter(x=>x==="Input.insertText").length,0);
+  }
+});
+test("LAST is metadata only; pending, completed and interrupted states do not reinsert",async()=>{
+  const h=harness();const first=await h.run();
+  assert.equal(first.status,"TRACE_EXACT_ONCE");
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+  assert.equal((await h.last()).pendingServerVerification,true);
+  h.root.isConnected=false;
+  assert.equal((await h.verify()).status,"SERVER_BLANK_OBSERVED");
+  const done=await h.last();
+  assert.equal(done.pendingServerVerification,false);
+  assert.equal(done.serverVerification,"SERVER_BLANK_OBSERVED");
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
 });
