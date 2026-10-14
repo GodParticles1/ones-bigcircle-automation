@@ -9,8 +9,15 @@ const nedId = (value) => /^[A-Za-z0-9_-]{1,128}$/.test(String(value || ''));
 async function nedPageResolve(expected) {
   const id = (v) => /^[A-Za-z0-9_-]{1,128}$/.test(String(v || ''));
   if (location.href !== expected.href || location.origin !== expected.origin) return null;
-  const route = location.pathname.match(/\/team\/([^/]+)\/.*\/issue\/([^/?#]+)/i);
-  if (!route || route[1] !== expected.team || route[2] !== expected.display || !id(expected.display)) return null;
+  // ONES uses /project/#/team/.../issue/...; inspect only a real route, never URL search text.
+  // This function runs serialized in MAIN world, so its route check is self-contained.
+  const url = new URL(location.href);
+  const routePath = url.pathname === '/project/' && url.hash.startsWith('#/team/')
+    ? url.hash.slice(1).split('?')[0]
+    : (!url.hash && url.pathname.startsWith('/team/') ? url.pathname : '');
+  const route = routePath.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
+  if (!route || route[1] !== expected.team || route[2] !== expected.display ||
+      !id(expected.team) || !id(expected.display)) return null;
   try {
     const response = await fetch(location.origin + '/project/api/ones-project/team/' + encodeURIComponent(expected.team) + '/tasks/identifier', {
       method:'POST', credentials:'same-origin', cache:'no-store',
@@ -48,9 +55,13 @@ async function nedPageControl(request) {
       [...document.querySelectorAll('[id]')].filter((el) => el.id === request.field).length === 1 ? exact[0] : null;
   };
   const current = () => {
-    if (location.href !== request.href || location.origin !== request.origin ||
-        !location.pathname.includes('/team/' + request.team + '/') ||
-        location.pathname.split('/issue/')[1]?.split('/')[0] !== request.display) return null;
+    const url = new URL(location.href);
+    const routePath = url.pathname === '/project/' && url.hash.startsWith('#/team/')
+        ? url.hash.slice(1).split('?')[0]
+        : (!url.hash && url.pathname.startsWith('/team/') ? url.pathname : '');
+      const route = routePath.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
+    if (location.href !== request.href || url.origin !== request.origin ||
+        !route || route[1] !== request.team || route[2] !== request.display) return null;
     return rootNow();
   };
   if (request.action === 'CLEANUP') {
@@ -258,11 +269,14 @@ async function nedCurrentTab(config, tabId, expectedHref) {
   const tab = await chrome.tabs.get(tabId);
   if (!tab || tab.status === 'loading' || !tab.url || tab.url !== active[0].url) return null;
   const u = new URL(tab.url);
+  // Bind only a genuine ONES path/hash route; query parameters never supply identities.
+  const routePath = u.pathname === '/project/' && u.hash.startsWith('#/team/')
+    ? u.hash.slice(1).split('?')[0]
+    : (!u.hash && u.pathname.startsWith('/team/') ? u.pathname : '');
+  const route = routePath.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
   if (u.origin !== config.onesOrigin || (expectedHref && u.href !== expectedHref) ||
-      !u.pathname.includes('/team/' + config.teamUuid + '/')) return null;
-  const m = u.pathname.match(/\/issue\/([^/?#]+)/i);
-  if (!m || !nedId(m[1])) return null;
-  return {href:u.href,display:m[1]};
+      !route || route[1] !== config.teamUuid || !nedId(route[2])) return null;
+  return {href:u.href,display:route[2]};
 }
 async function nedSaveState(value) { await chrome.storage.session.set({[NED_SESSION_KEY]:value}); }
 async function nedLoadState() { return (await chrome.storage.session.get(NED_SESSION_KEY))?.[NED_SESSION_KEY] || null; }
