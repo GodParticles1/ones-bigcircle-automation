@@ -32,7 +32,7 @@ def verify(zippath, source_head):
         files = {}
         for entry in info:
             name = entry.filename[len(zippath.stem) + 1:]
-            if name in files or not name or "/" in name or "\" in name or entry.file_size > 1024 * 1024:
+            if name in files or not name or "/" in name or chr(92) in name or entry.file_size > 1024 * 1024:
                 raise ValueError("ZIP_ENTRY_INVALID")
             files[name] = archive.read(entry)
         if set(files) != REQUIRED | {"BUNDLE-MANIFEST.json"}:
