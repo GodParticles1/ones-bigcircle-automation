@@ -195,5 +195,5 @@ async function nativeDiagAction(type) {
   } catch (_) { show({ok:false,status:"BLOCKED_UNCERTAIN"}); }
   finally { nativeDiagBusy=false; $("nativeDiagRun").disabled=false; $("nativeDiagVerify").disabled=false; }
 }
-$("nativeDiagRun").addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_RUN"));
-$("nativeDiagVerify").addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_VERIFY"));
+$("nativeDiagRun")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_RUN"));
+$("nativeDiagVerify")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_VERIFY"));
