@@ -12,7 +12,7 @@ function harness(opts={}) {
   const block={textContent:opts.dirty?"existing":"",isConnected:true,classList:{contains:()=>!opts.noFocus},
     getBoundingClientRect:()=>rect,contains:(x)=>x===block||x===anchor};
   const anchor={nodeType:3,parentElement:block};
-  const foreign={nodeType:3,parentElement:{closest:()=>({id:"other-editor"})}};
+  const foreign={nodeType:3,parentElement:{closest:()=>opts.foreignEditor?{id:"other-editor"}:null}};
   const selection={anchorNode:anchor,focusNode:anchor,anchorOffset:0,focusOffset:0,rangeCount:1,isCollapsed:true};
   if(opts.emptySelection || opts.popupDomLost) selection.rangeCount=0;
   if(opts.outsideSelection) {selection.anchorNode=foreign;selection.focusNode=foreign;}
@@ -167,10 +167,11 @@ test("popup-blurred contenteditable may defer DOM proof but post-click must prov
  assert.match(fail.status,/^BLOCKED_/);assert.equal(bad.sent.includes("Input.insertText"),false);
 });
 test("wrong host, competing selection, second preflight loss and post-click drift fail closed",async()=>{
- const patterns=[{textarea:true,competingRange:true},{textarea:true,outsideSelection:true,wrongHost:true},
+ const patterns=[{textarea:true,competingRange:true},{textarea:true,outsideSelection:true,foreignEditor:true},
+  {textarea:true,outsideSelection:true,wrongHost:true},
   {textarea:true,emptySelection:true,postClickWrongHost:true},
   {textarea:true,emptySelection:true,postClickTextareaRange:true},
-  {textarea:true,emptySelection:true,secondInspectSelectionLost:true,competingRange:true},
+  {textarea:true,emptySelection:true,secondInspectSelectionLost:true,postClickWrongHost:true},
   {textarea:true,twoTextareas:true,emptySelection:true},
   {textarea:true,popupBlur:true,emptySelection:true,noClickFocus:true}];
  for(const opts of patterns) {
