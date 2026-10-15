@@ -12,7 +12,11 @@ function harness(opts={}) {
   const block={textContent:opts.dirty?"existing":"",isConnected:true,classList:{contains:()=>!opts.noFocus},
     getBoundingClientRect:()=>rect,contains:(x)=>x===block||x===anchor};
   const anchor={nodeType:3,parentElement:block};
+  const foreign={nodeType:3,parentElement:{closest:()=>opts.foreignEditor?{id:"other-editor"}:null}};
   const selection={anchorNode:anchor,focusNode:anchor,anchorOffset:0,focusOffset:0,rangeCount:1,isCollapsed:true};
+  if(opts.emptySelection || opts.popupDomLost) selection.rangeCount=0;
+  if(opts.outsideSelection) {selection.anchorNode=foreign;selection.focusNode=foreign;}
+  if(opts.competingRange) selection.isCollapsed=false;
   const textarea={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0,
     disabled:false,readOnly:false,isConnected:true,contains:()=>false,closest:()=>null};
   const host={isConnected:true,contains:x=>x===block,closest:()=>host,isContentEditable:true};
@@ -32,11 +36,24 @@ function harness(opts={}) {
   const location={href,origin:config.onesOrigin,pathname:new URL(href).pathname};
   const chrome={tabs:{query:async()=>[{id:1,url:opts.changedHash?href.replace("/team/t/","/team/other/"):href}],get:async()=>({url:opts.badTab?href+"/wrong":opts.changedHash?href.replace("/team/t/","/team/other/"):href,status:"complete"})},
     permissions:{contains:async()=>true},storage:{session:{get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)}},
-    scripting:{executeScript:async({func,args})=>[{result:await func(...args)}]},
+    scripting:{executeScript:async({func,args})=>{
+      if(func.name==="nedPageControl" && args[0]?.action==="INSPECT") {
+        opts.inspectCalls=(opts.inspectCalls||0)+1;
+        if(opts.secondInspectSelectionLost && opts.inspectCalls===2) {
+          selection.rangeCount=0; selection.anchorNode=null; selection.focusNode=null;
+        }
+      }
+      return [{result:await func(...args)}];
+    }},
     debugger:{attach:async()=>{if(opts.conflict)throw Error("private debugger details")},detach:async()=>{},
       sendCommand:async(_t,method,args)=>{
         sent.push(method);
-        if(method==="Input.dispatchMouseEvent" && args.type==="mouseReleased" && opts.popupBlur) { active=opts.textarea?textarea:host; opts.popupBlur=false; }
+        if(method==="Input.dispatchMouseEvent" && args.type==="mouseReleased") {
+          if(opts.popupBlur && !opts.noClickFocus) { active=opts.textarea?textarea:host; opts.popupBlur=false; }
+          if(opts.postClickSelectionInvalid) {selection.rangeCount=0;selection.anchorNode=null;selection.focusNode=null;}
+          if(opts.postClickTextareaRange) textarea.selectionEnd=1;
+          if(opts.postClickWrongHost) active={tagName:"INPUT"};
+        }
         if(method==="Input.insertText"){
           const event={target:block,isTrusted:true,inputType:"insertText",cancelable:true,defaultPrevented:false,isComposing:false};
           for(const f of events.beforeinput||[]) f(event);
@@ -130,4 +147,57 @@ test("real-shaped hash route reaches exactly one diagnostic input",async()=>{
 test("cross-team hash and hash navigation fail before insertion",async()=>{
  const h=harness({changedHash:true});const r=await h.run();
  assert.match(r.status,/^BLOCKED_/);assert.equal(h.sent.includes("Input.insertText"),false);
+});
+
+test("genuine textarea caret survives empty or out-of-block DOM Selection without forging a range",async()=>{
+ for(const opts of [{textarea:true,emptySelection:true},{textarea:true,outsideSelection:true},
+  {textarea:true,popupBlur:true,emptySelection:true}]) {
+  const h=harness(opts),r=await h.run();
+  assert.equal(r.status,"TRACE_EXACT_ONCE");
+  assert.equal(r.trace.selection.selectionProof,"NATIVE_TEXTAREA_CARET");
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+  assert.equal(h.sent.includes("Save"),false);
+ }
+});
+test("popup-blurred contenteditable may defer DOM proof but post-click must prove the real caret",async()=>{
+ const good=harness({popupBlur:true,emptySelection:true}),ok=await good.run();
+ assert.equal(ok.status,"BLOCKED_SELECTION_DRIFT"); // synthetic never manufactures the missing DOM caret
+ assert.equal(good.sent.includes("Input.insertText"),false);
+ const bad=harness({popupBlur:true,emptySelection:true,noClickFocus:true}),fail=await bad.run();
+ assert.match(fail.status,/^BLOCKED_/);assert.equal(bad.sent.includes("Input.insertText"),false);
+});
+test("wrong host, competing selection, second preflight loss and post-click drift fail closed",async()=>{
+ const patterns=[{textarea:true,competingRange:true},{textarea:true,outsideSelection:true,foreignEditor:true},
+  {textarea:true,outsideSelection:true,wrongHost:true},
+  {textarea:true,emptySelection:true,postClickWrongHost:true},
+  {textarea:true,emptySelection:true,postClickTextareaRange:true},
+  {textarea:true,emptySelection:true,secondInspectSelectionLost:true,postClickWrongHost:true},
+  {textarea:true,twoTextareas:true,emptySelection:true},
+  {textarea:true,popupBlur:true,emptySelection:true,noClickFocus:true}];
+ for(const opts of patterns) {
+  const h=harness(opts),r=await h.run();
+  assert.match(r.status,/^BLOCKED_/);
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,0);
+  assert.equal(r.saveDispatched,false);
+ }
+});
+test("pre-click selection and post-click failures persist exact receipt without retries",async()=>{
+ const arm=harness({textarea:true,competingRange:true});
+ assert.equal((await arm.run()).status,"BLOCKED_SELECTION");
+ const lastArm=await arm.last();
+ assert.equal(lastArm.status,"BLOCKED_SELECTION");assert.equal(lastArm.pendingServerVerification,false);
+ assert.equal(lastArm.serverVerification,"NOT_VERIFIED");
+ assert.equal(arm.sent.length,0);
+ const inspect=harness({popupBlur:true,emptySelection:true});
+ const response=await inspect.run();
+ assert.equal(response.status,"BLOCKED_SELECTION_DRIFT");
+ assert.equal((await inspect.last()).status,response.status);
+ assert.equal((await inspect.last()).pendingServerVerification,true);
+ assert.equal(inspect.sent.includes("Input.insertText"),false);
+ const post=harness({textarea:true,emptySelection:true,postClickWrongHost:true});
+ const blocked=await post.run();
+ assert.equal((await post.last()).status,blocked.status);
+ assert.equal((await post.last()).pendingServerVerification,true);
+ assert.equal(post.sent.filter(x=>x==="Input.insertText").length,0);
+ assert.equal((await post.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
 });
