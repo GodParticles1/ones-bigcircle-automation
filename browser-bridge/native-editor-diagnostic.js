@@ -45,6 +45,47 @@ async function nedPageControl(request) {
     const c = getComputedStyle(el);
     return r.width > 10 && r.height > 8 && c.display !== 'none' && c.visibility !== 'hidden' && Number(c.opacity || '1') > 0;
   };
+  // A textarea has a native caret independent of window.getSelection(). Never
+  // manufacture a DOM range in MAIN world or infer an input target from a label.
+  const domCaret = (block) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount !== 1 || !selection.isCollapsed ||
+        !selection.anchorNode || !selection.focusNode ||
+        !block.contains(selection.anchorNode) || !block.contains(selection.focusNode)) return null;
+    try {
+      const offset = (node, local) => {
+        const range = document.createRange();
+        range.selectNodeContents(block);
+        range.setEnd(node, local);
+        return range.toString().length;
+      };
+      const anchorOffset = offset(selection.anchorNode, selection.anchorOffset);
+      const focusOffset = offset(selection.focusNode, selection.focusOffset);
+      if (!Number.isInteger(anchorOffset) || !Number.isInteger(focusOffset) ||
+          anchorOffset !== focusOffset) return null;
+      return {anchorOffset, focusOffset, collapsed:true, selectionProof:'DOM_IN_BOUND_BLOCK'};
+    } catch (_) { return null; }
+  };
+  const textareaCaret = (host) =>
+    host?.tagName === 'TEXTAREA' && host.isConnected && !host.disabled && !host.readOnly &&
+    host.value === '' && Number.isInteger(host.selectionStart) &&
+    Number.isInteger(host.selectionEnd) && host.selectionStart === 0 &&
+    host.selectionEnd === 0
+      ? {anchorOffset:0, focusOffset:0, collapsed:true, selectionProof:'NATIVE_TEXTAREA_CARET'}
+      : null;
+  // A stale *collapsed* DOM selection outside the block can coexist with a
+  // focused textarea; a noncollapsed range or one in another rich editor cannot.
+  const competingSelection = (root) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return false;
+    if (selection.rangeCount !== 1 || !selection.isCollapsed ||
+        !selection.anchorNode || !selection.focusNode) return true;
+    return [selection.anchorNode, selection.focusNode].some((node) => {
+      const element = node.nodeType === 1 ? node : node.parentElement;
+      const owner = element?.closest?.('div.standard-co-editor-editing.task-rich-text-edit');
+      return owner && owner !== root;
+    });
+  };
   const state = window[KEY];
   const fail = (status) => ({ok:false,status});
   const rootNow = () => {
@@ -123,12 +164,16 @@ async function nedPageControl(request) {
     if (hostKind === 'TEXTAREA' &&
         (editorHost.value !== '' || !Number.isInteger(editorHost.selectionStart) ||
          editorHost.selectionStart !== editorHost.selectionEnd)) return fail('BLOCKED_TEXTAREA_SELECTION');
-    const selection = window.getSelection();
-    const anchor = selection?.anchorNode;
-    const focus = selection?.focusNode;
-    if (!selection || selection.rangeCount !== 1 || !selection.isCollapsed ||
-        !anchor || !focus || !block.contains(anchor) || !block.contains(focus)) return fail('BLOCKED_SELECTION');
-    const next = {run:request.run, root, block, host:editorHost, hostKind, focusDeferred, marker:request.marker,
+    const initialDomCaret = domCaret(block);
+    if (competingSelection(root)) return fail('BLOCKED_SELECTION');
+    if (hostKind === 'TEXTAREA') {
+      if (!textareaCaret(editorHost)) return fail('BLOCKED_TEXTAREA_SELECTION');
+    } else if (!initialDomCaret && document.hasFocus?.() !== false) {
+      // A focused contenteditable must present its real DOM caret; a genuinely
+      // blurred popup session may defer only until the one native CDP click.
+      return fail('BLOCKED_SELECTION');
+    }
+    const next = {run:request.run, root, block, host:editorHost, hostKind, focusDeferred, preClickSelectionDeferred:!initialDomCaret, marker:request.marker,
       href:request.href, team:request.team, field:request.field, display:request.display,
       started:Date.now(), samples:[], events:[], pending:Promise.resolve(), listeners:[], changed:0, inserted:false};
     const sample = (kind) => {
@@ -198,26 +243,41 @@ async function nedPageControl(request) {
        state.host.selectionStart !== state.host.selectionEnd ||
        [...root.querySelectorAll('textarea.editor-input')].filter((el) => el.isConnected).length !== 1 ||
        root.querySelectorAll('textarea.editor-input')[0] !== state.host)) return fail('BLOCKED_TEXTAREA_SELECTION');
-  const selection = window.getSelection();
-  if (!finishing && (!selection || selection.rangeCount !== 1 || !selection.isCollapsed ||
-      !state.block.contains(selection.anchorNode) || !state.block.contains(selection.focusNode))) return fail('BLOCKED_SELECTION_DRIFT');
-  const offset = (node, local) => {
-    try { const r = document.createRange(); r.selectNodeContents(state.block); r.setEnd(node,local); return r.toString().length; }
-    catch (_) { return null; }
-  };
-  const anchorOffset = selection ? offset(selection.anchorNode,selection.anchorOffset) : null;
-  const focusOffset = selection ? offset(selection.focusNode,selection.focusOffset) : null;
-  if (!finishing && (anchorOffset === null || focusOffset === null)) return fail('BLOCKED_SELECTION_DRIFT');
+  if (!finishing && state.hostKind === 'CONTENTEDITABLE' &&
+      [...root.querySelectorAll('[contenteditable="true"]')].filter((el) =>
+        el.isConnected && (el.contains(state.block) || state.block.contains(el))).length !== 1)
+    return fail('BLOCKED_EDIT_HOST_AMBIGUOUS');
+  if (!finishing && competingSelection(root)) return fail('BLOCKED_SELECTION_DRIFT');
+  const actualDomCaret = domCaret(state.block);
+  const actualTextareaCaret = state.hostKind === 'TEXTAREA' ? textareaCaret(state.host) : null;
+  let proof = null;
+  if (finishing) {
+    proof = state.postClickSelection || {anchorOffset:null,focusOffset:null,collapsed:false,
+      selectionProof:'NOT_PROVEN'};
+  } else if (state.hostKind === 'TEXTAREA') {
+    // AFTER_SELECT also requires hasNativeFocus above: only the one real CDP
+    // click may restore the bound textarea; its own collapsed caret is authority.
+    if (!actualTextareaCaret) return fail('BLOCKED_TEXTAREA_SELECTION');
+    proof = actualTextareaCaret;
+  } else {
+    if (!actualDomCaret && (request.action === 'AFTER_SELECT' ||
+        document.hasFocus?.() !== false || (!hasNativeFocus && !neutralBlur)))
+      return fail('BLOCKED_SELECTION_DRIFT');
+    proof = actualDomCaret || {anchorOffset:null,focusOffset:null,collapsed:false,
+      selectionProof:'DEFERRED_UNTIL_NATIVE_CLICK'};
+  }
+  const {anchorOffset, focusOffset, collapsed, selectionProof} = proof;
   if (request.action === 'INSPECT') {
     if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
     state.sample('PREFLIGHT');
     return {ok:true,status:'READY',point:{x,y},blockCount:blocks.length,focusedCount:focused.length,
-      anchorOffset,focusOffset,collapsed:true,hostKind:state.hostKind,focusDeferred:state.focusDeferred,elapsedMs:Date.now()-state.started};
+      anchorOffset,focusOffset,collapsed,selectionProof,hostKind:state.hostKind,focusDeferred:state.focusDeferred,elapsedMs:Date.now()-state.started};
   }
   if (request.action === 'AFTER_SELECT') {
     if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
+    state.postClickSelection=proof;
     state.sample('AFTER_SELECT');
-    return {ok:true,status:'SELECTION_READY',point:{x,y},anchorOffset,focusOffset,collapsed:true};
+    return {ok:true,status:'SELECTION_READY',point:{x,y},anchorOffset,focusOffset,collapsed,selectionProof};
   }
   if (request.action !== 'FINISH') return fail('BLOCKED_UNKNOWN_ACTION');
   state.sample('FINAL');
@@ -234,7 +294,7 @@ async function nedPageControl(request) {
   else if (values.some((v) => v.includes(state.marker.slice(0,5)) || state.marker.includes(v) && v.length > 2)) semantic = 'PARTIAL';
   else semantic = 'MISMATCH';
   const trace = {semantic,events:state.events.slice(),samples:state.samples.slice(),
-    mutationCount:state.changed,selection:{anchorOffset,focusOffset,collapsed:true},
+    mutationCount:state.changed,selection:{anchorOffset,focusOffset,collapsed,selectionProof},
     hostBound:true,hostKind:state.hostKind,focusDeferred:state.focusDeferred,blockCount:blocks.length,focusedCount:focused.length,
     frontendVersion:(() => { const v = document.querySelector('meta[name="app-version"]')?.content || window.APP_VERSION;
       return /^\d{1,4}(?:\.\d{1,4}){1,3}$/.test(String(v||'')) ? String(v) : null; })()};
@@ -312,7 +372,8 @@ async function nedRun(config, tabId) {
     if (!before?.ok) return nedRedacted(before?.status || 'BLOCKED_EDITOR_UNSTABLE');
     if (await nedAuthoritativeBlank(config,tabId,taskUuid,req.field)!=='BLANK') return nedRedacted('BLOCKED_PRE_READ');
     const afterRead=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT'}]);
-    if (!afterRead?.ok || !before.point || !afterRead.point ||
+    if (!afterRead?.ok) return nedRedacted(afterRead?.status || 'BLOCKED_EDITOR_UNSTABLE');
+    if (!before.point || !afterRead.point ||
         Math.abs(before.point.x-afterRead.point.x)>2 || Math.abs(before.point.y-afterRead.point.y)>2) {
       return nedRedacted('BLOCKED_COORDINATE_DRIFT');
     }
@@ -334,9 +395,9 @@ async function nedRun(config, tabId) {
     await send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,nativeVirtualKeyCode:65});
     await nedWait(80);
     const selected=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'AFTER_SELECT'}]);
-    if (!selected?.ok || Math.abs(point.x-selected.point?.x)>2 || Math.abs(point.y-selected.point?.y)>2) {
-      status='BLOCKED_SELECTION_OR_GEOMETRY';
-      return nedRedacted(status);
+    if (!selected?.ok) return nedRedacted(selected?.status || 'BLOCKED_SELECTION_UNCERTAIN');
+    if (!selected.point || Math.abs(point.x-selected.point.x)>2 || Math.abs(point.y-selected.point.y)>2) {
+      return nedRedacted('BLOCKED_COORDINATE_DRIFT');
     }
     // Counts attempted sends, including an ambiguous rejection/timeout. Never retry.
     insertCount=1;
@@ -394,7 +455,33 @@ async function nedVerify(config,tabId) {
   finally {nedInFlight=false;}
 }
 
-globalThis.onesNativeEditorDiagnosticRun = nedRun;
+// Recording a failed preflight must not create a pending server transaction.
+// For a native-click/insert attempt, keep the existing pending barrier and
+// replace only its generic fallback receipt with the exact scrubbed outcome.
+async function nedRunWithReceipt(config, tabId) {
+  const before = await nedLoadState().catch(() => null);
+  const receipt = await nedRun(config, tabId);
+  if (receipt?.status === 'BLOCKED_IN_FLIGHT' ||
+      receipt?.status === 'BLOCKED_PENDING_SERVER_VERIFICATION') return receipt;
+  const status = typeof receipt?.status === 'string' &&
+    /^(?:BLOCKED|TRACE|SERVER|DIAGNOSTIC|NOT_RUN)[A-Z0-9_]{0,80}$/.test(receipt.status)
+      ? receipt.status : 'BLOCKED_UNCERTAIN';
+  const savedReceipt = nedRedacted(status, receipt?.insertTextCount === 1 ? 1 : 0, {
+    serverVerification:receipt?.serverVerification || 'NOT_VERIFIED',
+    ...(receipt?.trace ? {trace:receipt.trace} : {}),
+    ...(receipt?.warning ? {warning:receipt.warning} : {})
+  });
+  try {
+    const state = await nedLoadState();
+    // Never modify an older, not-yet-verified transaction. A newly-created
+    // pending run is identified by a different exact run token.
+    if (state?.pending && state.run === before?.run) return receipt;
+    if (state?.pending) await nedSaveState({...state,lastReceipt:savedReceipt});
+    else await nedSaveState({pending:false,verified:false,lastReceipt:savedReceipt});
+  } catch (_) { /* Storage failure does not authorize CDP or retries. */ }
+  return receipt;
+}
+globalThis.onesNativeEditorDiagnosticRun = nedRunWithReceipt;
 globalThis.onesNativeEditorDiagnosticVerify = nedVerify;
 globalThis.onesNativeEditorDiagnosticLast = async () => {
   const state=await nedLoadState();
@@ -402,9 +489,10 @@ globalThis.onesNativeEditorDiagnosticLast = async () => {
   const receipt=state.lastReceipt || nedRedacted(state.pending?'DIAGNOSTIC_INTERRUPTED':'NOT_RUN');
   const pending=state.pending===true && state.verified!==true;
   return nedRedacted(receipt.status,receipt.insertTextCount||0,{
+    ok:!pending && state.verified===true && receipt.status==='SERVER_BLANK_OBSERVED',
     trace:receipt.trace,
     serverVerification:state.verified===true?'SERVER_BLANK_OBSERVED':
-      (receipt.serverVerification==='SERVER_CHANGED_ESCALATE'?'SERVER_CHANGED_ESCALATE':'PENDING_CANCEL_AND_INDEPENDENT_READ'),
+      (pending?'PENDING_CANCEL_AND_INDEPENDENT_READ':receipt.serverVerification || 'NOT_VERIFIED'),
     pendingServerVerification:pending,
     interrupted:pending && !state.lastReceipt,
     warning:receipt.warning || (pending?'CANCEL_DOES_NOT_PROVE_AUTOSYNC_ABSENT':undefined)
