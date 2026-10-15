@@ -181,7 +181,7 @@ test("wrong host, competing selection, second preflight loss and post-click drif
   assert.equal(r.saveDispatched,false);
  }
 });
-test("ARM and two INSPECT failures persist their exact last receipt with no pending transaction",async()=>{
+test("pre-click selection and post-click failures persist exact receipt without retries",async()=>{
  const arm=harness({textarea:true,competingRange:true});
  assert.equal((await arm.run()).status,"BLOCKED_SELECTION");
  const lastArm=await arm.last();
@@ -192,7 +192,7 @@ test("ARM and two INSPECT failures persist their exact last receipt with no pend
  const response=await inspect.run();
  assert.equal(response.status,"BLOCKED_SELECTION_DRIFT");
  assert.equal((await inspect.last()).status,response.status);
- assert.equal((await inspect.last()).pendingServerVerification,false);
+ assert.equal((await inspect.last()).pendingServerVerification,true);
  assert.equal(inspect.sent.includes("Input.insertText"),false);
  const post=harness({textarea:true,emptySelection:true,postClickWrongHost:true});
  const blocked=await post.run();
