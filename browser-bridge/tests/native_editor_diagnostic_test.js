@@ -11,12 +11,26 @@ function harness(opts={}) {
   const rect={left:30,top:40,right:230,height:25,width:200};
   const textSurface={textContent:opts.authoringText||""};
   const block={textContent:opts.authoringText||opts.accessoryText||(opts.dirty?"synthetic draft":""),
-    isConnected:true,classList:{contains:()=>!opts.noFocus},
-    querySelectorAll:(q)=>q===".text"&&(opts.authoringText||opts.accessoryText||opts.emptySurface)?[textSurface]:[],
+    isConnected:true,classList:{contains:(name)=>name==='focused' && !opts.noFocus},
+    querySelectorAll:(q)=>q===".text"&&!opts.noTextSurface&&(opts.authoringText||opts.accessoryText||opts.emptySurface)?[textSurface]:[],
     getBoundingClientRect:()=>rect,contains:(x)=>x===block||x===anchor};
   const hiddenBlock={textContent:opts.hiddenDraft||"",isConnected:true,classList:{contains:()=>false},
     querySelectorAll:q=>q===".text"?[{textContent:opts.hiddenDraft||""}]:[],
     getBoundingClientRect:()=>rect,contains:(x)=>x===hiddenBlock};
+  // Real DOM-shaped, synthetic-only text ownership fixtures. Never use real editor content.
+  const leafText=opts.authoringText||opts.accessoryText||(opts.dirty?'synthetic draft':'');
+  const leafOwner={nodeType:1,tagName:opts.ownerTag||'SPAN',parentElement:block,
+    classList:{contains:(name)=>name==='text'&&!!opts.authoringText ||
+      name==='placeholder'&&!!opts.placeholderLeaf},
+    getAttribute:(name)=>name==='role'&&opts.controlLeaf?'button':
+      name==='contenteditable'&&opts.editableLeaf?'true':
+      name==='aria-hidden'&&opts.hiddenLeaf?'true':null,
+    hasAttribute:(name)=>name==='data-placeholder'&&!!opts.placeholderLeaf ||
+      name==='aria-hidden'&&!!opts.hiddenLeaf,
+    childNodes:[]};
+  const leafNode={nodeType:3,nodeValue:leafText,parentElement:leafOwner};
+  leafOwner.childNodes=leafText?[leafNode]:[];
+  block.childNodes=leafText?[leafOwner]:[];
   const anchor={nodeType:3,parentElement:block};
   const foreign={nodeType:3,parentElement:{closest:()=>opts.foreignEditor?{id:"other-editor"}:null}};
   const selection={anchorNode:anchor,focusNode:anchor,anchorOffset:0,focusOffset:0,rangeCount:1,isCollapsed:true};
@@ -52,6 +66,8 @@ function harness(opts={}) {
         }
         if (opts.dirtyAtInspect===opts.inspectCalls) {
           block.textContent="SYNTHETIC_PRIVATE_DRAFT_ONLY_IN_PAGE";
+          leafNode.nodeValue=block.textContent;
+          leafOwner.childNodes=[leafNode];block.childNodes=[leafOwner];
           textSurface.textContent="SYNTHETIC_PRIVATE_DRAFT_ONLY_IN_PAGE";
           opts.authoringText=textSurface.textContent;
         }
@@ -80,7 +96,7 @@ function harness(opts={}) {
   };
   const context=vm.createContext({chrome,URL,crypto:webcrypto,TextEncoder,window:{getSelection:()=>selection,APP_VERSION:"3.14.0"},
     document:doc,location,fetch:async()=>({ok:!opts.badIdentity,json:async()=>({display_id:"SYN-1",task_uuid:"task"})}),
-    getComputedStyle:(node)=>({display:node===hiddenBlock?"none":"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
+    getComputedStyle:(node)=>({display:node===hiddenBlock||node===leafOwner&&opts.hiddenLeaf?"none":"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
     MutationObserver:class{constructor(f){this.f=f}observe(){observers.push(this.f)}disconnect(){const i=observers.indexOf(this.f);if(i>=0)observers.splice(i,1)}},
     queueMicrotask,setTimeout:(f)=>setImmediate(f),console,
     relayReadTaskFields:async(_s,p)=>({ok:!opts.badRead,complete:!opts.badRead,readOnly:true,requestedTaskCount:1,fieldId:p.fieldId,
@@ -282,4 +298,41 @@ test("nonempty content remains blocked despite server BLANK and valid textarea c
   assert.equal(r.preflight.reason,"AUTHORING_SURFACE_CONTENT");
   assert.equal(h.sent.length,0);
   assert.equal((await h.last()).serverVerification,"NOT_VERIFIED");
+});
+
+
+test("read-only leaf-provenance distinguishes structural hints but never waives dirty block",async()=>{
+ for(const [options,field] of [
+   [{accessoryText:"SYNTHETIC_LEAF_UNKNOWN",noTextSurface:true},"unknownLeaves"],
+   [{accessoryText:"SYNTHETIC_LEAF_CONTROL",controlLeaf:true,noTextSurface:true,ownerTag:"BUTTON"},"controlLikeLeaves"],
+   [{accessoryText:"SYNTHETIC_LEAF_PLACEHOLDER",placeholderLeaf:true,noTextSurface:true},"placeholderHintLeaves"],
+   [{accessoryText:"SYNTHETIC_LEAF_HIDDEN",hiddenLeaf:true,noTextSurface:true},"hiddenDescendantLeaves"],
+   [{authoringText:"SYNTHETIC_LEAF_AUTHORING"},"authoringTextLeaves"],
+   [{accessoryText:"SYNTHETIC_LEAF_EDITABLE",editableLeaf:true,noTextSurface:true},"editableOtherLeaves"]
+ ]) {
+   const h=harness(options),result=await h.run(),last=await h.last();
+   assert.equal(result.status,"BLOCKED_DIRTY_DRAFT");
+   assert.equal(result.preflight.stage,"ARM");
+   assert.equal(result.preflight.provenance.schema,"LEAF_OWNER_V1");
+   assert.equal(result.preflight.provenance[field],1);
+   assert.equal(result.preflight.provenance.ownershipProof,"NOT_ESTABLISHED");
+   assert.equal(result.preflight.provenance.incomplete,false);
+   assert.equal(last.preflight.provenance[field],1);
+   assert.equal(result.insertTextCount,0);
+   assert.equal(result.saveDispatched,false);
+   assert.deepEqual(h.sent,[]);
+   for(const receipt of [result,last]){
+     assert.equal(JSON.stringify(receipt).includes("SYNTHETIC_LEAF_"),false);
+     assert.equal(JSON.stringify(receipt).includes("synthetic.invalid"),false);
+   }
+ }
+});
+test("unresolved text leaf remains blocked without fabricated provenance",async()=>{
+ const h=harness({accessoryText:"SYNTHETIC_UNKNOWN_NODE",noTextSurface:true});
+ const r=await h.run();
+ assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");
+ assert.equal(r.preflight.provenance.nonemptyLeafCount,1);
+ assert.equal(r.preflight.provenance.authoringTextLeaves,0);
+ assert.equal(r.preflight.ownershipProof,"NOT_ESTABLISHED");
+ assert.equal(r.insertTextCount,0);
 });

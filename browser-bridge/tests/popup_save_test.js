@@ -313,12 +313,18 @@ test('privacy-safe dirty-block receipt survives popup reopen without diagnostic 
     unclassifiedBlockCount:1,authoringSurfaceCount:1,possibleAuthoringCount:0,
     nonvisibleNonemptyCount:0,textareaCount:1,textareaState:'EMPTY',
     maxBlockLength:'ONE_TO_32',maxAuthoringLength:'ZERO',domCaretShape:'NO_DOM_RANGE',
+    provenance:{schema:'LEAF_OWNER_V1',nonemptyLeafCount:1,inspectedNodeCount:2,
+      maxLeafLength:'ONE_TO_32',unknownLeaves:1,incomplete:false,
+      rawText:secret,html:'<private>',url:'https://private.invalid',sha256:'1234',
+      arbitraryPayload:{secret}},
     actualText:secret,html:'<private>',url:'https://private.invalid',sha256:'1234'}});
  for(let i=0;i<2;i++){
   const p=await ready(env);await flush();
   assert.match(p.elements.nativeDiagStatus.textContent,/INSPECT_2.*UNCLASSIFIED_BLOCK_TEXT/);
   const shown=p.elements.nativeDiagOutput.textContent;
   assert.equal(shown.includes(secret),false);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes('LEAF_OWNER_V1'),true);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes('unknownLeaves'),true);
   for(const forbidden of ['private.invalid','sha256','actualText','html','<private>'])assert.equal(shown.includes(forbidden),false);
  }
  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);

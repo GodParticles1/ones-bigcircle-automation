@@ -210,6 +210,19 @@ function nativeDiagReceipt(value) {
         "COLLAPSED_DOM_RANGE"]),
       ownershipProof:"NOT_ESTABLISHED"
     };
+    const prov=raw.provenance;
+    if (prov?.schema==="LEAF_OWNER_V1") {
+      const fields=["nonemptyLeafCount","inspectedNodeCount","authoringTextLeaves",
+        "editableOtherLeaves","controlLikeLeaves","placeholderHintLeaves",
+        "hiddenDescendantLeaves","unknownLeaves","ownerTagSpan","ownerTagDiv",
+        "ownerTagParagraph","ownerTagButton","ownerTagOther"];
+      const evidence={schema:"LEAF_OWNER_V1",incomplete:prov.incomplete===true,
+        maxLeafLength:enumValue(prov.maxLeafLength,
+          ["ZERO","ONE_TO_32","THIRTYTHREE_TO_128","OVER_128"]),
+        ownershipProof:"NOT_ESTABLISHED"};
+      for (const key of fields) evidence[key]=bounded(prov[key]);
+      out.preflight.provenance=evidence;
+    }
   }
   return out;
 }
