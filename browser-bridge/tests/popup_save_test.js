@@ -18,6 +18,7 @@ function environment(options = {}) {
   const local = {};
   const session = {};
   const events = [];
+  let last={ok:false,status:'NOT_RUN',pendingServerVerification:false};
   let handler;
   const noEvent = { addListener() {} };
   const background = {
@@ -41,6 +42,7 @@ function environment(options = {}) {
   }, { filename: 'service-worker.js' });
   const sendMessage = (message) => {
     events.push(message.type);
+    if (message.type === 'ONES_NATIVE_DIAGNOSTIC_LAST') return Promise.resolve(clone(last));
     return new Promise((resolve) => {
       const handled = handler(clone(message), {}, (response) => resolve(clone(response)));
       assert.equal(handled, true);
@@ -69,7 +71,8 @@ function environment(options = {}) {
       output: () => JSON.parse(elements.output.textContent)
     };
   }
-  return { local, session, events, sendMessage, popup };
+  return { local, session, events, sendMessage, popup,
+    setLast: (x) => { last=clone(x); } };
 }
 
 function fill(p, changes = {}) {
@@ -269,4 +272,60 @@ test('double click does not dispatch duplicate config or permission operations',
   finish(true);
   await saving;
   assert.equal(p.elements.saveConfig.disabled, false);
+});
+
+test('popup reopen restores last metadata only and pending readback without CDP',async()=>{
+  const env=environment();
+  env.setLast({ok:true,status:'TRACE_EXACT_ONCE',pendingServerVerification:true,
+    serverVerification:'PENDING_CANCEL_AND_INDEPENDENT_READ',insertTextCount:1,
+    trace:{semantic:'EXACT_ONCE'},secret:'hidden-private'});
+  const first=await ready(env);
+  await flush();
+  assert.match(first.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+  assert.equal(first.elements.nativeDiagOutput.textContent.includes('hidden-private'),false);
+  const second=await ready(env);
+  await flush();
+  assert.match(second.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+  assert.equal(second.elements.nativeDiagOutput.textContent.includes('TRACE_EXACT_ONCE'),true);
+  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_LAST').length,2);
+  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+  env.setLast({ok:false,status:'SERVER_BLANK_OBSERVED',pendingServerVerification:false,
+    serverVerification:'SERVER_BLANK_OBSERVED'});
+  const third=await ready(env);await flush();
+  assert.doesNotMatch(third.elements.nativeDiagStatus.textContent,/待服务端/);
+  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+test('popup reopened after ambiguous interruption retains pending warning',async()=>{
+ const env=environment();
+ env.setLast({ok:false,status:'DIAGNOSTIC_INTERRUPTED',pendingServerVerification:true,interrupted:true});
+ const p=await ready(env);await flush();
+ assert.match(p.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes('DIAGNOSTIC_INTERRUPTED'),true);
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
+test('privacy-safe dirty-block receipt survives popup reopen without diagnostic replay',async()=>{
+ const env=environment();
+ const secret='SYNTHETIC_CUSTOMER_TEXT_NEVER_EXPORT';
+ env.setLast({status:'BLOCKED_DIRTY_DRAFT',insertTextCount:0,saveDispatched:false,
+   pendingServerVerification:false,serverVerification:'NOT_VERIFIED',
+   preflight:{stage:'INSPECT_2',reason:'UNCLASSIFIED_BLOCK_TEXT',nonemptyBlockCount:1,
+    unclassifiedBlockCount:1,authoringSurfaceCount:1,possibleAuthoringCount:0,
+    nonvisibleNonemptyCount:0,textareaCount:1,textareaState:'EMPTY',
+    maxBlockLength:'ONE_TO_32',maxAuthoringLength:'ZERO',domCaretShape:'NO_DOM_RANGE',
+    provenance:{schema:'LEAF_OWNER_V1',nonemptyLeafCount:1,inspectedNodeCount:2,
+      maxLeafLength:'ONE_TO_32',unknownLeaves:1,incomplete:false,
+      rawText:secret,html:'<private>',url:'https://private.invalid',sha256:'1234',
+      arbitraryPayload:{secret}},
+    actualText:secret,html:'<private>',url:'https://private.invalid',sha256:'1234'}});
+ for(let i=0;i<2;i++){
+  const p=await ready(env);await flush();
+  assert.match(p.elements.nativeDiagStatus.textContent,/INSPECT_2.*UNCLASSIFIED_BLOCK_TEXT/);
+  const shown=p.elements.nativeDiagOutput.textContent;
+  assert.equal(shown.includes(secret),false);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes('LEAF_OWNER_V1'),true);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes('unknownLeaves'),true);
+  for(const forbidden of ['private.invalid','sha256','actualText','html','<private>'])assert.equal(shown.includes(forbidden),false);
+ }
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
 });
