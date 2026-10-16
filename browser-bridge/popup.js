@@ -172,10 +172,12 @@ async function nativeDiagRestore() {
     const result=await chrome.runtime.sendMessage({type:"ONES_NATIVE_DIAGNOSTIC_LAST"});
     const receipt=nativeDiagReceipt(result);
     const pending=receipt.pendingServerVerification === true;
+    const dirtyReason=receipt.status==="BLOCKED_DIRTY_DRAFT" && receipt.preflight ?
+      " · " + receipt.preflight.stage + " / " + receipt.preflight.reason : "";
     if ($("nativeDiagStatus")) $("nativeDiagStatus").textContent =
       pending ? "诊断待服务端独立复核（不得再次输入）" :
       receipt.status==="NOT_RUN" ? "尚无诊断结果" :
-      "上次诊断状态：" + (receipt.status || "UNKNOWN");
+      "上次诊断状态：" + (receipt.status || "UNKNOWN") + dirtyReason;
     if ($("nativeDiagOutput")) $("nativeDiagOutput").textContent=JSON.stringify(receipt,null,2);
   } catch (_) {
     if ($("nativeDiagStatus")) $("nativeDiagStatus").textContent="诊断状态读取失败，请停止输入";
@@ -185,8 +187,31 @@ function nativeDiagReceipt(value) {
   // The worker returns only approved metadata; never render raw browser errors.
   const accepted = ["ok","status","diagnosticOnly","writeGate","saveDispatched",
     "insertTextCount","noSaveDispatched","serverVerification","pendingServerVerification","interrupted","warning","trace"];
-  return Object.fromEntries(accepted.filter((k) => Object.prototype.hasOwnProperty.call(value || {},k))
+  const out=Object.fromEntries(accepted.filter((k) => Object.prototype.hasOwnProperty.call(value || {},k))
     .map((k) => [k,value[k]]));
+  const raw=value?.preflight;
+  if (value?.status==="BLOCKED_DIRTY_DRAFT" && raw && typeof raw==="object") {
+    const enumValue=(v,values)=>values.includes(v)?v:"UNVERIFIED";
+    const bounded=(v)=>Number.isInteger(v)&&v>=0?Math.min(v,16):0;
+    out.preflight={
+      stage:enumValue(raw.stage,["ARM","INSPECT_1","INSPECT_2","AFTER_SELECT"]),
+      reason:enumValue(raw.reason,["TEXTAREA_VALUE_PRESENT","NONVISIBLE_BLOCK_CONTENT",
+        "AUTHORING_SURFACE_CONTENT","UNCLASSIFIED_BLOCK_TEXT"]),
+      nonemptyBlockCount:bounded(raw.nonemptyBlockCount),
+      authoringSurfaceCount:bounded(raw.authoringSurfaceCount),
+      possibleAuthoringCount:bounded(raw.possibleAuthoringCount),
+      unclassifiedBlockCount:bounded(raw.unclassifiedBlockCount),
+      nonvisibleNonemptyCount:bounded(raw.nonvisibleNonemptyCount),
+      textareaCount:bounded(raw.textareaCount),
+      textareaState:enumValue(raw.textareaState,["NONE","EMPTY","HAS_VALUE"]),
+      maxBlockLength:enumValue(raw.maxBlockLength,["ZERO","ONE_TO_32","THIRTYTHREE_TO_128","OVER_128"]),
+      maxAuthoringLength:enumValue(raw.maxAuthoringLength,["ZERO","ONE_TO_32","THIRTYTHREE_TO_128","OVER_128"]),
+      domCaretShape:enumValue(raw.domCaretShape,["NO_DOM_RANGE","NONCOLLAPSED_OR_MULTIPLE",
+        "COLLAPSED_DOM_RANGE"]),
+      ownershipProof:"NOT_ESTABLISHED"
+    };
+  }
+  return out;
 }
 async function nativeDiagAction(type) {
   if (nativeDiagBusy) return;

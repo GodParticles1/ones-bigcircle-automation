@@ -9,8 +9,14 @@ const config={writeEnabled:false,rootCauseFieldId:"f",onesOrigin:"https://synthe
 function harness(opts={}) {
   const sent=[],store={},events={},observers=[];
   const rect={left:30,top:40,right:230,height:25,width:200};
-  const block={textContent:opts.dirty?"existing":"",isConnected:true,classList:{contains:()=>!opts.noFocus},
+  const textSurface={textContent:opts.authoringText||""};
+  const block={textContent:opts.authoringText||opts.accessoryText||(opts.dirty?"synthetic draft":""),
+    isConnected:true,classList:{contains:()=>!opts.noFocus},
+    querySelectorAll:(q)=>q===".text"&&(opts.authoringText||opts.accessoryText||opts.emptySurface)?[textSurface]:[],
     getBoundingClientRect:()=>rect,contains:(x)=>x===block||x===anchor};
+  const hiddenBlock={textContent:opts.hiddenDraft||"",isConnected:true,classList:{contains:()=>false},
+    querySelectorAll:q=>q===".text"?[{textContent:opts.hiddenDraft||""}]:[],
+    getBoundingClientRect:()=>rect,contains:(x)=>x===hiddenBlock};
   const anchor={nodeType:3,parentElement:block};
   const foreign={nodeType:3,parentElement:{closest:()=>opts.foreignEditor?{id:"other-editor"}:null}};
   const selection={anchorNode:anchor,focusNode:anchor,anchorOffset:0,focusOffset:0,rangeCount:1,isCollapsed:true};
@@ -24,11 +30,13 @@ function harness(opts={}) {
   if(opts.popupBlur) active=null;
   if(opts.wrongHost) active={tagName:"INPUT"};
   if(opts.siblingHost) active={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0};
-  if(opts.badTextarea) textarea.value="dirty";
+  if(opts.badTextarea || opts.typedDraftTextarea) textarea.value="synthetic unsaved draft";
   if(opts.badTextareaSelection) textarea.selectionEnd=1;
   const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor,...(opts.textarea?[textarea]:[])].includes(x),
     querySelectorAll:q=>q==="textarea.editor-input"?opts.textarea?[textarea,...(opts.twoTextareas?[{...textarea}]:[])]:[]:
-      q==='[contenteditable="true"]'?opts.textarea?[]:[host]:[block],getBoundingClientRect:()=>rect};
+      q==='[contenteditable="true"]'?opts.textarea?[]:[host]:
+      q.startsWith(".text-block[")?(opts.hiddenDraft?[block,hiddenBlock]:[block]):[block],
+    getBoundingClientRect:()=>rect};
   const doc={get activeElement(){return active},body:{},documentElement:{},hasFocus:()=>!opts.popupBlur,querySelectorAll:q=>q==="[id]"?[root]:q.startsWith("div.standard-")?opts.noEditor?[]:[root]:[],
     querySelector:()=>null,elementFromPoint:()=>block,
     createRange:()=>{let n=0;return{selectNodeContents(){},setEnd(_x,v){n=v},toString:()=>"a".repeat(n)}},
@@ -41,6 +49,11 @@ function harness(opts={}) {
         opts.inspectCalls=(opts.inspectCalls||0)+1;
         if(opts.secondInspectSelectionLost && opts.inspectCalls===2) {
           selection.rangeCount=0; selection.anchorNode=null; selection.focusNode=null;
+        }
+        if (opts.dirtyAtInspect===opts.inspectCalls) {
+          block.textContent="SYNTHETIC_PRIVATE_DRAFT_ONLY_IN_PAGE";
+          textSurface.textContent="SYNTHETIC_PRIVATE_DRAFT_ONLY_IN_PAGE";
+          opts.authoringText=textSurface.textContent;
         }
       }
       return [{result:await func(...args)}];
@@ -58,6 +71,7 @@ function harness(opts={}) {
           const event={target:block,isTrusted:true,inputType:"insertText",cancelable:true,defaultPrevented:false,isComposing:false};
           for(const f of events.beforeinput||[]) f(event);
           block.textContent=opts.partial?args.text.slice(0,4):opts.duplicate?args.text+args.text:args.text;
+          textSurface.textContent=block.textContent;
           for(const f of events.input||[])f(event);
           for(const f of observers)f();
           if(opts.throwAfter)throw Error("secret token private endpoint");
@@ -66,7 +80,7 @@ function harness(opts={}) {
   };
   const context=vm.createContext({chrome,URL,crypto:webcrypto,TextEncoder,window:{getSelection:()=>selection,APP_VERSION:"3.14.0"},
     document:doc,location,fetch:async()=>({ok:!opts.badIdentity,json:async()=>({display_id:"SYN-1",task_uuid:"task"})}),
-    getComputedStyle:()=>({display:"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
+    getComputedStyle:(node)=>({display:node===hiddenBlock?"none":"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
     MutationObserver:class{constructor(f){this.f=f}observe(){observers.push(this.f)}disconnect(){const i=observers.indexOf(this.f);if(i>=0)observers.splice(i,1)}},
     queueMicrotask,setTimeout:(f)=>setImmediate(f),console,
     relayReadTaskFields:async(_s,p)=>({ok:!opts.badRead,complete:!opts.badRead,readOnly:true,requestedTaskCount:1,fieldId:p.fieldId,
@@ -200,4 +214,72 @@ test("pre-click selection and post-click failures persist exact receipt without 
  assert.equal((await post.last()).pendingServerVerification,true);
  assert.equal(post.sent.filter(x=>x==="Input.insertText").length,0);
  assert.equal((await post.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+});
+
+test("visible-blank authoring surface plus unproven accessory text is classified, never ignored",async()=>{
+  const secret="SYNTHETIC_NONAUTHORING_CANDIDATE_PRIVATE_STRING";
+  const h=harness({accessoryText:secret});
+  const r=await h.run(),last=await h.last();
+  assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");
+  assert.equal(r.preflight.stage,"ARM");
+  assert.equal(r.preflight.reason,"UNCLASSIFIED_BLOCK_TEXT");
+  assert.equal(r.preflight.possibleAuthoringCount,0);
+  assert.equal(r.preflight.unclassifiedBlockCount,1);
+  assert.equal(r.preflight.ownershipProof,"NOT_ESTABLISHED");
+  assert.equal(last.preflight.reason,"UNCLASSIFIED_BLOCK_TEXT");
+  assert.equal(last.pendingServerVerification,false);
+  assert.equal(h.sent.length,0);
+  for(const receipt of [r,last]) {
+    assert.equal(JSON.stringify(receipt).includes(secret),false);
+    assert.equal(JSON.stringify(receipt).includes("synthetic.invalid"),false);
+    assert.equal(JSON.stringify(receipt).includes("sha256"),false);
+  }
+});
+test("actual authoring text, obscured text block and textarea value all independently block",async()=>{
+  const cases=[
+    [{authoringText:"SYNTHETIC_GENUINE_DRAFT"}, "AUTHORING_SURFACE_CONTENT",1,0],
+    [{hiddenDraft:"SYNTHETIC_OFFSCREEN_AUTHORING"}, "NONVISIBLE_BLOCK_CONTENT",1,1],
+    [{textarea:true,typedDraftTextarea:true}, "TEXTAREA_VALUE_PRESENT",0,0]
+  ];
+  for(const [opts,reason,nonempty,hidden] of cases) {
+    const h=harness(opts),r=await h.run();
+    assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");
+    assert.equal(r.preflight.stage,"ARM");
+    assert.equal(r.preflight.reason,reason);
+    assert.equal(r.preflight.nonemptyBlockCount,nonempty);
+    assert.equal(r.preflight.nonvisibleNonemptyCount,hidden);
+    assert.equal(r.insertTextCount,0);
+    assert.equal(r.saveDispatched,false);
+    assert.equal(h.sent.length,0);
+    assert.equal(JSON.stringify(await h.last()).includes("SYNTHETIC_"),false);
+  }
+});
+test("empty editor and empty unique text surface keep single guarded insertion",async()=>{
+  const h=harness({emptySurface:true}),r=await h.run();
+  assert.equal(r.status,"TRACE_EXACT_ONCE");
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+  assert.equal(h.sent.includes("Save"),false);
+});
+test("late real draft before first or second INSPECT reports exact stage and prevents CDP",async()=>{
+  for(const stage of [1,2]) {
+    const h=harness({emptySurface:true,dirtyAtInspect:stage});
+    const r=await h.run(),last=await h.last();
+    assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");
+    assert.equal(r.preflight.stage,stage===1?"INSPECT_1":"INSPECT_2");
+    assert.equal(r.preflight.reason,"AUTHORING_SURFACE_CONTENT");
+    assert.equal(last.status,r.status);
+    assert.equal(last.preflight.stage,r.preflight.stage);
+    assert.equal(last.pendingServerVerification,false);
+    assert.equal(r.saveDispatched,false);
+    assert.equal(h.sent.length,0);
+    assert.equal(JSON.stringify(last).includes("SYNTHETIC_PRIVATE_DRAFT_ONLY_IN_PAGE"),false);
+  }
+});
+test("nonempty content remains blocked despite server BLANK and valid textarea caret",async()=>{
+  const h=harness({textarea:true,emptySelection:true,authoringText:"SYNTHETIC_HIDDEN_CONTENT"});
+  const r=await h.run();
+  assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");
+  assert.equal(r.preflight.reason,"AUTHORING_SURFACE_CONTENT");
+  assert.equal(h.sent.length,0);
+  assert.equal((await h.last()).serverVerification,"NOT_VERIFIED");
 });

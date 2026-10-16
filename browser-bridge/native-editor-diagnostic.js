@@ -86,6 +86,55 @@ async function nedPageControl(request) {
       return owner && owner !== root;
     });
   };
+  // Existing Writer reads a unique .text authoring surface, but the real
+  // ONES editor has not established which other subtrees are non-authoring.
+  // Categorize those subtrees without discarding any text. In particular,
+  // visually hidden/off-screen blocks and textarea.value are still dirty.
+  const dirtyPreflight = (root, stage) => {
+    const bounded = (n) => Math.min(16, Math.max(0, n));
+    const bucket = (n) => n === 0 ? 'ZERO' : n <= 32 ? 'ONE_TO_32' :
+      n <= 128 ? 'THIRTYTHREE_TO_128' : 'OVER_128';
+    const allBlocks = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')];
+    const textareas = [...root.querySelectorAll('textarea.editor-input')];
+    let nonempty = 0, possibleAuthoring = 0, unclassified = 0, notVisible = 0;
+    let surfaceCount = 0, maxBlockLength = 0, maxSurfaceLength = 0;
+    for (const block of allBlocks) {
+      // Values are used *only* in MAIN world for local predicates.
+      const full = normalize(block.textContent);
+      const surfaces = [...block.querySelectorAll('.text')];
+      surfaceCount += surfaces.length;
+      const authored = surfaces.map((node) => normalize(node.textContent)).join('');
+      const fullLength = full.length;
+      maxBlockLength = Math.max(maxBlockLength, fullLength);
+      maxSurfaceLength = Math.max(maxSurfaceLength, authored.length);
+      if (fullLength > 0 || authored.length > 0) {
+        nonempty++;
+        if (!visible(block)) notVisible++;
+        if (authored.length > 0) possibleAuthoring++;
+        if (fullLength > 0 && (authored.length === 0 || surfaces.length !== 1)) unclassified++;
+      }
+    }
+    const nonemptyInputs = textareas.filter((node) => normalize(node.value).length > 0).length;
+    const blocked = nonempty > 0 || nonemptyInputs > 0;
+    if (!blocked) return null;
+    const reason = nonemptyInputs ? 'TEXTAREA_VALUE_PRESENT' :
+      notVisible ? 'NONVISIBLE_BLOCK_CONTENT' :
+      possibleAuthoring ? 'AUTHORING_SURFACE_CONTENT' :
+      'UNCLASSIFIED_BLOCK_TEXT';
+    const selection = window.getSelection();
+    const domCaretShape = !selection || selection.rangeCount === 0 ? 'NO_DOM_RANGE' :
+      (selection.rangeCount !== 1 || !selection.isCollapsed ? 'NONCOLLAPSED_OR_MULTIPLE' : 'COLLAPSED_DOM_RANGE');
+    // No raw text, selectors containing field IDs, URLs, text hashes or node HTML.
+    return {ok:false,status:'BLOCKED_DIRTY_DRAFT',preflight:{
+      stage,reason,
+      nonemptyBlockCount:bounded(nonempty),authoringSurfaceCount:bounded(surfaceCount),
+      possibleAuthoringCount:bounded(possibleAuthoring),unclassifiedBlockCount:bounded(unclassified),
+      nonvisibleNonemptyCount:bounded(notVisible),textareaCount:bounded(textareas.length),
+      textareaState:nonemptyInputs ? 'HAS_VALUE' : textareas.length ? 'EMPTY' : 'NONE',
+      maxBlockLength:bucket(maxBlockLength),maxAuthoringLength:bucket(maxSurfaceLength),
+      domCaretShape,ownershipProof:'NOT_ESTABLISHED'
+    }};
+  };
   const state = window[KEY];
   const fail = (status) => ({ok:false,status});
   const rootNow = () => {
@@ -125,7 +174,8 @@ async function nedPageControl(request) {
     const blocks = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible);
     const focused = blocks.filter((el) => el.classList.contains('focused'));
     if (blocks.length < 1 || focused.length !== 1) return fail('BLOCKED_FOCUSED_BLOCK_NOT_UNIQUE');
-    if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
+    const dirt = dirtyPreflight(root,'ARM');
+    if (dirt) return dirt;
     const block = focused[0];
     const active = document.activeElement;
     // ONES may use a same-root sibling textarea.editor-input as its native input host.
@@ -181,7 +231,12 @@ async function nedPageControl(request) {
       const values = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible).map((el) => normalize(el.textContent));
       const bound = block.isConnected && root.contains(block);
       next.pending = next.pending.then(async () => {
-        const blocks = await Promise.all(values.map(async (text) => ({length:text.length,sha256:await digest(text)})));
+        // Never hash user-authored content or unknown accessory DOM text.
+        // Only the empty baseline and this synthetic marker may be hashed.
+        const blocks = await Promise.all(values.map(async (text) => ({
+          length:Math.min(256,text.length),
+          sha256:(text === '' || text === next.marker) ? await digest(text) : null
+        })));
         if (next.samples.length < 28) next.samples.push({t,kind,blocks,blockConnected:bound});
       });
     };
@@ -221,6 +276,12 @@ async function nedPageControl(request) {
   const focused = blocks.filter((el) => el.classList.contains('focused'));
   if (focused.length !== 1 || focused[0] !== state.block) return fail('BLOCKED_FOCUS_DRIFT');
   const finishing = request.action === 'FINISH';
+  if (!finishing && (request.action === 'INSPECT' || request.action === 'AFTER_SELECT')) {
+    const stage = request.action === 'INSPECT' && request.stage === 'INSPECT_2' ? 'INSPECT_2' :
+      request.action === 'INSPECT' ? 'INSPECT_1' : 'AFTER_SELECT';
+    const dirt = dirtyPreflight(root,stage);
+    if (dirt) return dirt;
+  }
   const rect = state.block.getBoundingClientRect();
   const x = Math.round(Math.min(rect.right-8,rect.left+18));
   const y = Math.round(rect.top+rect.height/2);
@@ -268,13 +329,11 @@ async function nedPageControl(request) {
   }
   const {anchorOffset, focusOffset, collapsed, selectionProof} = proof;
   if (request.action === 'INSPECT') {
-    if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
     state.sample('PREFLIGHT');
     return {ok:true,status:'READY',point:{x,y},blockCount:blocks.length,focusedCount:focused.length,
       anchorOffset,focusOffset,collapsed,selectionProof,hostKind:state.hostKind,focusDeferred:state.focusDeferred,elapsedMs:Date.now()-state.started};
   }
   if (request.action === 'AFTER_SELECT') {
-    if (blocks.some((el) => normalize(el.textContent) !== '')) return fail('BLOCKED_DIRTY_DRAFT');
     state.postClickSelection=proof;
     state.sample('AFTER_SELECT');
     return {ok:true,status:'SELECTION_READY',point:{x,y},anchorOffset,focusOffset,collapsed,selectionProof};
@@ -323,6 +382,35 @@ function nedRedacted(status, insertCount=0, extra={}) {
     saveDispatched:false,insertTextCount:insertCount,noSaveDispatched:true,
     serverVerification:'NOT_VERIFIED',...extra};
 }
+function nedSafePreflight(value) {
+  if (!value || typeof value !== 'object') return null;
+  const allowed = (v, values, fallback) => values.includes(v) ? v : fallback;
+  const count = (v) => Number.isInteger(v) && v >= 0 ? Math.min(16,v) : 0;
+  const bucket = (v) => allowed(v,['ZERO','ONE_TO_32','THIRTYTHREE_TO_128','OVER_128'],'UNVERIFIED');
+  return {
+    stage:allowed(value.stage,['ARM','INSPECT_1','INSPECT_2','AFTER_SELECT'],'UNVERIFIED'),
+    reason:allowed(value.reason,['TEXTAREA_VALUE_PRESENT','NONVISIBLE_BLOCK_CONTENT',
+      'AUTHORING_SURFACE_CONTENT','UNCLASSIFIED_BLOCK_TEXT'],'UNVERIFIED'),
+    nonemptyBlockCount:count(value.nonemptyBlockCount),
+    authoringSurfaceCount:count(value.authoringSurfaceCount),
+    possibleAuthoringCount:count(value.possibleAuthoringCount),
+    unclassifiedBlockCount:count(value.unclassifiedBlockCount),
+    nonvisibleNonemptyCount:count(value.nonvisibleNonemptyCount),
+    textareaCount:count(value.textareaCount),
+    textareaState:allowed(value.textareaState,['NONE','EMPTY','HAS_VALUE'],'UNVERIFIED'),
+    maxBlockLength:bucket(value.maxBlockLength),
+    maxAuthoringLength:bucket(value.maxAuthoringLength),
+    domCaretShape:allowed(value.domCaretShape,['NO_DOM_RANGE','NONCOLLAPSED_OR_MULTIPLE',
+      'COLLAPSED_DOM_RANGE'],'UNVERIFIED'),
+    ownershipProof:'NOT_ESTABLISHED'
+  };
+}
+function nedPageFailure(result,fallback) {
+  const status = typeof result?.status === 'string' && /^BLOCKED_[A-Z_]{1,70}$/.test(result.status)
+    ? result.status : fallback;
+  return nedRedacted(status,0,status === 'BLOCKED_DIRTY_DRAFT' && result?.preflight
+    ? {preflight:nedSafePreflight(result.preflight)} : {});
+}
 async function nedCurrentTab(config, tabId, expectedHref) {
   const active = await chrome.tabs.query({active:true,currentWindow:true});
   if (active.length !== 1 || active[0].id !== tabId) return null;
@@ -365,14 +453,14 @@ async function nedRun(config, tabId) {
     const taskUuid=ident.taskUuid;
     if (await nedAuthoritativeBlank(config,tabId,taskUuid,req.field)!=='BLANK') return nedRedacted('BLOCKED_PRE_READ');
     const start=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'ARM'}]);
-    if (!start?.ok) return nedRedacted(start?.status || 'BLOCKED_EDITOR_PREPARE');
+    if (!start?.ok) return nedPageFailure(start,'BLOCKED_EDITOR_PREPARE');
     armed=true;
     await nedWait(450);
-    const before=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT'}]);
-    if (!before?.ok) return nedRedacted(before?.status || 'BLOCKED_EDITOR_UNSTABLE');
+    const before=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT',stage:'INSPECT_1'}]);
+    if (!before?.ok) return nedPageFailure(before,'BLOCKED_EDITOR_UNSTABLE');
     if (await nedAuthoritativeBlank(config,tabId,taskUuid,req.field)!=='BLANK') return nedRedacted('BLOCKED_PRE_READ');
-    const afterRead=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT'}]);
-    if (!afterRead?.ok) return nedRedacted(afterRead?.status || 'BLOCKED_EDITOR_UNSTABLE');
+    const afterRead=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT',stage:'INSPECT_2'}]);
+    if (!afterRead?.ok) return nedPageFailure(afterRead,'BLOCKED_EDITOR_UNSTABLE');
     if (!before.point || !afterRead.point ||
         Math.abs(before.point.x-afterRead.point.x)>2 || Math.abs(before.point.y-afterRead.point.y)>2) {
       return nedRedacted('BLOCKED_COORDINATE_DRIFT');
@@ -395,7 +483,7 @@ async function nedRun(config, tabId) {
     await send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,nativeVirtualKeyCode:65});
     await nedWait(80);
     const selected=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'AFTER_SELECT'}]);
-    if (!selected?.ok) return nedRedacted(selected?.status || 'BLOCKED_SELECTION_UNCERTAIN');
+    if (!selected?.ok) return nedPageFailure(selected,'BLOCKED_SELECTION_UNCERTAIN');
     if (!selected.point || Math.abs(point.x-selected.point.x)>2 || Math.abs(point.y-selected.point.y)>2) {
       return nedRedacted('BLOCKED_COORDINATE_DRIFT');
     }
@@ -469,6 +557,8 @@ async function nedRunWithReceipt(config, tabId) {
   const savedReceipt = nedRedacted(status, receipt?.insertTextCount === 1 ? 1 : 0, {
     serverVerification:receipt?.serverVerification || 'NOT_VERIFIED',
     ...(receipt?.trace ? {trace:receipt.trace} : {}),
+    ...(receipt?.status === 'BLOCKED_DIRTY_DRAFT' && receipt.preflight ?
+      {preflight:nedSafePreflight(receipt.preflight)} : {}),
     ...(receipt?.warning ? {warning:receipt.warning} : {})
   });
   try {
@@ -491,6 +581,8 @@ globalThis.onesNativeEditorDiagnosticLast = async () => {
   return nedRedacted(receipt.status,receipt.insertTextCount||0,{
     ok:!pending && state.verified===true && receipt.status==='SERVER_BLANK_OBSERVED',
     trace:receipt.trace,
+    ...(receipt.status === 'BLOCKED_DIRTY_DRAFT' && receipt.preflight ?
+      {preflight:nedSafePreflight(receipt.preflight)} : {}),
     serverVerification:state.verified===true?'SERVER_BLANK_OBSERVED':
       (pending?'PENDING_CANCEL_AND_INDEPENDENT_READ':receipt.serverVerification || 'NOT_VERIFIED'),
     pendingServerVerification:pending,
