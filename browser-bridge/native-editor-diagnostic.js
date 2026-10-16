@@ -117,6 +117,78 @@ async function nedPageControl(request) {
     const nonemptyInputs = textareas.filter((node) => normalize(node.value).length > 0).length;
     const blocked = nonempty > 0 || nonemptyInputs > 0;
     if (!blocked) return null;
+    // Evidence-only text ownership scan: never read outside the already bound
+    // blocks, never export DOM strings/attributes, and never waive the dirty gate.
+    const provenance = (() => {
+      const limit = 160, leafLimit = 24;
+      const counts = {authoringText:0, editableOther:0, controlLike:0,
+        placeholderHint:0, hiddenDescendant:0, unknown:0};
+      const tags = {span:0, div:0, paragraph:0, button:0, other:0};
+      let visited = 0, leaves = 0, maxLeafLen = 0, truncated = false;
+      for (const block of allBlocks) {
+        if (!normalize(block.textContent)) continue;
+        const stack = [block];
+        while (stack.length) {
+          if (visited >= limit || leaves >= leafLimit) { truncated = true; break; }
+          const node = stack.pop();
+          if (!node) continue;
+          visited++;
+          if (node.nodeType !== 3) {
+            const children = [...(node.childNodes || [])];
+            for (let i=children.length-1; i>=0; i--) stack.push(children[i]);
+            continue;
+          }
+          const raw = normalize(node.nodeValue || '');
+          if (!raw) continue;
+          leaves++;
+          maxLeafLen = Math.max(maxLeafLen, raw.length);
+          let el = node.parentElement, depth=0;
+          let authoring=false, editable=false, control=false, placeholder=false, hidden=false;
+          const tag = el?.tagName === 'SPAN' ? 'span' :
+            el?.tagName === 'DIV' ? 'div' : el?.tagName === 'P' ? 'paragraph' :
+            el?.tagName === 'BUTTON' ? 'button' : 'other';
+          tags[tag]++;
+          while (el && depth++ < 24) {
+            const cls = (name) => el.classList?.contains?.(name) === true;
+            const attr = (name) => el.hasAttribute?.(name) === true;
+            if (cls('text')) authoring=true;
+            if (el.getAttribute?.('contenteditable') === 'true') editable=true;
+            if (el.tagName === 'BUTTON' || ['button','toolbar'].includes(el.getAttribute?.('role'))) control=true;
+            if (cls('placeholder') || attr('data-placeholder') || attr('placeholder') ||
+                attr('aria-placeholder')) placeholder=true;
+            if (el.hidden === true || attr('aria-hidden') && el.getAttribute?.('aria-hidden') === 'true') hidden=true;
+            try {
+              const style=getComputedStyle(el);
+              if (style.display === 'none' || style.visibility === 'hidden' ||
+                  style.visibility === 'collapse') hidden=true;
+            } catch (_) { truncated=true; }
+            if (el === block) break;
+            el=el.parentElement;
+          }
+          if (depth > 24 || el !== block) truncated=true;
+          // Categories are observations, not proof that any text is disposable.
+          const category = hidden ? 'hiddenDescendant' : authoring ? 'authoringText' :
+            control ? 'controlLike' : placeholder ? 'placeholderHint' :
+            editable ? 'editableOther' : 'unknown';
+          counts[category]++;
+        }
+        if (stack.length) truncated=true;
+        if (visited >= limit || leaves >= leafLimit) break;
+      }
+      const cap = (v) => Math.min(16,v);
+      return {schema:'LEAF_OWNER_V1',nonemptyLeafCount:cap(leaves),
+        inspectedNodeCount:cap(visited),incomplete:truncated || (nonempty>0 && leaves===0),
+        maxLeafLength:bucket(maxLeafLen),
+        authoringTextLeaves:cap(counts.authoringText),
+        editableOtherLeaves:cap(counts.editableOther),
+        controlLikeLeaves:cap(counts.controlLike),
+        placeholderHintLeaves:cap(counts.placeholderHint),
+        hiddenDescendantLeaves:cap(counts.hiddenDescendant),
+        unknownLeaves:cap(counts.unknown),
+        ownerTagSpan:cap(tags.span),ownerTagDiv:cap(tags.div),
+        ownerTagParagraph:cap(tags.paragraph),ownerTagButton:cap(tags.button),
+        ownerTagOther:cap(tags.other),ownershipProof:'NOT_ESTABLISHED'};
+    })();
     const reason = nonemptyInputs ? 'TEXTAREA_VALUE_PRESENT' :
       notVisible ? 'NONVISIBLE_BLOCK_CONTENT' :
       possibleAuthoring ? 'AUTHORING_SURFACE_CONTENT' :
@@ -132,7 +204,7 @@ async function nedPageControl(request) {
       nonvisibleNonemptyCount:bounded(notVisible),textareaCount:bounded(textareas.length),
       textareaState:nonemptyInputs ? 'HAS_VALUE' : textareas.length ? 'EMPTY' : 'NONE',
       maxBlockLength:bucket(maxBlockLength),maxAuthoringLength:bucket(maxSurfaceLength),
-      domCaretShape,ownershipProof:'NOT_ESTABLISHED'
+      domCaretShape,provenance,ownershipProof:'NOT_ESTABLISHED'
     }};
   };
   const state = window[KEY];
@@ -382,6 +454,28 @@ function nedRedacted(status, insertCount=0, extra={}) {
     saveDispatched:false,insertTextCount:insertCount,noSaveDispatched:true,
     serverVerification:'NOT_VERIFIED',...extra};
 }
+function nedSafeLeafProvenance(value) {
+  if (!value || value.schema !== 'LEAF_OWNER_V1') return null;
+  const count=(v)=>Number.isInteger(v)&&v>=0?Math.min(16,v):0;
+  const bucket=(v)=>['ZERO','ONE_TO_32','THIRTYTHREE_TO_128','OVER_128'].includes(v)?v:'UNVERIFIED';
+  return {schema:'LEAF_OWNER_V1',
+    nonemptyLeafCount:count(value.nonemptyLeafCount),
+    inspectedNodeCount:count(value.inspectedNodeCount),
+    incomplete:value.incomplete===true,
+    maxLeafLength:bucket(value.maxLeafLength),
+    authoringTextLeaves:count(value.authoringTextLeaves),
+    editableOtherLeaves:count(value.editableOtherLeaves),
+    controlLikeLeaves:count(value.controlLikeLeaves),
+    placeholderHintLeaves:count(value.placeholderHintLeaves),
+    hiddenDescendantLeaves:count(value.hiddenDescendantLeaves),
+    unknownLeaves:count(value.unknownLeaves),
+    ownerTagSpan:count(value.ownerTagSpan),
+    ownerTagDiv:count(value.ownerTagDiv),
+    ownerTagParagraph:count(value.ownerTagParagraph),
+    ownerTagButton:count(value.ownerTagButton),
+    ownerTagOther:count(value.ownerTagOther),
+    ownershipProof:'NOT_ESTABLISHED'};
+}
 function nedSafePreflight(value) {
   if (!value || typeof value !== 'object') return null;
   const allowed = (v, values, fallback) => values.includes(v) ? v : fallback;
@@ -402,7 +496,8 @@ function nedSafePreflight(value) {
     maxAuthoringLength:bucket(value.maxAuthoringLength),
     domCaretShape:allowed(value.domCaretShape,['NO_DOM_RANGE','NONCOLLAPSED_OR_MULTIPLE',
       'COLLAPSED_DOM_RANGE'],'UNVERIFIED'),
-    ownershipProof:'NOT_ESTABLISHED'
+    ownershipProof:'NOT_ESTABLISHED',
+    provenance:nedSafeLeafProvenance(value.provenance)
   };
 }
 function nedPageFailure(result,fallback) {
