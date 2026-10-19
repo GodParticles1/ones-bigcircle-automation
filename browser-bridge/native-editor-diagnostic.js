@@ -134,8 +134,20 @@ async function nedPageControl(request) {
           if (!node) continue;
           visited++;
           if (node.nodeType !== 3) {
-            const children = [...(node.childNodes || [])];
-            for (let i=children.length-1; i>=0; i--) stack.push(children[i]);
+            // A single DOM node can contain arbitrarily many siblings.
+            // A spread of childNodes defeats the visit/leaf budget; read only
+            // a bounded prefix and mark evidence incomplete instead.
+            const children = node.childNodes;
+            const total = Number.isSafeInteger(children?.length) && children.length >= 0
+              ? children.length : 0;
+            const take = Math.min(total, Math.max(0,limit-visited),
+              Math.max(0,leafLimit-leaves));
+            if (!children && node.hasChildNodes?.()) truncated = true;
+            if (total > take) truncated = true;
+            for (let i=take-1; i>=0; i--) {
+              const child = children[i];
+              if (child) stack.push(child);
+            }
             continue;
           }
           const raw = normalize(node.nodeValue || '');

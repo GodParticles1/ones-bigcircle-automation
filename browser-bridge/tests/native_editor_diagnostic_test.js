@@ -31,6 +31,12 @@ function harness(opts={}) {
   const leafNode={nodeType:3,nodeValue:leafText,parentElement:leafOwner};
   leafOwner.childNodes=leafText?[leafNode]:[];
   block.childNodes=leafText?[leafOwner]:[];
+  if(opts.hugeChildList) {
+    // Synthetic NodeList with a large declared length and forbidden iterator.
+    // The production probe must not spread/scan the entire collection.
+    block.childNodes={length:1000000,0:leafOwner,
+      [Symbol.iterator](){throw Error('SYNTHETIC_UNBOUNDED_ITERATOR');}};
+  }
   const anchor={nodeType:3,parentElement:block};
   const foreign={nodeType:3,parentElement:{closest:()=>opts.foreignEditor?{id:"other-editor"}:null}};
   const selection={anchorNode:anchor,focusNode:anchor,anchorOffset:0,focusOffset:0,rangeCount:1,isCollapsed:true};
@@ -335,4 +341,17 @@ test("unresolved text leaf remains blocked without fabricated provenance",async(
  assert.equal(r.preflight.provenance.authoringTextLeaves,0);
  assert.equal(r.preflight.ownershipProof,"NOT_ESTABLISHED");
  assert.equal(r.insertTextCount,0);
+});
+
+test("provenance scan stays bounded on one million synthetic siblings",async()=>{
+ const h=harness({accessoryText:"SYNTHETIC_UNKNOWN_LEAF",noTextSurface:true,hugeChildList:true});
+ const r=await h.run();
+ assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");
+ assert.equal(r.insertTextCount,0);
+ assert.equal(r.saveDispatched,false);
+ assert.equal(r.preflight.provenance.schema,"LEAF_OWNER_V1");
+ assert.equal(r.preflight.provenance.incomplete,true);
+ assert.equal(r.preflight.provenance.unknownLeaves,1);
+ assert.deepEqual(h.sent,[]);
+ assert.equal(JSON.stringify(r).includes("SYNTHETIC_UNKNOWN_LEAF"),false);
 });
