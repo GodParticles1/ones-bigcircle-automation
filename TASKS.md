@@ -223,6 +223,31 @@ Future packaging target: one Windows-side ONES Big-circle Agent that owns Local 
 
 Replace the developer-console layout with a compact product UI: connection/config card, status summary, manual actions, inventory/reconciliation summary, diagnostics drawer and settings. Visual direction may borrow the compact card/grid hierarchy shown by AI Exporter without copying its branding or assets.
 
+## P7 — Model-neutral Agent interoperability (future planning only)
+
+`LANE_STATE=QUEUED` / `IMPLEMENTATION=NOT_STARTED` / `PRODUCTION_WRITE=OFF`
+
+**Product intent:** evolve the accepted ONES-specific deterministic execution spine into optional Agent-assisted planning, browser diagnosis and eventually broader business UI workflows, without making a particular LLM, Agent harness, browser automation framework or cloud service mandatory. The first user experience is a natural-language request that leads to transparent **read -> plan -> approved bounded action -> independently verified result**. Never replace trusted exact task/field binding, evidence classification or fail-closed receipts with model guesses.
+
+**Three independent compatibility surfaces (not interchangeable):**
+
+- **Model provider:** configurable DeepSeek, OpenAI or other model adapters for planning/reasoning. Do not assume identical APIs, tool-calling guarantees, data-handling terms or performance; prove each supported integration in its actual configuration. Do not send ONES login material, private ticket text or raw browser DOM to a remote model by default.
+- **Agent runtime:** optional adapters for DeepSeek Harness (DSH's plugin runtime), local Codex CLI and other supported MCP/tool-capable runtimes. Codex cloud/Web access is separate and cannot be presumed to control the user's signed-in local Chrome or loopback Relay. No vendor-specific instructions should become ONES core business authority.
+- **Execution tools:** preserve the existing local Windows Agent, Browser Bridge, Local Relay, read-only field/inventory, reconciliation, planner and exact-receipt capabilities. Publish a **small, typed, versioned capability contract** for Agent callers, with MCP as the first interoperability candidate where both sides actually support it; allow a thin local CLI/adapter where needed. A DSH-specific plugin or Codex-specific connector is optional, not a required rewrite or dependency.
+
+**Candidate capability boundary:** start with read/status/plan/diagnostic and synthetic browser tasks. Treat page content, model responses and remote tool output as untrusted; authorize capabilities per task (read-only default), bind exact identity/field/origin, cap actions and budget, expose deterministic `NOOP/BLOCK/WAIT/verified` outcomes and provenance. A model may recommend actions, but only accepted deterministic executors may mutate state. Draft edits can autosync even without Save; require explicit scoped authorization, the existing one-attempt/no-hidden-retry rules and independent server readback. Create/import, destructive actions, bulk write, unsolicited Bilibili-style comments or other public posting are **not** activated by this roadmap.
+
+**Future bounded validation sequence:**
+
+1. Inventory already accepted ONES read-only tool primitives and define one versioned, privacy-safe `AgentToolRequest/Result` schema; no new mandatory daemon/OAuth/payment or separate control plane.
+2. Run the *same synthetic read-only ONES task* through at least two independently configured clients (candidate: DSH adapter and local Codex CLI adapter), comparing input identity, receipts, failure handling, tool permissions and no side effects. Do not claim compatibility from a README or protocol name alone.
+3. Pilot one operator-confirmed, locally authenticated Chrome/Bridge interaction only when actual browser access is demonstrated and with safe rollback/independent readback; a cloud CI success is not a live-browser pass.
+4. Consider single-field approved mutation/orchestrated multi-target automation only **after** Gate F2/#103 native-editor semantics and applicable #85/#86 runtime gates pass; retain the queued #97 task-level execution constraints and explicit separate write acceptance. Broader cross-site Agent workflows require their own evidence and owner.
+
+**Reference candidates, not frozen dependencies:** [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (plugin-based developer preview; potentially breaking changes), [dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll) (example of task-scoped read/write tools, not ONES runtime proof), [Codex CLI](https://github.com/openai/codex) (local coding-Agent candidate). Evaluate real API/adapter/version support before adopting any implementation.
+
+**Priority and stop:** research backlog only; no Writer assignment, new infrastructure, CI work or production permissions now. P5/P6 productization and existing Gate F2 stabilization must not wait on P7. Revisit when an accepted ONES tool boundary and a real testable Agent client are available; stop if proposed abstraction adds cost or risk without reducing operator effort.
+
 ## Deferred
 
 - automatic ONES create/import;
