@@ -227,6 +227,8 @@ Replace the developer-console layout with a compact product UI: connection/confi
 
 `LANE_STATE=QUEUED` / `IMPLEMENTATION=NOT_STARTED` / `PRODUCTION_WRITE=OFF`
 
+**Near-term Pro pilot (separate nonproduction slice):** [Issue #115](https://github.com/GodParticles1/ones-bigcircle-automation/issues/115) owns a bounded manifest-based plugin registry with reversible enable/disable/reload for new calls and a stable MCP/CLI facade. Its external-memory capability delegates to the **existing** chat-memory Memory Control Layer; [chat-memory #43](https://github.com/GodParticles1/chat-memory/issues/43) owns cross-Codex/Claude shared context and sourced-learning validation. These issues do not activate production writers, require a new backend, or make hot tool-list refresh in active Agent sessions a guaranteed feature.
+
 **Product intent:** evolve the accepted ONES-specific deterministic execution spine into optional Agent-assisted planning, browser diagnosis and eventually broader business UI workflows, without making a particular LLM, Agent harness, browser automation framework or cloud service mandatory. The first user experience is a natural-language request that leads to transparent **read -> plan -> approved bounded action -> independently verified result**. Never replace trusted exact task/field binding, evidence classification or fail-closed receipts with model guesses.
 
 **Three independent compatibility surfaces (not interchangeable):**
