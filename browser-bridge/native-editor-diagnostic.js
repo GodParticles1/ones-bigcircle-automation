@@ -220,7 +220,12 @@ async function nedPageControl(request) {
     }};
   };
   const state = window[KEY];
-  const fail = (status) => ({ok:false,status});
+  const stage = request.action === 'INSPECT' ?
+    (request.stage === 'INSPECT_2' ? 'INSPECT_2' : 'INSPECT_1') :
+    ['ARM','AFTER_NATIVE_CLICK','AFTER_CTRL_A','BEFORE_INSERT'].includes(request.action) ? request.action : null;
+  const phases = state?.phases || [];
+  const withPhase = (result) => stage ? {...result,phase:stage,phases:phases.slice()} : result;
+  const fail = (status) => withPhase({ok:false,status});
   const rootNow = () => {
     const all = [...document.querySelectorAll('div.standard-co-editor-editing.task-rich-text-edit')].filter(visible);
     const exact = all.filter((el) => el.id === request.field);
@@ -238,6 +243,37 @@ async function nedPageControl(request) {
         !route || route[1] !== request.team || route[2] !== request.display) return null;
     return rootNow();
   };
+  // Observe before checking a guard so a rejected phase remains diagnosable.
+  // The observations never grant authority, retarget a host or repair a selection.
+  const recordPhase = (root, bound=state) => {
+    if (!stage) return;
+    const bounded = (n, max=16) => Number.isInteger(n) && n >= 0 ? Math.min(max,n) : 0;
+    const block = bound?.block, host = bound?.host, active = document.activeElement;
+    const blocks = root ? [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible) : [];
+    const focused = blocks.filter((el) => el.classList.contains('focused'));
+    const selection = window.getSelection();
+    const dom = block?.isConnected ? domCaret(block) : null;
+    const native = bound?.hostKind === 'TEXTAREA' ? textareaCaret(host) : null;
+    const nativeHostFocused = !!host && host.isConnected && !!root?.contains(host) &&
+      (active === host || bound?.hostKind === 'CONTENTEDITABLE' && host.contains(active));
+    const proof = bound?.hostKind === 'TEXTAREA' && nativeHostFocused && native ? native : dom;
+    const observation = {stage,elapsedMs:bounded(Date.now()-(bound?.started || Date.now()),60000),
+      mutationCount:bounded(bound?.changed,65535),blockCount:bounded(blocks.length),
+      focusedBlockCount:bounded(focused.length),sameBoundBlock:focused.length===1 && focused[0]===block,
+      rootConnected:!!root?.isConnected,blockConnected:!!block?.isConnected && !!root?.contains(block),
+      hostConnected:!!host?.isConnected && !!root?.contains(host),hostKind:bound?.hostKind || 'UNVERIFIED',
+      nativeHostFocused,pageHasFocus:document.hasFocus?.() === true,
+      activeHostKind:active?.tagName === 'TEXTAREA' ? 'TEXTAREA' : active?.isContentEditable ? 'CONTENTEDITABLE' :
+        !active || active === document.body || active === document.documentElement ? 'NEUTRAL' : 'OTHER',
+      domRangeCount:bounded(selection?.rangeCount),domCollapsed:selection?.isCollapsed===true,
+      domInBoundBlock:!!block && !!selection?.anchorNode && !!selection?.focusNode &&
+        block.contains(selection.anchorNode) && block.contains(selection.focusNode),
+      selectionProof:proof?.selectionProof || 'NOT_PROVEN',anchorOffset:proof?.anchorOffset ?? null,
+      focusOffset:proof?.focusOffset ?? null,events:(bound?.events || []).slice(0,40)};
+    // A phase is recorded once, replacing only its provisional ARM observation.
+    if (phases.at(-1)?.stage === stage) phases[phases.length-1]=observation;
+    else if (phases.length < 6) phases.push(observation);
+  };
   if (request.action === 'CLEANUP') {
     if (state && state.run === request.run) {
       state.observer.disconnect();
@@ -254,12 +290,13 @@ async function nedPageControl(request) {
     if (!safe(request.field) || !safe(request.display) || !safe(request.team) ||
         !safe(request.run) || !/^NDP[0-9a-f]{12}$/.test(request.marker)) return fail('BLOCKED_IDENTITY');
     const root = current();
+    recordPhase(root);
     if (!root) return fail('BLOCKED_EDITOR_NOT_UNIQUE');
     const blocks = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible);
     const focused = blocks.filter((el) => el.classList.contains('focused'));
     if (blocks.length < 1 || focused.length !== 1) return fail('BLOCKED_FOCUSED_BLOCK_NOT_UNIQUE');
     const dirt = dirtyPreflight(root,'ARM');
-    if (dirt) return dirt;
+    if (dirt) return withPhase(dirt);
     const block = focused[0];
     const active = document.activeElement;
     // ONES may use a same-root sibling textarea.editor-input as its native input host.
@@ -309,7 +346,8 @@ async function nedPageControl(request) {
     }
     const next = {run:request.run, root, block, host:editorHost, hostKind, focusDeferred, preClickSelectionDeferred:!initialDomCaret, marker:request.marker,
       href:request.href, team:request.team, field:request.field, display:request.display,
-      started:Date.now(), samples:[], events:[], pending:Promise.resolve(), listeners:[], changed:0, inserted:false};
+      started:Date.now(), samples:[], events:[], phases, pending:Promise.resolve(), listeners:[], changed:0, inserted:false};
+    recordPhase(root,next);
     const sample = (kind) => {
       const t = Date.now() - next.started;
       const values = [...root.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible).map((el) => normalize(el.textContent));
@@ -344,10 +382,11 @@ async function nedPageControl(request) {
     next.observer.observe(root,{subtree:true,childList:true,characterData:true});
     window[KEY] = next;
     sample('ARM');
-    return {ok:true,status:'ARMED'};
+    return withPhase({ok:true,status:'ARMED'});
   }
   if (!state || state.run !== request.run) return fail('BLOCKED_STALE_SESSION');
   const root = current();
+  recordPhase(root);
   if (!root || root !== state.root || !state.block.isConnected || !root.contains(state.block)) {
     if (request.action === 'FINISH') {
       await state.pending;
@@ -360,11 +399,9 @@ async function nedPageControl(request) {
   const focused = blocks.filter((el) => el.classList.contains('focused'));
   if (focused.length !== 1 || focused[0] !== state.block) return fail('BLOCKED_FOCUS_DRIFT');
   const finishing = request.action === 'FINISH';
-  if (!finishing && (request.action === 'INSPECT' || request.action === 'AFTER_SELECT')) {
-    const stage = request.action === 'INSPECT' && request.stage === 'INSPECT_2' ? 'INSPECT_2' :
-      request.action === 'INSPECT' ? 'INSPECT_1' : 'AFTER_SELECT';
+  if (!finishing && stage) {
     const dirt = dirtyPreflight(root,stage);
-    if (dirt) return dirt;
+    if (dirt) return withPhase(dirt);
   }
   const rect = state.block.getBoundingClientRect();
   const x = Math.round(Math.min(rect.right-8,rect.left+18));
@@ -377,7 +414,7 @@ async function nedPageControl(request) {
       (state.hostKind === 'CONTENTEDITABLE' && state.host.contains(active)));
   // During pre-click INSPECT only, accept a browser-popup blur if the unique
   // host is still bound and no unrelated page control is the active element.
-  // AFTER_SELECT must prove the native click reacquired the exact bound host.
+  // Each post-click gate must prove the native click reacquired the exact host.
   const neutralBlur = state.focusDeferred && request.action === 'INSPECT' &&
     document.hasFocus?.() === false &&
     (!active || active === document.body || active === document.documentElement);
@@ -400,12 +437,12 @@ async function nedPageControl(request) {
     proof = state.postClickSelection || {anchorOffset:null,focusOffset:null,collapsed:false,
       selectionProof:'NOT_PROVEN'};
   } else if (state.hostKind === 'TEXTAREA') {
-    // AFTER_SELECT also requires hasNativeFocus above: only the one real CDP
+    // Post-click gates also require hasNativeFocus above: only the one real CDP
     // click may restore the bound textarea; its own collapsed caret is authority.
     if (!actualTextareaCaret) return fail('BLOCKED_TEXTAREA_SELECTION');
     proof = actualTextareaCaret;
   } else {
-    if (!actualDomCaret && (request.action === 'AFTER_SELECT' ||
+    if (!actualDomCaret && (['AFTER_NATIVE_CLICK','AFTER_CTRL_A','BEFORE_INSERT'].includes(request.action) ||
         document.hasFocus?.() !== false || (!hasNativeFocus && !neutralBlur)))
       return fail('BLOCKED_SELECTION_DRIFT');
     proof = actualDomCaret || {anchorOffset:null,focusOffset:null,collapsed:false,
@@ -414,13 +451,13 @@ async function nedPageControl(request) {
   const {anchorOffset, focusOffset, collapsed, selectionProof} = proof;
   if (request.action === 'INSPECT') {
     state.sample('PREFLIGHT');
-    return {ok:true,status:'READY',point:{x,y},blockCount:blocks.length,focusedCount:focused.length,
-      anchorOffset,focusOffset,collapsed,selectionProof,hostKind:state.hostKind,focusDeferred:state.focusDeferred,elapsedMs:Date.now()-state.started};
+    return withPhase({ok:true,status:'READY',point:{x,y},blockCount:blocks.length,focusedCount:focused.length,
+      anchorOffset,focusOffset,collapsed,selectionProof,hostKind:state.hostKind,focusDeferred:state.focusDeferred,elapsedMs:Date.now()-state.started});
   }
-  if (request.action === 'AFTER_SELECT') {
+  if (['AFTER_NATIVE_CLICK','AFTER_CTRL_A','BEFORE_INSERT'].includes(request.action)) {
     state.postClickSelection=proof;
-    state.sample('AFTER_SELECT');
-    return {ok:true,status:'SELECTION_READY',point:{x,y},anchorOffset,focusOffset,collapsed,selectionProof};
+    state.sample(request.action);
+    return withPhase({ok:true,status:'SELECTION_READY',point:{x,y},anchorOffset,focusOffset,collapsed,selectionProof});
   }
   if (request.action !== 'FINISH') return fail('BLOCKED_UNKNOWN_ACTION');
   state.sample('FINAL');
@@ -466,6 +503,41 @@ function nedRedacted(status, insertCount=0, extra={}) {
     saveDispatched:false,insertTextCount:insertCount,noSaveDispatched:true,
     serverVerification:'NOT_VERIFIED',...extra};
 }
+function nedSafePhaseName(value) {
+  return ['ARM','INSPECT_1','INSPECT_2','AFTER_NATIVE_CLICK','AFTER_CTRL_A','BEFORE_INSERT'].includes(value)
+    ? value : 'UNVERIFIED';
+}
+function nedSafePhases(value) {
+  if (!Array.isArray(value)) return [];
+  const count = (v,max=16) => Number.isInteger(v) && v >= 0 ? Math.min(max,v) : 0;
+  const offset = (v) => Number.isInteger(v) && v >= 0 ? Math.min(256,v) : null;
+  const choice = (v,allowed) => allowed.includes(v) ? v : 'UNVERIFIED';
+  return value.slice(0,6).map((p) => ({
+    stage:nedSafePhaseName(p?.stage),elapsedMs:count(p?.elapsedMs,60000),
+    mutationCount:count(p?.mutationCount,65535),blockCount:count(p?.blockCount),
+    focusedBlockCount:count(p?.focusedBlockCount),sameBoundBlock:p?.sameBoundBlock===true,
+    rootConnected:p?.rootConnected===true,blockConnected:p?.blockConnected===true,
+    hostConnected:p?.hostConnected===true,nativeHostFocused:p?.nativeHostFocused===true,
+    pageHasFocus:p?.pageHasFocus===true,hostKind:choice(p?.hostKind,['TEXTAREA','CONTENTEDITABLE']),
+    activeHostKind:choice(p?.activeHostKind,['TEXTAREA','CONTENTEDITABLE','NEUTRAL','OTHER']),
+    domRangeCount:count(p?.domRangeCount),domCollapsed:p?.domCollapsed===true,
+    domInBoundBlock:p?.domInBoundBlock===true,
+    selectionProof:choice(p?.selectionProof,['NATIVE_TEXTAREA_CARET','DOM_IN_BOUND_BLOCK','NOT_PROVEN']),
+    anchorOffset:offset(p?.anchorOffset),focusOffset:offset(p?.focusOffset),
+    events:Array.isArray(p?.events) ? p.events.slice(0,40).map((e) => ({
+      t:count(e?.t,60000),type:choice(e?.type,['beforeinput','input','compositionstart','compositionupdate','compositionend']),
+      trusted:e?.trusted===true,inputType:choice(e?.inputType,['insertText','insertCompositionText',
+        'insertFromComposition','deleteCompositionText','deleteContentBackward','deleteContentForward',
+        'insertParagraph','insertLineBreak','historyUndo','historyRedo']),
+      cancelable:e?.cancelable===true,preventedCapture:e?.preventedCapture===true,
+      preventedAfter:e?.preventedAfter===true,boundBlock:e?.boundBlock===true,isComposing:e?.isComposing===true
+    })) : []
+  }));
+}
+function nedPhaseReceipt(result) {
+  return result?.phase || Array.isArray(result?.phases)
+    ? {phase:nedSafePhaseName(result?.phase),phases:nedSafePhases(result?.phases)} : {};
+}
 function nedSafeLeafProvenance(value) {
   if (!value || value.schema !== 'LEAF_OWNER_V1') return null;
   const count=(v)=>Number.isInteger(v)&&v>=0?Math.min(16,v):0;
@@ -494,7 +566,7 @@ function nedSafePreflight(value) {
   const count = (v) => Number.isInteger(v) && v >= 0 ? Math.min(16,v) : 0;
   const bucket = (v) => allowed(v,['ZERO','ONE_TO_32','THIRTYTHREE_TO_128','OVER_128'],'UNVERIFIED');
   return {
-    stage:allowed(value.stage,['ARM','INSPECT_1','INSPECT_2','AFTER_SELECT'],'UNVERIFIED'),
+    stage:nedSafePhaseName(value.stage),
     reason:allowed(value.reason,['TEXTAREA_VALUE_PRESENT','NONVISIBLE_BLOCK_CONTENT',
       'AUTHORING_SURFACE_CONTENT','UNCLASSIFIED_BLOCK_TEXT'],'UNVERIFIED'),
     nonemptyBlockCount:count(value.nonemptyBlockCount),
@@ -515,8 +587,9 @@ function nedSafePreflight(value) {
 function nedPageFailure(result,fallback) {
   const status = typeof result?.status === 'string' && /^BLOCKED_[A-Z_]{1,70}$/.test(result.status)
     ? result.status : fallback;
-  return nedRedacted(status,0,status === 'BLOCKED_DIRTY_DRAFT' && result?.preflight
-    ? {preflight:nedSafePreflight(result.preflight)} : {});
+  return nedRedacted(status,0,{...nedPhaseReceipt(result),
+    ...(status === 'BLOCKED_DIRTY_DRAFT' && result?.preflight
+      ? {preflight:nedSafePreflight(result.preflight)} : {})});
 }
 async function nedCurrentTab(config, tabId, expectedHref) {
   const active = await chrome.tabs.query({active:true,currentWindow:true});
@@ -540,6 +613,7 @@ async function nedRun(config, tabId) {
   nedInFlight = true;
   const tabTarget = {tabId};
   let run=null,armed=false,attached=false,insertCount=0;
+  let pageRequest=null;
   let pending=null;
   let status='BLOCKED_PREFLIGHT';
   try {
@@ -555,6 +629,7 @@ async function nedRun(config, tabId) {
     const marker='NDP'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
     const req={href:target.href,origin:config.onesOrigin,team:config.teamUuid,
       display:target.display,field:config.rootCauseFieldId,run,marker};
+    pageRequest=req;
     const ident=await nedExecuteScript(tabId,nedPageResolve,[req]);
     if (!nedId(ident?.taskUuid)) return nedRedacted('BLOCKED_TASK_IDENTITY');
     const taskUuid=ident.taskUuid;
@@ -586,13 +661,23 @@ async function nedRun(config, tabId) {
     await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x,y:point.y});
     await send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1});
     await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x,y:point.y,button:'left',clickCount:1});
+    const clicked=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'AFTER_NATIVE_CLICK'}]);
+    if (!clicked?.ok) return nedPageFailure(clicked,'BLOCKED_SELECTION_UNCERTAIN');
+    if (!clicked.point || Math.abs(point.x-clicked.point.x)>2 || Math.abs(point.y-clicked.point.y)>2) {
+      return nedRedacted('BLOCKED_COORDINATE_DRIFT',0,nedPhaseReceipt(clicked));
+    }
     await send('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,nativeVirtualKeyCode:65});
     await send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,nativeVirtualKeyCode:65});
     await nedWait(80);
-    const selected=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'AFTER_SELECT'}]);
+    const selected=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'AFTER_CTRL_A'}]);
     if (!selected?.ok) return nedPageFailure(selected,'BLOCKED_SELECTION_UNCERTAIN');
     if (!selected.point || Math.abs(point.x-selected.point.x)>2 || Math.abs(point.y-selected.point.y)>2) {
-      return nedRedacted('BLOCKED_COORDINATE_DRIFT');
+      return nedRedacted('BLOCKED_COORDINATE_DRIFT',0,nedPhaseReceipt(selected));
+    }
+    const ready=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'BEFORE_INSERT'}]);
+    if (!ready?.ok) return nedPageFailure(ready,'BLOCKED_SELECTION_UNCERTAIN');
+    if (!ready.point || Math.abs(point.x-ready.point.x)>2 || Math.abs(point.y-ready.point.y)>2) {
+      return nedRedacted('BLOCKED_COORDINATE_DRIFT',0,nedPhaseReceipt(ready));
     }
     // Counts attempted sends, including an ambiguous rejection/timeout. Never retry.
     insertCount=1;
@@ -601,7 +686,7 @@ async function nedRun(config, tabId) {
     const result=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'FINISH'}]);
     status=result?.status || 'TRACE_UNCERTAIN';
     if (!result?.trace) return nedRedacted('TRACE_UNCERTAIN',insertCount);
-    const receipt=nedRedacted(status,insertCount,{trace:result.trace,
+    const receipt=nedRedacted(status,insertCount,{trace:result.trace,...nedPhaseReceipt(ready),
       serverVerification:'PENDING_CANCEL_AND_INDEPENDENT_READ',
       warning:'SHAREDDOC_MAY_AUTOSYNC_CANCEL_IS_NOT_PROOF'});
     await nedSaveState({...pending,lastReceipt:receipt});
@@ -613,11 +698,9 @@ async function nedRun(config, tabId) {
     if (armed && run) {
       try {const stored=await nedLoadState();
         if (stored?.run===run && !stored?.lastReceipt) await nedSaveState({...stored,lastReceipt:nedRedacted(status,insertCount)});
-        // cleanup uses exact run only; cannot touch another instrumented editor
-        const s=await nedLoadState();
-        if (s?.href && s?.field) await nedExecuteScript(tabId,nedPageControl,[{
-          action:'CLEANUP',run,href:s.href,origin:s.origin,team:s.team,display:s.display,field:s.field
-        }]);
+        // Pre-CDP rejection has no durable pending transaction, but must still
+        // remove its exact-run local listeners. Cleanup never edits draft data.
+        if (pageRequest) await nedExecuteScript(tabId,nedPageControl,[{...pageRequest,action:'CLEANUP'}]);
       } catch (_) {}
     }
     if (attached) {try {await chrome.debugger.detach(tabTarget);} catch (_) {}}
@@ -642,7 +725,7 @@ async function nedVerify(config,tabId) {
     const status=(a==='NONEMPTY'||b==='NONEMPTY')?'SERVER_CHANGED_ESCALATE':
       (a==='BLANK'&&b==='BLANK')?'SERVER_BLANK_OBSERVED':'SERVER_UNVERIFIED';
     const receipt=nedRedacted(status,old.lastReceipt?.insertTextCount || 0,{
-      serverVerification:status,warning:'CANCEL_DOES_NOT_PROVE_AUTOSYNC_ABSENT'});
+      ...nedPhaseReceipt(old.lastReceipt),serverVerification:status,warning:'CANCEL_DOES_NOT_PROVE_AUTOSYNC_ABSENT'});
     await nedSaveState({...old,pending:status!=='SERVER_BLANK_OBSERVED',
       verified:status==='SERVER_BLANK_OBSERVED',lastReceipt:receipt});
     return receipt;
@@ -662,6 +745,7 @@ async function nedRunWithReceipt(config, tabId) {
     /^(?:BLOCKED|TRACE|SERVER|DIAGNOSTIC|NOT_RUN)[A-Z0-9_]{0,80}$/.test(receipt.status)
       ? receipt.status : 'BLOCKED_UNCERTAIN';
   const savedReceipt = nedRedacted(status, receipt?.insertTextCount === 1 ? 1 : 0, {
+    ...nedPhaseReceipt(receipt),
     serverVerification:receipt?.serverVerification || 'NOT_VERIFIED',
     ...(receipt?.trace ? {trace:receipt.trace} : {}),
     ...(receipt?.status === 'BLOCKED_DIRTY_DRAFT' && receipt.preflight ?
@@ -688,6 +772,7 @@ globalThis.onesNativeEditorDiagnosticLast = async () => {
   return nedRedacted(receipt.status,receipt.insertTextCount||0,{
     ok:!pending && state.verified===true && receipt.status==='SERVER_BLANK_OBSERVED',
     trace:receipt.trace,
+    ...nedPhaseReceipt(receipt),
     ...(receipt.status === 'BLOCKED_DIRTY_DRAFT' && receipt.preflight ?
       {preflight:nedSafePreflight(receipt.preflight)} : {}),
     serverVerification:state.verified===true?'SERVER_BLANK_OBSERVED':
