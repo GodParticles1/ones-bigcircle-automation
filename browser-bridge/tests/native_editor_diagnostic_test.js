@@ -14,7 +14,7 @@ function harness(opts={}) {
     isConnected:true,classList:{contains:(name)=>name==='focused' && !opts.noFocus},
     querySelectorAll:(q)=>q===".text"&&!opts.noTextSurface&&(opts.authoringText||opts.accessoryText||opts.emptySurface)?[textSurface]:[],
     getBoundingClientRect:()=>rect,contains:(x)=>x===block||x===anchor};
-  const hiddenBlock={textContent:opts.hiddenDraft||"",isConnected:true,classList:{contains:()=>false},
+  const hiddenBlock={textContent:opts.hiddenDraft||"",isConnected:true,classList:{contains:(name)=>name==='focused' && !!opts.extraFocused},
     querySelectorAll:q=>q===".text"?[{textContent:opts.hiddenDraft||""}]:[],
     getBoundingClientRect:()=>rect,contains:(x)=>x===hiddenBlock};
   // Real DOM-shaped, synthetic-only text ownership fixtures. Never use real editor content.
@@ -55,7 +55,7 @@ function harness(opts={}) {
   const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor,...(opts.textarea?[textarea]:[])].includes(x),
     querySelectorAll:q=>q==="textarea.editor-input"?opts.textarea?[textarea,...(opts.twoTextareas?[{...textarea}]:[])]:[]:
       q==='[contenteditable="true"]'?opts.textarea?[]:[host]:
-      q.startsWith(".text-block[")?(opts.hiddenDraft?[block,hiddenBlock]:[block]):[block],
+      q.startsWith(".text-block[")?(opts.hiddenDraft||opts.extraFocused?[block,hiddenBlock]:[block]):[block],
     getBoundingClientRect:()=>rect};
   const doc={get activeElement(){return active},body:{},documentElement:{},hasFocus:()=>!opts.popupBlur,querySelectorAll:q=>q==="[id]"?[root]:q.startsWith("div.standard-")?opts.noEditor?[]:[root]:[],
     querySelector:()=>null,elementFromPoint:()=>block,
@@ -65,6 +65,10 @@ function harness(opts={}) {
   const chrome={tabs:{query:async()=>[{id:1,url:opts.changedHash?href.replace("/team/t/","/team/other/"):href}],get:async()=>({url:opts.badTab?href+"/wrong":opts.changedHash?href.replace("/team/t/","/team/other/"):href,status:"complete"})},
     permissions:{contains:async()=>true},storage:{session:{get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)}},
     scripting:{executeScript:async({func,args})=>{
+      if(func.name==="nedPageControl" && args[0]?.action==="BEFORE_INSERT" && opts.rebindBeforeInsert) {
+        block.isConnected=false;
+        for(const f of observers) f();
+      }
       if(func.name==="nedPageControl" && args[0]?.action==="INSPECT") {
         opts.inspectCalls=(opts.inspectCalls||0)+1;
         if(opts.secondInspectSelectionLost && opts.inspectCalls===2) {
@@ -78,7 +82,12 @@ function harness(opts={}) {
           opts.authoringText=textSurface.textContent;
         }
       }
-      return [{result:await func(...args)}];
+      const result=await func(...args);
+      if(func.name==="nedPageControl" && args[0]?.action==="AFTER_NATIVE_CLICK" && opts.poisonPhase) {
+        result.phases=[{stage:"PRIVATE_RAW_STAGE",activeHostKind:"PRIVATE_RAW_VALUE",focusedBlockCount:1e9,
+          elapsedMs:Infinity,raw:"SYNTHETIC_PRIVATE_PHASE",events:Array(100).fill({type:"PRIVATE_EVENT"})}];
+      }
+      return [{result}];
     }},
     debugger:{attach:async()=>{if(opts.conflict)throw Error("private debugger details")},detach:async()=>{},
       sendCommand:async(_t,method,args)=>{
@@ -88,6 +97,13 @@ function harness(opts={}) {
           if(opts.postClickSelectionInvalid) {selection.rangeCount=0;selection.anchorNode=null;selection.focusNode=null;}
           if(opts.postClickTextareaRange) textarea.selectionEnd=1;
           if(opts.postClickWrongHost) active={tagName:"INPUT"};
+          if(opts.clickFocusDrift) opts.noFocus=true;
+          if(opts.navigateAfterClick) opts.badTab=true;
+        }
+        if(method==="Input.dispatchKeyEvent" && args.type==="keyUp") {
+          if(opts.ctrlAFocusDrift) opts.noFocus=true;
+          if(opts.ctrlAMultipleBlocks) opts.extraFocused=true;
+          if(opts.ctrlASelectionDrift) selection.isCollapsed=false;
         }
         if(method==="Input.insertText"){
           const event={target:block,isTrusted:true,inputType:"insertText",cancelable:true,defaultPrevented:false,isComposing:false};
@@ -102,14 +118,15 @@ function harness(opts={}) {
   };
   const context=vm.createContext({chrome,URL,crypto:webcrypto,TextEncoder,window:{getSelection:()=>selection,APP_VERSION:"3.14.0"},
     document:doc,location,fetch:async()=>({ok:!opts.badIdentity,json:async()=>({display_id:"SYN-1",task_uuid:"task"})}),
-    getComputedStyle:(node)=>({display:node===hiddenBlock||node===leafOwner&&opts.hiddenLeaf?"none":"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
+    getComputedStyle:(node)=>({display:node===hiddenBlock&&!opts.extraFocused||node===leafOwner&&opts.hiddenLeaf?"none":"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
     MutationObserver:class{constructor(f){this.f=f}observe(){observers.push(this.f)}disconnect(){const i=observers.indexOf(this.f);if(i>=0)observers.splice(i,1)}},
     queueMicrotask,setTimeout:(f)=>setImmediate(f),console,
     relayReadTaskFields:async(_s,p)=>({ok:!opts.badRead,complete:!opts.badRead,readOnly:true,requestedTaskCount:1,fieldId:p.fieldId,
       reads:[{status:"READ_VERIFIED",onesTaskUuid:"task",fieldId:p.fieldId,value:opts.nonempty?"something":""}]}),
     validatedOnesScope:()=>config});
   vm.runInContext(source,context);
-  return {sent,root,opts,blur:()=>{active=null;opts.popupBlur=true},run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
+  return {sent,root,opts,armed:()=>!!context.window[Symbol.for('ones.native.editor.diagnostic.v1')],
+    blur:()=>{active=null;opts.popupBlur=true},run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
     verify:()=>context.onesNativeEditorDiagnosticVerify(config,1),last:()=>context.onesNativeEditorDiagnosticLast()};
 }
 test("one insert, metadata-only events, zero Save",async()=>{const h=harness(),r=await h.run();
@@ -354,4 +371,84 @@ test("provenance scan stays bounded on one million synthetic siblings",async()=>
  assert.equal(r.preflight.provenance.unknownLeaves,1);
  assert.deepEqual(h.sent,[]);
  assert.equal(JSON.stringify(r).includes("SYNTHETIC_UNKNOWN_LEAF"),false);
+});
+
+test("phase gates distinguish native click focus loss from Ctrl+A drift before input",async()=>{
+  for(const [options,stage,keyCount,reason] of [
+    [{clickFocusDrift:true},"AFTER_NATIVE_CLICK",0,"BLOCKED_FOCUS_DRIFT"],
+    [{ctrlAFocusDrift:true},"AFTER_CTRL_A",2,"BLOCKED_FOCUS_DRIFT"],
+    [{ctrlAMultipleBlocks:true},"AFTER_CTRL_A",2,"BLOCKED_FOCUS_DRIFT"],
+    [{ctrlASelectionDrift:true},"AFTER_CTRL_A",2,"BLOCKED_SELECTION_DRIFT"]
+  ]) {
+    const h=harness(options),r=await h.run(),last=await h.last();
+    assert.equal(r.status,reason);
+    assert.equal(r.phase,stage);
+    assert.equal(r.phases.at(-1).stage,stage);
+    assert.equal(h.sent.filter(x=>x==="Input.dispatchKeyEvent").length,keyCount);
+    assert.equal(h.sent.includes("Input.insertText"),false);
+    assert.equal(r.saveDispatched,false);
+    assert.equal(last.phase,stage);
+    assert.deepEqual(JSON.parse(JSON.stringify(last.phases)),JSON.parse(JSON.stringify(r.phases)));
+    assert.equal(last.pendingServerVerification,true);
+    assert.equal((await h.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+  }
+});
+test("every successful pre-insert phase records bounded same-host and selection evidence",async()=>{
+  for(const options of [{},{textarea:true,emptySelection:true}]) {
+    const h=harness(options),r=await h.run();
+    assert.equal(r.status,"TRACE_EXACT_ONCE");
+    assert.deepEqual(Array.from(r.phases,p=>p.stage),
+      ["ARM","INSPECT_1","INSPECT_2","AFTER_NATIVE_CLICK","AFTER_CTRL_A","BEFORE_INSERT"]);
+    for(const p of r.phases) {
+      assert.equal(p.sameBoundBlock,true);assert.equal(p.hostConnected,true);
+      assert.equal(p.focusedBlockCount,1);assert.equal(p.nativeHostFocused,true);
+      assert.equal(typeof p.elapsedMs,"number");assert.equal(typeof p.mutationCount,"number");
+      assert.equal(p.hostKind,options.textarea?"TEXTAREA":"CONTENTEDITABLE");
+    }
+    assert.equal(r.phases.at(-1).selectionProof,options.textarea?"NATIVE_TEXTAREA_CARET":"DOM_IN_BOUND_BLOCK");
+    assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+    assert.equal((await h.last()).phases.length,6);
+  }
+});
+test("async block rebind before insertion is phase-specific and does not resend",async()=>{
+  const h=harness({rebindBeforeInsert:true}),r=await h.run(),last=await h.last();
+  assert.equal(r.status,"BLOCKED_DOM_DRIFT");assert.equal(r.phase,"BEFORE_INSERT");
+  assert.equal(r.phases.at(-1).blockConnected,false);
+  assert.equal(r.phases.at(-1).mutationCount,1);
+  assert.equal(last.pendingServerVerification,true);
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,0);
+});
+test("stale active tab after native click stops before Ctrl+A and preserves pending barrier",async()=>{
+  const h=harness({navigateAfterClick:true}),r=await h.run();
+  assert.equal(r.status,"BLOCKED_UNCERTAIN");
+  assert.equal(h.sent.filter(x=>x==="Input.dispatchKeyEvent").length,0);
+  assert.equal(h.sent.includes("Input.insertText"),false);
+  assert.equal((await h.last()).pendingServerVerification,true);
+});
+test("failed independent verification retains phase evidence and cannot clear pending",async()=>{
+  const h=harness({clickFocusDrift:true}),r=await h.run();
+  h.root.isConnected=false;h.opts.badRead=true;
+  const verify=await h.verify(),last=await h.last();
+  assert.equal(verify.status,"SERVER_UNVERIFIED");
+  assert.equal(last.pendingServerVerification,true);
+  assert.equal(last.phase,r.phase);
+  assert.equal((await h.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+  assert.equal(h.sent.includes("Input.insertText"),false);
+});
+test("pre-CDP phase rejection removes only its local observer session without creating pending",async()=>{
+  const h=harness({dirtyAtInspect:1}),r=await h.run();
+  assert.equal(r.status,"BLOCKED_DIRTY_DRAFT");assert.equal(r.phase,"INSPECT_1");
+  assert.equal(h.armed(),false);
+  assert.equal((await h.last()).pendingServerVerification,false);
+  assert.deepEqual(h.sent,[]);
+});
+test("phase receipts whitelist malformed metadata and do not trust oversized page payloads",async()=>{
+  const h=harness({clickFocusDrift:true,poisonPhase:true}),r=await h.run(),last=await h.last();
+  for(const receipt of [r,last]) {
+    assert.ok(receipt.phases.length<=6);
+    assert.equal(JSON.stringify(receipt).includes("PRIVATE_"),false);
+    assert.equal(receipt.phases.at(-1).focusedBlockCount,16);
+    assert.equal(receipt.phases.at(-1).stage,"UNVERIFIED");
+    assert.equal(receipt.phases.at(-1).elapsedMs,0);
+  }
 });

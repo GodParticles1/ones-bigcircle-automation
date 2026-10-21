@@ -329,3 +329,34 @@ test('privacy-safe dirty-block receipt survives popup reopen without diagnostic 
  }
  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
 });
+
+test('phase focus evidence survives popup reopen through bounded metadata whitelist',async()=>{
+ const env=environment(),secret='SYNTHETIC_PRIVATE_PHASE';
+ env.setLast({status:'BLOCKED_FOCUS_DRIFT',insertTextCount:0,saveDispatched:false,
+  pendingServerVerification:true,phase:'AFTER_NATIVE_CLICK',phases:[
+   {stage:'AFTER_NATIVE_CLICK',elapsedMs:481,mutationCount:1,blockCount:2,
+    focusedBlockCount:0,sameBoundBlock:false,hostKind:'TEXTAREA',activeHostKind:'TEXTAREA',
+    hostConnected:true,blockConnected:true,rootConnected:true,nativeHostFocused:true,
+    domRangeCount:0,domCollapsed:true,domInBoundBlock:false,selectionProof:'NATIVE_TEXTAREA_CARET',
+    anchorOffset:0,focusOffset:0,raw:secret,
+    events:[{type:'beforeinput',inputType:'insertText',trusted:true,raw:secret}]}]});
+ for(let i=0;i<2;i++) {
+  const p=await ready(env);await flush();
+  const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+  assert.equal(shown.phase,'AFTER_NATIVE_CLICK');
+  assert.equal(shown.phases[0].focusedBlockCount,0);
+  assert.equal(shown.phases[0].hostKind,'TEXTAREA');
+  assert.equal(shown.phases[0].events[0].type,'beforeinput');
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ }
+ env.setLast({status:'BLOCKED_FOCUS_DRIFT',phase:secret,
+   phases:Array(100).fill({stage:secret,hostKind:secret,focusedBlockCount:1e9,
+    elapsedMs:Infinity,events:Array(100).fill({type:secret,inputType:secret,raw:secret}),raw:secret})});
+ const p=await ready(env);await flush();
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.phase,'UNVERIFIED');assert.equal(shown.phases.length,6);
+ assert.equal(shown.phases[0].focusedBlockCount,16);
+ assert.equal(shown.phases[0].elapsedMs,0);assert.equal(shown.phases[0].events.length,40);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});

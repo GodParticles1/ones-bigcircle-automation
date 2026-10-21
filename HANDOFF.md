@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-10-21 Gate F2 local Leader continuation
+
+- DONE: #110 now records `ARM / INSPECT_1 / INSPECT_2 / AFTER_NATIVE_CLICK / AFTER_CTRL_A / BEFORE_INSERT` with bounded metadata retained through popup reopening and server verification. Click-phase rejection stops before Ctrl+A. Pre-CDP rejection removes only this run's instrumentation. Independent source review passed; Writer/manifest are unchanged.
+- CURRENT: continue the existing `tooling/gate-f2-oneclick-native-probe` / PR #111 and `release/gate-f2-native-diagnostic-bundle` / PR #113. Both remain Draft / MERGE_HOLD. #112 owns candidate packaging; frozen legacy tests/builds use exact `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f` instead of modified diagnostic source.
+- NEXT: after exact-head CI/package verification, establish canonical current-account = exact issue-assignee identity and two fresh empty-field server reads. Obtain a concrete per-run confirmation before synthetic input; retain the existing pending/readback/restore gates.
+- BLOCKERS: the local browser-control tool denied raw CDP by saved permission policy. No alternate control path may bypass that denial. Canonical owner proof and real editor input/Save/server consistency remain unverified; this patch is instrumentation, not a Writer repair or acceptance. Keep WRITE_GATE=OFF and #103 blocked.
+
 ## Integrated bases
 
 - Browser Bridge v0.4.1: integrated on main by merge `89c131d56e156c2977889670ee844392d7eef3f4`; Issue #12 setup-draft persistence correction is closed.

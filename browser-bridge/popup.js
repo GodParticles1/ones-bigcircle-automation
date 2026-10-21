@@ -189,12 +189,40 @@ function nativeDiagReceipt(value) {
     "insertTextCount","noSaveDispatched","serverVerification","pendingServerVerification","interrupted","warning","trace"];
   const out=Object.fromEntries(accepted.filter((k) => Object.prototype.hasOwnProperty.call(value || {},k))
     .map((k) => [k,value[k]]));
+  const phaseNames=["ARM","INSPECT_1","INSPECT_2","AFTER_NATIVE_CLICK","AFTER_CTRL_A","BEFORE_INSERT"];
+  const phaseEnum=(v,values)=>values.includes(v)?v:"UNVERIFIED";
+  const phaseCount=(v,max=16)=>Number.isInteger(v)&&v>=0?Math.min(v,max):0;
+  const phaseOffset=(v)=>Number.isInteger(v)&&v>=0?Math.min(v,256):null;
+  if (value?.phase || Array.isArray(value?.phases)) {
+    out.phase=phaseEnum(value.phase,phaseNames);
+    out.phases=Array.isArray(value.phases)?value.phases.slice(0,6).map((p)=>({
+      stage:phaseEnum(p?.stage,phaseNames),elapsedMs:phaseCount(p?.elapsedMs,60000),
+      mutationCount:phaseCount(p?.mutationCount,65535),blockCount:phaseCount(p?.blockCount),
+      focusedBlockCount:phaseCount(p?.focusedBlockCount),sameBoundBlock:p?.sameBoundBlock===true,
+      rootConnected:p?.rootConnected===true,blockConnected:p?.blockConnected===true,
+      hostConnected:p?.hostConnected===true,nativeHostFocused:p?.nativeHostFocused===true,
+      pageHasFocus:p?.pageHasFocus===true,hostKind:phaseEnum(p?.hostKind,["TEXTAREA","CONTENTEDITABLE"]),
+      activeHostKind:phaseEnum(p?.activeHostKind,["TEXTAREA","CONTENTEDITABLE","NEUTRAL","OTHER"]),
+      domRangeCount:phaseCount(p?.domRangeCount),domCollapsed:p?.domCollapsed===true,
+      domInBoundBlock:p?.domInBoundBlock===true,
+      selectionProof:phaseEnum(p?.selectionProof,["NATIVE_TEXTAREA_CARET","DOM_IN_BOUND_BLOCK","NOT_PROVEN"]),
+      anchorOffset:phaseOffset(p?.anchorOffset),focusOffset:phaseOffset(p?.focusOffset),
+      events:Array.isArray(p?.events)?p.events.slice(0,40).map((e)=>({
+        t:phaseCount(e?.t,60000),type:phaseEnum(e?.type,["beforeinput","input","compositionstart","compositionupdate","compositionend"]),
+        trusted:e?.trusted===true,inputType:phaseEnum(e?.inputType,["insertText","insertCompositionText",
+          "insertFromComposition","deleteCompositionText","deleteContentBackward","deleteContentForward",
+          "insertParagraph","insertLineBreak","historyUndo","historyRedo"]),
+        cancelable:e?.cancelable===true,preventedCapture:e?.preventedCapture===true,
+        preventedAfter:e?.preventedAfter===true,boundBlock:e?.boundBlock===true,isComposing:e?.isComposing===true
+      })):[]
+    })):[];
+  }
   const raw=value?.preflight;
   if (value?.status==="BLOCKED_DIRTY_DRAFT" && raw && typeof raw==="object") {
     const enumValue=(v,values)=>values.includes(v)?v:"UNVERIFIED";
     const bounded=(v)=>Number.isInteger(v)&&v>=0?Math.min(v,16):0;
     out.preflight={
-      stage:enumValue(raw.stage,["ARM","INSPECT_1","INSPECT_2","AFTER_SELECT"]),
+      stage:enumValue(raw.stage,phaseNames),
       reason:enumValue(raw.reason,["TEXTAREA_VALUE_PRESENT","NONVISIBLE_BLOCK_CONTENT",
         "AUTHORING_SURFACE_CONTENT","UNCLASSIFIED_BLOCK_TEXT"]),
       nonemptyBlockCount:bounded(raw.nonemptyBlockCount),
