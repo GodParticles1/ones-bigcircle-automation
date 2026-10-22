@@ -1,11 +1,11 @@
 # Handoff
 
-## 2026-10-21 Gate F2 local Leader continuation
+## 2026-10-23 Gate F2 diagnostic release candidate
 
-- DONE: #110 now records `ARM / INSPECT_1 / INSPECT_2 / AFTER_NATIVE_CLICK / AFTER_CTRL_A / BEFORE_INSERT` with bounded metadata retained through popup reopening and server verification. Click-phase rejection stops before Ctrl+A. Pre-CDP rejection removes only this run's instrumentation. Independent source review passed; Writer/manifest are unchanged.
-- CURRENT: continue the existing `tooling/gate-f2-oneclick-native-probe` / PR #111 and `release/gate-f2-native-diagnostic-bundle` / PR #113. Both remain Draft / MERGE_HOLD. #112 owns candidate packaging; frozen legacy tests/builds use exact `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f` instead of modified diagnostic source.
-- NEXT: after exact-head CI/package verification, establish canonical current-account = exact issue-assignee identity and two fresh empty-field server reads. Obtain a concrete per-run confirmation before synthetic input; retain the existing pending/readback/restore gates.
-- BLOCKERS: the local browser-control tool denied raw CDP by saved permission policy. No alternate control path may bypass that denial. Canonical owner proof and real editor input/Save/server consistency remain unverified; this patch is instrumentation, not a Writer repair or acceptance. Keep WRITE_GATE=OFF and #103 blocked.
+- DONE: #110 source `4b5f8b888ccf8773473098e1a29768ecffe44d5d` passed its Linux and Windows checks. Its diagnostic and diagnostic-test blobs are synchronized byte-for-byte into this #112 candidate. `FINISH` now checks queued observation changes and re-reads the root, host/block binding and focused text block after asynchronous digest work; unsettled exact observations return `TRACE_UNCERTAIN`, while definite duplicate/partial states remain failures. No input retry or Save was added. This corrects diagnostic completion, not the ONES editor's underlying cause.
+- CURRENT: use existing #110 / Draft PR #111 and #112 / Draft PR #113; MERGE_HOLD remains. Release preparation starts from `a65cceda548dc19335ff9a40aa43754ec4ec53e8`. The upstream source SHA above is distinct from the final release commit: BUNDLE v1 `sourceHead` must identify the exact packaged release HEAD. Manifest remains `0.5.17`; frozen legacy tests/builds retain `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f`.
+- NEXT: independently review this five-file release diff, then commit on the existing #112 branch and verify that exact release HEAD and candidate ZIP. Upstream source CI does not verify the new release artifact. Any later real trial still requires canonical current-account = exact issue-assignee proof, two fresh empty-field server reads, concrete per-run confirmation, and the existing pending/readback/restore gates.
+- BLOCKERS: the current chat's saved FULL_CDP denial still blocks real diagnostic execution; no alternate path may bypass it. This FINISH candidate has no genuine ONES runtime acceptance. Canonical owner proof and real input/Save/server consistency remain unverified. Keep WRITE_GATE=OFF and #103 blocked; no merge or formal Writer promotion.
 
 ## Integrated bases
 
