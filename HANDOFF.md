@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-10-23 Gate F2 diagnostic release candidate
+
+- DONE: #110 source `4b5f8b888ccf8773473098e1a29768ecffe44d5d` passed its Linux and Windows checks. Its diagnostic and diagnostic-test blobs are synchronized byte-for-byte into this #112 candidate. `FINISH` now checks queued observation changes and re-reads the root, host/block binding and focused text block after asynchronous digest work; unsettled exact observations return `TRACE_UNCERTAIN`, while definite duplicate/partial states remain failures. No input retry or Save was added. This corrects diagnostic completion, not the ONES editor's underlying cause.
+- CURRENT: use existing #110 / Draft PR #111 and #112 / Draft PR #113; MERGE_HOLD remains. Release preparation starts from `a65cceda548dc19335ff9a40aa43754ec4ec53e8`. The upstream source SHA above is distinct from the final release commit: BUNDLE v1 `sourceHead` must identify the exact packaged release HEAD. Manifest remains `0.5.17`; frozen legacy tests/builds retain `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f`.
+- NEXT: independently review this five-file release diff, then commit on the existing #112 branch and verify that exact release HEAD and candidate ZIP. Upstream source CI does not verify the new release artifact. Any later real trial still requires canonical current-account = exact issue-assignee proof, two fresh empty-field server reads, concrete per-run confirmation, and the existing pending/readback/restore gates.
+- BLOCKERS: the current chat's saved FULL_CDP denial still blocks real diagnostic execution; no alternate path may bypass it. This FINISH candidate has no genuine ONES runtime acceptance. Canonical owner proof and real input/Save/server consistency remain unverified. Keep WRITE_GATE=OFF and #103 blocked; no merge or formal Writer promotion.
+
 ## Integrated bases
 
 - Browser Bridge v0.4.1: integrated on main by merge `89c131d56e156c2977889670ee844392d7eef3f4`; Issue #12 setup-draft persistence correction is closed.

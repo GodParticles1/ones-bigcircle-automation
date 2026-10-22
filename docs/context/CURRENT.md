@@ -1,6 +1,10 @@
 # Current Context
 
-Date: 2026-09-21
+Date: 2026-10-23
+
+## Current Gate F2 diagnostic candidate — 2026-10-23
+
+Issue #103 remains blocked on real native-editor semantics. This #112 release candidate synchronizes only the diagnostic and diagnostic-test blobs from #110 source `4b5f8b888ccf8773473098e1a29768ecffe44d5d`, whose Linux and Windows checks passed. Its FINISH correction rejects unsettled observations and revalidates final editor binding after asynchronous digest work; it does not establish the cause or repair of ONES duplication, focus drift or persistence. The exact release HEAD and ZIP still require their own verification: BUNDLE v1 `sourceHead` remains the packaged release commit, distinct from the upstream source SHA. Existing PR #111/#113 remain Draft / MERGE_HOLD, manifest `0.5.17` is unchanged, and production WRITE_GATE remains OFF. The current execution blocker and exact continuation are in `HANDOFF.md` and the PR discussions.
 
 ## Repository bootstrap
 

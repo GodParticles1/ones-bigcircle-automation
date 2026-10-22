@@ -32,7 +32,19 @@ jobs:
       - run: node --check browser-bridge/root-cause-writer.js
       - run: node --check browser-bridge/popup.js
       - run: python browser-bridge/tests/static_test.py
-      - run: python release/root-cause-fresh-install/tests/static_test.py
+      - name: Frozen legacy checkout and original source acceptance (Linux)
+        shell: bash
+        run: |
+          git cat-file -e ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f^{commit}
+          git worktree add --detach "$RUNNER_TEMP/ones-legacy-frozen" ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f
+          test "$(git -C "$RUNNER_TEMP/ones-legacy-frozen" rev-parse HEAD)" = ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f
+          python "$RUNNER_TEMP/ones-legacy-frozen/release/root-cause-fresh-install/tests/static_test.py"
+      - name: Exact candidate ZIP and negative tests (Linux)
+        shell: bash
+        run: |
+          SOURCE_HEAD="$(git rev-parse HEAD)"
+          python scripts/build-root-cause-native-diagnostic.py --source-head "$SOURCE_HEAD" --output-dir "$RUNNER_TEMP/diagnostic-package"
+          python release/root-cause-native-diagnostic/tests/test_bundle.py --source-head "$SOURCE_HEAD" --zip "$RUNNER_TEMP/diagnostic-package/ones-native-editor-diagnostic-CANDIDATE-c${SOURCE_HEAD:0:12}.zip"
       - shell: pwsh
         run: |
           foreach ($file in @(Get-ChildItem release/root-cause-fresh-install -Filter '*.ps1') + @(Get-Item scripts/build-root-cause-fresh-install.ps1, scripts/tests/test-root-cause-fresh-install.ps1)) {
@@ -59,6 +71,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Frozen accepted source checkout (Windows)
+        shell: pwsh
+        run: |
+          $sha = 'ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f'
+          git cat-file -e "$sha^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'FROZEN_COMMIT_UNAVAILABLE' }
+          $frozen = Join-Path $env:RUNNER_TEMP 'ones-legacy-frozen'
+          git worktree add --detach $frozen $sha
+          if ($LASTEXITCODE -ne 0 -or (git -C $frozen rev-parse HEAD).Trim() -cne $sha) { throw 'FROZEN_HEAD_MISMATCH' }
+          "FROZEN_TREE=$frozen" >> $env:GITHUB_ENV
+      - name: Frozen static acceptance (Windows)
+        shell: pwsh
+        run: |
+          python "$env:FROZEN_TREE/release/root-cause-fresh-install/tests/static_test.py"
+          if ($LASTEXITCODE -ne 0) { throw 'FROZEN_TEST_FAILED' }
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -68,15 +96,34 @@ jobs:
       - run: python local-relay/tests/test_relay.py
       - shell: powershell
         run: |
-          ./scripts/build-root-cause-fresh-install.ps1 -OutputDir "$env:RUNNER_TEMP/fresh-install-package"
-          $bundle = Get-ChildItem "$env:RUNNER_TEMP/fresh-install-package/*.zip"
-          ./scripts/tests/test-root-cause-fresh-install.ps1 -BundlePath $bundle.FullName -PythonPath (Get-Command python.exe).Source
+          Push-Location $env:FROZEN_TREE
+          try {
+            ./scripts/build-root-cause-fresh-install.ps1 -OutputDir "$env:RUNNER_TEMP/fresh-install-package"
+            $bundle = Get-ChildItem "$env:RUNNER_TEMP/fresh-install-package/*.zip"
+            ./scripts/tests/test-root-cause-fresh-install.ps1 -BundlePath $bundle.FullName -PythonPath (Get-Command python.exe).Source
+          } finally { Pop-Location }
       - uses: actions/upload-artifact@v4
         with:
           name: ones-root-cause-fresh-install-v0.1.0-b0.5.17-r0.3.8-p0.2.0
           path: |
             ${{ runner.temp }}/fresh-install-package/*.zip
             ${{ runner.temp }}/fresh-install-package/*.zip.sha256
+          if-no-files-found: error
+      - name: Build and verify native diagnostic ZIP (Windows)
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          python scripts/build-root-cause-native-diagnostic.py --source-head $sha --output-dir "$env:RUNNER_TEMP/native-diagnostic-package"
+          if ($LASTEXITCODE -ne 0) { throw 'DIAGNOSTIC_BUILD_FAILED' }
+          $zip = Join-Path "$env:RUNNER_TEMP/native-diagnostic-package" ("ones-native-editor-diagnostic-CANDIDATE-c" + $sha.Substring(0,12) + ".zip")
+          python release/root-cause-native-diagnostic/tests/test_bundle.py --zip $zip --source-head $sha
+          if ($LASTEXITCODE -ne 0) { throw 'DIAGNOSTIC_PACKAGE_TEST_FAILED' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ones-native-editor-diagnostic-CANDIDATE
+          path: |
+            ${{ runner.temp }}/native-diagnostic-package/*.zip
+            ${{ runner.temp }}/native-diagnostic-package/*.zip.sha256
           if-no-files-found: error
       - run: python transport-spool/tests/test_spool.py
       - run: python windows-agent/tests/test_materialize_case_feed.py
@@ -93,10 +140,12 @@ jobs:
       - shell: powershell
         run: |
           [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.7.ps1 -Raw))
-          ./scripts/build-root-cause-write-runtime.ps1
+          Push-Location $env:FROZEN_TREE
+          try { ./scripts/build-root-cause-write-runtime.ps1 }
+          finally { Pop-Location }
           foreach ($zip in @(
-            "dist-root-cause-write/ones-browser-bridge-v0.5.17.zip",
-            "dist-root-cause-write/ones-local-relay-v0.3.8.zip"
+            "${{ runner.temp }}/ones-legacy-frozen/dist-root-cause-write/ones-browser-bridge-v0.5.17.zip",
+            "${{ runner.temp }}/ones-legacy-frozen/dist-root-cause-write/ones-local-relay-v0.3.8.zip"
           )) {
             if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw ("PACKAGE_MISSING: " + $zip) }
           }
@@ -104,10 +153,10 @@ jobs:
         with:
           name: ones-root-cause-write-runtime-v0.5.17-v0.3.8
           path: |
-            dist-root-cause-write/ones-browser-bridge-v0.5.17.zip
-            dist-root-cause-write/ones-browser-bridge-v0.5.17.zip.sha256
-            dist-root-cause-write/ones-local-relay-v0.3.8.zip
-            dist-root-cause-write/ones-local-relay-v0.3.8.zip.sha256
+            ${{ runner.temp }}/ones-legacy-frozen/dist-root-cause-write/ones-browser-bridge-v0.5.17.zip
+            ${{ runner.temp }}/ones-legacy-frozen/dist-root-cause-write/ones-browser-bridge-v0.5.17.zip.sha256
+            ${{ runner.temp }}/ones-legacy-frozen/dist-root-cause-write/ones-local-relay-v0.3.8.zip
+            ${{ runner.temp }}/ones-legacy-frozen/dist-root-cause-write/ones-local-relay-v0.3.8.zip.sha256
           if-no-files-found: error
       - shell: powershell
         run: |
