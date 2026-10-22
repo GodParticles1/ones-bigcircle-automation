@@ -7,7 +7,7 @@ const source = fs.readFileSync(require("node:path").join(__dirname,"..","native-
 const href="https://synthetic.invalid/project/#/team/t/project/p/issue/SYN-1";
 const config={writeEnabled:false,rootCauseFieldId:"f",onesOrigin:"https://synthetic.invalid",teamUuid:"t",projectUuid:"p",issueTypeUuid:"i"};
 function harness(opts={}) {
-  const sent=[],store={},events={},observers=[];
+  const sent=[],store={},events={},observers=[],undeliveredMutations=[];
   const rect={left:30,top:40,right:230,height:25,width:200};
   const textSurface={textContent:opts.authoringText||""};
   const block={textContent:opts.authoringText||opts.accessoryText||(opts.dirty?"synthetic draft":""),
@@ -46,16 +46,17 @@ function harness(opts={}) {
   const textarea={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0,
     disabled:false,readOnly:false,isConnected:true,contains:()=>false,closest:()=>null};
   const host={isConnected:true,contains:x=>x===block,closest:()=>host,isContentEditable:true};
+  let finishing=false,finishMutationApplied=false,lateBlock=null;
   let active=opts.textarea?textarea:host;
   if(opts.popupBlur) active=null;
   if(opts.wrongHost) active={tagName:"INPUT"};
   if(opts.siblingHost) active={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0};
   if(opts.badTextarea || opts.typedDraftTextarea) textarea.value="synthetic unsaved draft";
   if(opts.badTextareaSelection) textarea.selectionEnd=1;
-  const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor,...(opts.textarea?[textarea]:[])].includes(x),
+  const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor,lateBlock,...(opts.textarea?[textarea]:[])].includes(x),
     querySelectorAll:q=>q==="textarea.editor-input"?opts.textarea?[textarea,...(opts.twoTextareas?[{...textarea}]:[])]:[]:
       q==='[contenteditable="true"]'?opts.textarea?[]:[host]:
-      q.startsWith(".text-block[")?(opts.hiddenDraft||opts.extraFocused?[block,hiddenBlock]:[block]):[block],
+      q.startsWith(".text-block[")?[...(opts.hiddenDraft||opts.extraFocused?[block,hiddenBlock]:[block]),...(lateBlock?[lateBlock]:[])]:[block],
     getBoundingClientRect:()=>rect};
   const doc={get activeElement(){return active},body:{},documentElement:{},hasFocus:()=>!opts.popupBlur,querySelectorAll:q=>q==="[id]"?[root]:q.startsWith("div.standard-")?opts.noEditor?[]:[root]:[],
     querySelector:()=>null,elementFromPoint:()=>block,
@@ -82,7 +83,9 @@ function harness(opts={}) {
           opts.authoringText=textSurface.textContent;
         }
       }
+      if(func.name==="nedPageControl" && args[0]?.action==="FINISH") finishing=true;
       const result=await func(...args);
+      finishing=false;
       if(func.name==="nedPageControl" && args[0]?.action==="AFTER_NATIVE_CLICK" && opts.poisonPhase) {
         result.phases=[{stage:"PRIVATE_RAW_STAGE",activeHostKind:"PRIVATE_RAW_VALUE",focusedBlockCount:1e9,
           elapsedMs:Infinity,raw:"SYNTHETIC_PRIVATE_PHASE",events:Array(100).fill({type:"PRIVATE_EVENT"})}];
@@ -116,21 +119,53 @@ function harness(opts={}) {
         }
       }}
   };
-  const context=vm.createContext({chrome,URL,crypto:webcrypto,TextEncoder,window:{getSelection:()=>selection,APP_VERSION:"3.14.0"},
+  // Pause actual digest work only after FINISH has captured its input state.
+  // This models the diagnostic's async observation boundary, not ONES input behavior.
+  const diagnosticCrypto={randomUUID:()=>webcrypto.randomUUID(),
+    getRandomValues:value=>webcrypto.getRandomValues(value),
+    subtle:{digest:async(...args)=>{
+      if(finishing && opts.finishMutation && !finishMutationApplied) {
+        finishMutationApplied=true;
+        await new Promise(resolve=>setImmediate(resolve));
+        if(opts.finishMutation==="EXTRA_BLOCK") {
+          lateBlock={textContent:block.textContent,isConnected:true,
+            classList:{contains:()=>false},getBoundingClientRect:()=>rect,
+            contains:node=>node===lateBlock};
+        } else if(opts.finishMutation==="REBIND_BLOCK") block.isConnected=false;
+        else if(opts.finishMutation==="DETACH_REATTACH") {block.isConnected=false;block.isConnected=true;}
+        else if(opts.finishMutation==="PARTIAL") block.textContent=block.textContent.slice(0,4);
+        else if(opts.finishMutation==="DETACH_HOST") (opts.textarea?textarea:host).isConnected=false;
+        else if(opts.finishMutation==="ROOT_REPLACED") opts.noEditor=true;
+        else if(opts.finishMutation==="FOCUS_DRIFT") opts.noFocus=true;
+        // Focus-class changes are not covered by the text/child-list observer.
+        // A delayed observer fixture also checks that fresh DOM queries matter.
+        if(opts.finishMutation!=="FOCUS_DRIFT" && !opts.finishDelayObserver) {
+          for(const observer of observers) observer();
+        } else if(opts.finishDelayObserver) {
+          undeliveredMutations.push({type:"childList"});
+        }
+      }
+      return webcrypto.subtle.digest(...args);
+    }}};
+  const context=vm.createContext({chrome,URL,crypto:diagnosticCrypto,TextEncoder,window:{getSelection:()=>selection,APP_VERSION:"3.14.0"},
     document:doc,location,fetch:async()=>({ok:!opts.badIdentity,json:async()=>({display_id:"SYN-1",task_uuid:"task"})}),
     getComputedStyle:(node)=>({display:node===hiddenBlock&&!opts.extraFocused||node===leafOwner&&opts.hiddenLeaf?"none":"block",visibility:"visible",opacity:"1"}),innerWidth:1000,innerHeight:1000,
-    MutationObserver:class{constructor(f){this.f=f}observe(){observers.push(this.f)}disconnect(){const i=observers.indexOf(this.f);if(i>=0)observers.splice(i,1)}},
+    MutationObserver:class{constructor(f){this.f=f}observe(){observers.push(this.f)}
+      takeRecords(){return undeliveredMutations.splice(0)}
+      disconnect(){const i=observers.indexOf(this.f);if(i>=0)observers.splice(i,1);undeliveredMutations.length=0}},
     queueMicrotask,setTimeout:(f)=>setImmediate(f),console,
     relayReadTaskFields:async(_s,p)=>({ok:!opts.badRead,complete:!opts.badRead,readOnly:true,requestedTaskCount:1,fieldId:p.fieldId,
       reads:[{status:"READ_VERIFIED",onesTaskUuid:"task",fieldId:p.fieldId,value:opts.nonempty?"something":""}]}),
     validatedOnesScope:()=>config});
   vm.runInContext(source,context);
   return {sent,root,opts,armed:()=>!!context.window[Symbol.for('ones.native.editor.diagnostic.v1')],
-    blur:()=>{active=null;opts.popupBlur=true},run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
+    blur:()=>{active=null;opts.popupBlur=true},finishMutationApplied:()=>finishMutationApplied,
+    run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
     verify:()=>context.onesNativeEditorDiagnosticVerify(config,1),last:()=>context.onesNativeEditorDiagnosticLast()};
 }
 test("one insert, metadata-only events, zero Save",async()=>{const h=harness(),r=await h.run();
   assert.equal(r.status,"TRACE_EXACT_ONCE");assert.equal(r.trace.semantic,"EXACT_ONCE");
+  assert.equal(r.trace.observationStable,true);assert.equal(r.trace.pendingMutationRecordCount,0);
   assert.equal(r.trace.events.some(e=>e.type==="beforeinput"&&e.trusted),true);
   assert.equal(r.trace.samples.some(e=>e.kind==="MUTATION"),true);
   assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
@@ -139,7 +174,70 @@ test("one insert, metadata-only events, zero Save",async()=>{const h=harness(),r
   h.root.isConnected=false;
   assert.equal((await h.verify()).status,"SERVER_BLANK_OBSERVED");
 });
-test("duplicate and partial real mutations are rejected",async()=>{for(const key of ["duplicate","partial"]){const h=harness({[key]:true}),r=await h.run();assert.equal(r.status,"TRACE_MISMATCH");assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);assert.equal(r.saveDispatched,false)}});
+test("synthetic duplicate and partial DOM states are rejected",async()=>{for(const key of ["duplicate","partial"]){const h=harness({[key]:true}),r=await h.run();assert.equal(r.status,"TRACE_MISMATCH");assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);assert.equal(r.saveDispatched,false)}});
+
+test("FINISH preserves negative DOM states but refuses an unsettled exact observation",async()=>{
+  for(const finishMutation of ["OBSERVATION_ONLY","EXTRA_BLOCK","PARTIAL"]) {
+    const h=harness({finishMutation}),r=await h.run();
+    assert.equal(h.finishMutationApplied(),true);
+    assert.equal(r.status,finishMutation==="OBSERVATION_ONLY"?"TRACE_UNCERTAIN":"TRACE_MISMATCH");
+    assert.equal(r.trace.observationStable,false);
+    assert.equal(r.trace.semantic,finishMutation==="EXTRA_BLOCK"?"DUPLICATE":
+      finishMutation==="PARTIAL"?"PARTIAL":"OBSERVATION_UNSTABLE");
+    assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+    assert.equal(r.saveDispatched,false);
+    assert.equal(h.armed(),false);
+    assert.equal((await h.last()).pendingServerVerification,true);
+    assert.equal((await h.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+    assert.equal(JSON.stringify(r).includes("NDP"),false);
+  }
+});
+
+test("FINISH revalidates binding and focus after asynchronous digest work",async()=>{
+  for(const options of [
+    {finishMutation:"REBIND_BLOCK"},{finishMutation:"ROOT_REPLACED"},
+    {finishMutation:"DETACH_HOST"},{finishMutation:"DETACH_HOST",textarea:true},
+    {finishMutation:"FOCUS_DRIFT"}
+  ]) {
+    const h=harness(options),r=await h.run();
+    assert.equal(h.finishMutationApplied(),true);
+    assert.equal(r.status,"TRACE_MISMATCH");
+    assert.equal(r.trace.semantic,"EDITOR_DRIFT");
+    assert.equal(r.trace.hostBound,false);
+    assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+    assert.equal(r.saveDispatched,false);
+    assert.equal((await h.last()).pendingServerVerification,true);
+    assert.equal((await h.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+  }
+});
+
+test("FINISH classifies fresh blocks even before an observer notification",async()=>{
+  const h=harness({finishMutation:"EXTRA_BLOCK",finishDelayObserver:true}),r=await h.run();
+  assert.equal(h.finishMutationApplied(),true);
+  assert.equal(r.status,"TRACE_MISMATCH");
+  assert.equal(r.trace.semantic,"DUPLICATE");
+  assert.equal(r.trace.blockCount,2);
+  assert.equal(r.trace.observationStable,false);
+  assert.equal(r.trace.pendingMutationRecordCount,1);
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+  assert.equal(r.saveDispatched,false);
+  assert.equal((await h.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+});
+
+test("FINISH rejects queued detach/reattach records before observer delivery",async()=>{
+  const h=harness({finishMutation:"DETACH_REATTACH",finishDelayObserver:true}),r=await h.run();
+  assert.equal(h.finishMutationApplied(),true);
+  assert.equal(r.status,"TRACE_UNCERTAIN");
+  assert.equal(r.trace.semantic,"OBSERVATION_UNSTABLE");
+  assert.equal(r.trace.observationStable,false);
+  assert.equal(r.trace.pendingMutationRecordCount,1);
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+  assert.equal(r.saveDispatched,false);
+  const last=await h.last();
+  assert.equal(last.trace.pendingMutationRecordCount,1);
+  assert.equal(last.pendingServerVerification,true);
+  assert.equal((await h.run()).status,"BLOCKED_PENDING_SERVER_VERIFICATION");
+});
 test("preflight rejects gate, dirty draft, unknown server, editor absence, wrong tab and debugger conflict",async()=>{
   for(const [c,o] of [[{writeEnabled:true},{}],[{}, {dirty:true}],[{}, {nonempty:true}],
     [{},{badRead:true}],[{}, {noEditor:true}],[{}, {badTab:true}],[{}, {conflict:true}],

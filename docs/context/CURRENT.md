@@ -2,9 +2,9 @@
 
 Date: 2026-09-21
 
-## Current Gate F2 continuation — 2026-10-21
+## Current Gate F2 continuation — 2026-10-22
 
-Issue #103 remains blocked on real native-editor semantics. The local Leader continues existing #110 / Draft PR #111 and #112 / Draft PR #113. Phase-specific diagnostics now separate native click, Ctrl+A and the final pre-insert check without relaxing focus/selection/draft/pending guards. Source/synthetic acceptance does not establish a real ONES fix; production WRITE_GATE remains OFF. The current execution blocker and exact continuation are in `HANDOFF.md` and the PR discussions.
+Issue #103 remains blocked on real native-editor semantics. The local Leader continues existing #110 / Draft PR #111 and #112 / Draft PR #113. Phase-specific diagnostics separate native click, Ctrl+A and the final pre-insert check without relaxing focus/selection/draft/pending guards. Diagnostic FINISH now rechecks binding and fresh blocks after asynchronous observation work, and refuses an exact result when its observation queue or pending mutation records are unsettled. This diagnostic correctness fix is supported by synthetic asynchronous regression cases, not a reproduced ONES duplication mechanism. The production Writer is unchanged and WRITE_GATE remains OFF. Exact continuation is in `HANDOFF.md` and the PR discussions.
 
 ## Repository bootstrap
 

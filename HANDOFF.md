@@ -1,11 +1,11 @@
 # Handoff
 
-## 2026-10-21 Gate F2 local Leader continuation
+## 2026-10-22 Gate F2 local Leader continuation
 
-- DONE: #110 now records `ARM / INSPECT_1 / INSPECT_2 / AFTER_NATIVE_CLICK / AFTER_CTRL_A / BEFORE_INSERT` with bounded metadata retained through popup reopening and server verification. Click-phase rejection stops before Ctrl+A. Pre-CDP rejection removes only this run's instrumentation. Independent source review passed; Writer/manifest are unchanged.
-- CURRENT: continue the existing `tooling/gate-f2-oneclick-native-probe` / PR #111 and `release/gate-f2-native-diagnostic-bundle` / PR #113. Both remain Draft / MERGE_HOLD. #112 owns candidate packaging; frozen legacy tests/builds use exact `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f` instead of modified diagnostic source.
-- NEXT: after exact-head CI/package verification, establish canonical current-account = exact issue-assignee identity and two fresh empty-field server reads. Obtain a concrete per-run confirmation before synthetic input; retain the existing pending/readback/restore gates.
-- BLOCKERS: the local browser-control tool denied raw CDP by saved permission policy. No alternate control path may bypass that denial. Canonical owner proof and real editor input/Save/server consistency remain unverified; this patch is instrumentation, not a Writer repair or acceptance. Keep WRITE_GATE=OFF and #103 blocked.
+- DONE: #110 retains phase-specific focus/selection diagnostics and now fixes a diagnostic FINISH race: revalidate exact bindings and query fresh blocks after the digest await; reject exact success if the observation queue, revision or this probe's queued mutation records changed. Synthetic RED cases exposed stale successful receipts, including delayed detach/reattach; final diagnostic tests pass 33/33. Independent source review accepted this narrow diagnostic correction. Writer/manifest remain unchanged.
+- CURRENT: existing `tooling/gate-f2-oneclick-native-probe` / PR #111 owns the correction; `release/gate-f2-native-diagnostic-bundle` / PR #113 still owns the previous package. Both remain Draft / MERGE_HOLD. Exact-head CI and any later #112 packaging must bind to the new reviewed source; frozen legacy tests/builds continue using `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f`.
+- NEXT: after source CI, review integration into the existing #112 release lane. A later real diagnostic still requires canonical current-account = exact issue-assignee identity, exact task/type/field binding, two fresh authoritative blank-field reads and a concrete per-run confirmation. Retain the pending/readback/restore gates; Save remains zero for diagnostics.
+- BLOCKERS: existing records do not contain a trusted same-editor-build native transaction trace, canonical owner proof or the two authoritative pre-reads. The synthetic diagnostic race does not establish the ONES duplicate/interleaved-input mechanism. No browser/ONES operation was performed for this correction; production WRITE_GATE remains OFF and #103 remains blocked.
 
 ## Integrated bases
 

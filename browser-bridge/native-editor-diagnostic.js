@@ -461,24 +461,49 @@ async function nedPageControl(request) {
   }
   if (request.action !== 'FINISH') return fail('BLOCKED_UNKNOWN_ACTION');
   state.sample('FINAL');
-  await state.pending;
-  const values = blocks.map((el) => normalize(el.textContent));
+  const finishPending = state.pending, finishRevision = state.changed;
+  await finishPending;
+  // A detach/reattach can leave the same final nodes while its observer callback
+  // is still queued. Drain only this probe's records; never export their nodes.
+  const pendingMutationRecordCount = Math.min(65535,state.observer.takeRecords().length);
+  const observationStable = state.pending === finishPending && state.changed === finishRevision &&
+    pendingMutationRecordCount === 0;
+  // Digest work yields to editor mutations. The earlier block array and binding
+  // checks cannot authorize a final EXACT result after that asynchronous boundary.
+  const finalRoot = current();
+  const finalBound = finalRoot === state.root && state.block.isConnected &&
+    finalRoot?.contains(state.block) && state.host?.isConnected && finalRoot.contains(state.host);
+  const finalBlocks = finalRoot
+    ? [...finalRoot.querySelectorAll('.text-block[data-type="editor-block"][data-block-type="text"]')].filter(visible)
+    : [];
+  const finalFocused = finalBlocks.filter((el) => el.classList.contains('focused'));
+  const observation = {events:state.events.slice(),samples:state.samples.slice(),
+    mutationCount:state.changed,pendingMutationRecordCount};
+  if (!finalBound || finalFocused.length !== 1 || finalFocused[0] !== state.block) {
+    return {ok:false,status:'TRACE_MISMATCH',trace:{...observation,semantic:'EDITOR_DRIFT',
+      hostBound:false,observationStable:false}};
+  }
+  const values = finalBlocks.map((el) => normalize(el.textContent));
   const occurrence = (str) => str.split(state.marker).length - 1;
   const count = values.reduce((sum,value) => sum + occurrence(value),0);
   const selected = normalize(state.block.textContent);
   let semantic;
   if (count > 1) semantic = 'DUPLICATE';
-  else if (count === 1 && selected === state.marker && values.every((v,i) => blocks[i] === state.block || !v)) semantic = 'EXACT_ONCE';
+  else if (count === 1 && selected === state.marker && values.every((v,i) => finalBlocks[i] === state.block || !v)) semantic = 'EXACT_ONCE';
   else if (count === 1) semantic = 'EXTRA_OR_INTERLEAVED';
   else if (values.every((v) => !v)) semantic = 'EMPTY';
   else if (values.some((v) => v.includes(state.marker.slice(0,5)) || state.marker.includes(v) && v.length > 2)) semantic = 'PARTIAL';
   else semantic = 'MISMATCH';
-  const trace = {semantic,events:state.events.slice(),samples:state.samples.slice(),
-    mutationCount:state.changed,selection:{anchorOffset,focusOffset,collapsed,selectionProof},
-    hostBound:true,hostKind:state.hostKind,focusDeferred:state.focusDeferred,blockCount:blocks.length,focusedCount:focused.length,
+  // Keep definite duplicate/partial failures, but never grant EXACT from a
+  // changing or unfinished observation. No extra wait, queue chase or input retry.
+  if (semantic === 'EXACT_ONCE' && !observationStable) semantic = 'OBSERVATION_UNSTABLE';
+  const trace = {semantic,...observation,selection:{anchorOffset,focusOffset,collapsed,selectionProof},
+    hostBound:true,observationStable,hostKind:state.hostKind,focusDeferred:state.focusDeferred,
+    blockCount:finalBlocks.length,focusedCount:finalFocused.length,
     frontendVersion:(() => { const v = document.querySelector('meta[name="app-version"]')?.content || window.APP_VERSION;
       return /^\d{1,4}(?:\.\d{1,4}){1,3}$/.test(String(v||'')) ? String(v) : null; })()};
-  return {ok:semantic==='EXACT_ONCE',status:semantic==='EXACT_ONCE'?'TRACE_EXACT_ONCE':'TRACE_MISMATCH',trace};
+  return {ok:semantic==='EXACT_ONCE',status:semantic==='EXACT_ONCE'?'TRACE_EXACT_ONCE':
+    semantic==='OBSERVATION_UNSTABLE'?'TRACE_UNCERTAIN':'TRACE_MISMATCH',trace};
 }
 
 async function nedExecuteScript(tabId, func, args) {
