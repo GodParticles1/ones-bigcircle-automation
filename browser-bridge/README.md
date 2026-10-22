@@ -26,6 +26,22 @@ The bounded root-cause writer:
 
 The extension never exports browser Cookie/Authorization/password material to the Relay.
 
+## Read-only account and single-task binding preflight (candidate)
+
+The popup's identity/binding action is an extension-local side channel, not a Relay job and not a Writer operation. It requires the production write gate OFF, an already granted origin permission and one active ONES detail tab. It never requests permissions, opens an editor, reads root-cause content, starts the diagnostic, enqueues a field read or clears a pending transaction. Its private receipt contains UUIDs; retain it only in the protected local evidence list, never public issues or CI logs.
+
+A separate extension-session key holds only the whitelisted private receipt and its non-secret configuration snapshot. Starting another read invalidates that key's previous success. The same-extension receipt-tab link displays historical observations only; it does not select a background ONES tab or perform new network reads. A changed configuration or an observation older than five minutes invalidates the cached proof. This cache is separate from the diagnostic's pending transaction and never contains field values, response bodies or authentication material.
+
+Fixed contracts, checked against the official documentation:
+
+- [API overview](https://docs.ones.cn/project/open-api-doc/) identifies `GET /project/api/project/users/me`; the [user response](https://docs.ones.cn/project/open-api-doc/user/user.html) has a top-level `uuid`. The user page's URL heading conflicts with its example, so the route is taken from the overview's two consistent examples. `token_info` is excluded because it returns authentication material.
+- The existing repository identifier resolver supplies the exact task UUID from the current display ID. [Single-task info](https://docs.ones.cn/project/open-api-doc/project/task.html) then binds that UUID to `assign` (responsible user), `project_uuid` and `issue_type_uuid`. `owner` is the creator and is never used as the responsible user. Task description and `field_values` are not consumed or exported as evidence.
+- [Fields and field configurations](https://docs.ones.cn/project/open-api-doc/project/field.html) bind the configured field UUID to the unique root-cause name and the exact project/type/field configuration triple. This candidate supports only documented type 15 (`multi_line_text`); the deployment's actual root-cause type remains unverified until a trial, and other types stop the preflight. These metadata lists are filtered locally to the configured target; unrelated definitions and defaults are not exported.
+
+The official legacy authentication contract describes explicit authentication headers. Compatibility with this deployment's existing browser session remains NOT_VERIFIED until an actual bounded trial. Requests use only the browser's same-origin session, fixed routes, no-store caching, bounded timeouts and no redirects or retries. Missing authentication, unknown schemas, identity mismatch or drift stop the operation; there is no credential/header lookup, alternate endpoint, SDK injection or permission fallback.
+
+Successful binding also requires canonical user UUID = formal assignee UUID, unchanged current-user reads at the beginning/end, strict task/project/type equality, the unique visible detail-form root-cause container, and unchanged tab/configuration. A successful receipt is not a field baseline or write authorization. Only afterward may the Leader use the existing independent field reader twice: the first must finish with a definite successful result, followed by at least 750 ms, before the second is dispatched. Preserve an uncertain job and inspect only that job's status; do not enqueue a replacement. Nonempty values remain untouched. Actual input still requires its separate concrete marker/recovery confirmation and runtime gates; #103 Writer remains OFF/BLOCKED.
+
 ## Issue #110 — operator-only native editor diagnostic (source candidate, NOT runtime accepted)
 
 This source-only tool does not enable `ONES_ROOT_CAUSE_WRITE`, does not enqueue Relay jobs and never dispatches Save.

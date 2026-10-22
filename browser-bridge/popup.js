@@ -117,6 +117,7 @@ async function load() {
     draftPresent:!!draft
   });
   await nativeDiagRestore();
+  await identityBindingRestore();
 }
 
 for (const id of DRAFT_INPUT_IDS) {
@@ -167,6 +168,7 @@ $("pollNow").addEventListener("click", async () => show(await chrome.runtime.sen
 load().catch((error) => show({ok:false,error:String(error)}));
 
 let nativeDiagBusy = false;
+let identityBindingBusy = false;
 async function nativeDiagRestore() {
   try {
     const result=await chrome.runtime.sendMessage({type:"ONES_NATIVE_DIAGNOSTIC_LAST"});
@@ -255,7 +257,7 @@ function nativeDiagReceipt(value) {
   return out;
 }
 async function nativeDiagAction(type) {
-  if (nativeDiagBusy) return;
+  if (nativeDiagBusy || identityBindingBusy) return;
   nativeDiagBusy = true;
   $("nativeDiagRun").disabled = true;
   $("nativeDiagVerify").disabled = true;
@@ -279,3 +281,64 @@ async function nativeDiagAction(type) {
 }
 $("nativeDiagRun")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_RUN"));
 $("nativeDiagVerify")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_VERIFY"));
+
+function identityBindingReceipt(value) {
+  const own=(o,k)=>{const d=o&&typeof o==='object'?Object.getOwnPropertyDescriptor(o,k):null;
+    return d&&Object.prototype.hasOwnProperty.call(d,'value')?d.value:undefined;};
+  const allowed=['NOT_VERIFIED','IDENTITY_BINDING_READ_VERIFIED','BLOCKED_EXTENSION_SOURCE','BLOCKED_INPUT',
+    'BLOCKED_IN_FLIGHT','BLOCKED_WRITE_GATE','BLOCKED_CONFIG','BLOCKED_ORIGIN_PERMISSION','BLOCKED_ACTIVE_TAB',
+    'BLOCKED_TAB_DRIFT','BLOCKED_CONFIG_DRIFT','BLOCKED_DOM_BINDING','BLOCKED_NAVIGATION','BLOCKED_READ_HTTP',
+    'BLOCKED_READ_RESPONSE','BLOCKED_READ_TIMEOUT','BLOCKED_READ_FAILED','BLOCKED_IDENTITY_SCHEMA',
+    'BLOCKED_IDENTITY_CHANGED','BLOCKED_TASK_RESOLVE','BLOCKED_TASK_SCHEMA','BLOCKED_TASK_SCOPE',
+    'BLOCKED_OWNER_MISMATCH','BLOCKED_FIELD_SCHEMA','BLOCKED_FIELD_CONFIG','BLOCKED_SCRIPT_RESULT','BLOCKED_UNCERTAIN'];
+  const empty=()=>({ok:false,status:'NOT_VERIFIED',readOnly:true,validBinding:false,privacy:'LOCAL_PRIVATE_DO_NOT_SHARE'});
+  try {
+    const status=own(value,'status'),historical=own(value,'historical')===true;
+    if(!allowed.includes(status))return empty();
+    const out={...empty(),status,historical},count=own(value,'requestCount');
+    out.requestCount=Number.isInteger(count)&&count>=0&&count<=6?count:0;
+    const stageNames=['DOM_BEFORE','USER_START','TASK_RESOLVE','TASK_INFO','FIELD_SCHEMA','FIELD_CONFIG','USER_END','DOM_AFTER'];
+    const date=v=>typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v)&&Number.isFinite(Date.parse(v));
+    const stages=own(value,'stages');
+    const stage=own(value,'stage');if(stageNames.includes(stage))out.stage=stage;
+    out.stages=Array.isArray(stages)?stages.slice(0,8).flatMap(s=>{
+      const stage=own(s,'stage'),capturedAt=own(s,'capturedAt');
+      return stageNames.includes(stage)&&date(capturedAt)?[{stage,capturedAt}]:[];
+    }):[];
+    const observedAt=own(value,'observedAt');if(date(observedAt))out.observedAt=observedAt;
+    if(status==='BLOCKED_READ_HTTP'){
+      const code=own(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
+    }
+    if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
+    const raw=own(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
+      'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
+    const b=Object.fromEntries(keys.map(k=>[k,own(raw,k)]));
+    if(own(value,'ok')!==true||!Object.values(b).every(v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v))||
+      b.accountUuid!==b.assigneeUuid||b.taskUuid!==b.resolvedTaskUuid||own(raw,'fieldType')!==15)return empty();
+    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType:15}};
+  }catch(_){return empty();}
+}
+function identityBindingShow(value) {
+  const receipt=identityBindingReceipt(value);
+  if($("identityBindingOutput"))$("identityBindingOutput").textContent=JSON.stringify(receipt,null,2);
+  if($("identityBindingStatus"))$("identityBindingStatus").textContent='本机私密 · '+
+    (receipt.historical?'历史观测，不授写权限 · ':'本次只读观测 · ')+receipt.status;
+}
+async function identityBindingRestore() {
+  try{identityBindingShow(await chrome.runtime.sendMessage({type:'ONES_IDENTITY_BINDING_LAST'}));}
+  catch(_){identityBindingShow({status:'NOT_VERIFIED'});}
+}
+$("identityBindingRead")?.addEventListener('click',async()=>{
+  if(identityBindingBusy||nativeDiagBusy)return;
+  identityBindingBusy=true;$("identityBindingRead").disabled=true;
+  if($("nativeDiagRun"))$("nativeDiagRun").disabled=true;
+  if($("nativeDiagVerify"))$("nativeDiagVerify").disabled=true;
+  try{
+    const tabs=await chrome.tabs.query({active:true,currentWindow:true});
+    if(tabs.length!==1||!Number.isInteger(tabs[0]?.id))return identityBindingShow({status:'BLOCKED_ACTIVE_TAB'});
+    identityBindingShow(await chrome.runtime.sendMessage({type:'ONES_IDENTITY_BINDING_READ',tabId:tabs[0].id}));
+  }catch(_){identityBindingShow({status:'BLOCKED_UNCERTAIN'});}
+  finally{identityBindingBusy=false;$("identityBindingRead").disabled=false;
+    if($("nativeDiagRun"))$("nativeDiagRun").disabled=false;
+    if($("nativeDiagVerify"))$("nativeDiagVerify").disabled=false;}
+});

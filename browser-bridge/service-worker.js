@@ -830,9 +830,142 @@ chrome.runtime.onStartup.addListener(() => { ensureRelayAlarm().catch(() => {});
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === RELAY_ALARM) pollRelayOnce("alarm").catch(() => {}); });
 ensureRelayAlarm().catch(() => {});
 
+const IDENTITY_BINDING_SESSION_KEY='onesIdentityBindingReadV1';
+const IDENTITY_BINDING_CONFIG_KEYS=['onesOrigin','teamUuid','projectUuid','issueTypeUuid','rootCauseFieldId','writeEnabled'];
+const IDENTITY_BINDING_STAGES=['DOM_BEFORE','USER_START','TASK_RESOLVE','TASK_INFO','FIELD_SCHEMA','FIELD_CONFIG','USER_END','DOM_AFTER'];
+const IDENTITY_BINDING_STATUSES=new Set(['NOT_VERIFIED','IDENTITY_BINDING_READ_VERIFIED',
+  'BLOCKED_EXTENSION_SOURCE','BLOCKED_INPUT','BLOCKED_IN_FLIGHT','BLOCKED_WRITE_GATE','BLOCKED_CONFIG',
+  'BLOCKED_ORIGIN_PERMISSION','BLOCKED_ACTIVE_TAB','BLOCKED_TAB_DRIFT','BLOCKED_CONFIG_DRIFT',
+  'BLOCKED_DOM_BINDING','BLOCKED_NAVIGATION','BLOCKED_READ_HTTP','BLOCKED_READ_RESPONSE','BLOCKED_READ_TIMEOUT',
+  'BLOCKED_READ_FAILED','BLOCKED_IDENTITY_SCHEMA','BLOCKED_IDENTITY_CHANGED','BLOCKED_TASK_RESOLVE',
+  'BLOCKED_TASK_SCHEMA','BLOCKED_TASK_SCOPE','BLOCKED_OWNER_MISMATCH','BLOCKED_FIELD_SCHEMA',
+  'BLOCKED_FIELD_CONFIG','BLOCKED_SCRIPT_RESULT','BLOCKED_UNCERTAIN']);
+let bridgeSideChannelBusy=false;
+function ibOwn(o,k) {
+  if(!o||typeof o!=='object'||Array.isArray(o))return undefined;
+  const d=Object.getOwnPropertyDescriptor(o,k);
+  return d&&Object.prototype.hasOwnProperty.call(d,'value')?d.value:undefined;
+}
+function ibId(v){return typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);}
+function ibTime(v){return typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v)&&Number.isFinite(Date.parse(v));}
+function ibDenied(status='NOT_VERIFIED') {
+  return {ok:false,status,readOnly:true,validBinding:false,privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',writeGate:'OFF',requestCount:0,stages:[]};
+}
+function ibReceipt(value) {
+  try {
+    const status=ibOwn(value,'status');
+    if(!IDENTITY_BINDING_STATUSES.has(status))return ibDenied('BLOCKED_SCRIPT_RESULT');
+    const out=ibDenied(status),count=ibOwn(value,'requestCount'),rawStages=ibOwn(value,'stages');
+    out.requestCount=Number.isInteger(count)&&count>=0&&count<=6?count:0;
+    if(Array.isArray(rawStages))out.stages=rawStages.slice(0,8).flatMap(row=>{
+      const stage=ibOwn(row,'stage'),capturedAt=ibOwn(row,'capturedAt');
+      return IDENTITY_BINDING_STAGES.includes(stage)&&ibTime(capturedAt)?[{stage,capturedAt}]:[];
+    });
+    const stage=ibOwn(value,'stage');if(IDENTITY_BINDING_STAGES.includes(stage))out.stage=stage;
+    if(status==='BLOCKED_READ_HTTP'){
+      const code=ibOwn(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
+    }
+    if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
+    const b=ibOwn(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
+      'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
+    const binding=Object.fromEntries(keys.map(k=>[k,ibOwn(b,k)]));
+    if(ibOwn(value,'ok')!==true||ibOwn(value,'validBinding')!==true||ibOwn(value,'readOnly')!==true||
+      out.requestCount!==6||out.stages.length!==8||
+      !out.stages.every((s,i)=>s.stage===IDENTITY_BINDING_STAGES[i])||
+      !Object.values(binding).every(ibId)||binding.accountUuid!==binding.assigneeUuid||
+      binding.taskUuid!==binding.resolvedTaskUuid||ibOwn(b,'fieldType')!==15)return ibDenied('BLOCKED_SCRIPT_RESULT');
+    return {...out,ok:true,validBinding:true,privateBinding:{...binding,fieldType:15}};
+  }catch(_){return ibDenied('BLOCKED_SCRIPT_RESULT');}
+}
+async function ibConfig() {
+  const data=await chrome.storage.local.get(RELAY_CONFIG_KEY),raw=ibOwn(data,RELAY_CONFIG_KEY);
+  const out=Object.fromEntries(IDENTITY_BINDING_CONFIG_KEYS.map(k=>[k,ibOwn(raw,k)]));
+  if(out.writeEnabled!==false)throw 'BLOCKED_WRITE_GATE';
+  if(!['teamUuid','projectUuid','issueTypeUuid','rootCauseFieldId'].every(k=>ibId(out[k]))||
+    typeof out.onesOrigin!=='string'||normalizeOnesOrigin(out.onesOrigin)!==out.onesOrigin)throw 'BLOCKED_CONFIG';
+  return out;
+}
+function ibSameConfig(a,b){return !!a&&!!b&&IDENTITY_BINDING_CONFIG_KEYS.every(k=>ibOwn(a,k)===ibOwn(b,k));}
+async function ibTarget(config,tabId) {
+  const active=await chrome.tabs.query({active:true,currentWindow:true});
+  if(active.length!==1||!Number.isInteger(tabId)||active[0]?.id!==tabId)throw 'BLOCKED_ACTIVE_TAB';
+  const tab=await chrome.tabs.get(tabId);
+  if(tab?.status!=='complete'||tab.url!==active[0].url)throw 'BLOCKED_ACTIVE_TAB';
+  const u=new URL(tab.url),route=u.pathname==='/project/'&&u.hash.startsWith('#/team/')?u.hash.slice(1):
+    !u.hash&&u.pathname.startsWith('/team/')?u.pathname:'';
+  const m=route.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
+  if(u.origin!==config.onesOrigin||u.search||!m||m[1]!==config.teamUuid)throw 'BLOCKED_ACTIVE_TAB';
+  return {href:u.href,displayId:m[2]};
+}
+async function ibSave(config,receipt) {
+  await chrome.storage.session.set({[IDENTITY_BINDING_SESSION_KEY]:{
+    observedAt:new Date().toISOString(),config,receipt:ibReceipt(receipt)}});
+}
+async function ibRead(tabId) {
+  let snapshot=null,result=ibDenied();
+  try {
+    // Invalidate an older success before any new read, without touching diagnostic pending.
+    await ibSave(null,result);
+    snapshot=await ibConfig();
+    const target=await ibTarget(snapshot,tabId);
+    if(!await chrome.permissions.contains({origins:[snapshot.onesOrigin+'/*']}))throw 'BLOCKED_ORIGIN_PERMISSION';
+    const executions=await chrome.scripting.executeScript({target:{tabId},world:'MAIN',
+      func:globalThis.onesIdentityBindingReadPage,args:[{...snapshot,...target}]});
+    if(executions.length!==1)throw 'BLOCKED_SCRIPT_RESULT';
+    result=ibReceipt(ibOwn(executions[0],'result'));
+    let after;
+    try{after=await ibConfig();}catch(_){throw 'BLOCKED_CONFIG_DRIFT';}
+    if(!ibSameConfig(snapshot,after))throw 'BLOCKED_CONFIG_DRIFT';
+    let afterTarget;
+    try{afterTarget=await ibTarget(after,tabId);}catch(_){throw 'BLOCKED_TAB_DRIFT';}
+    if(afterTarget.href!==target.href)throw 'BLOCKED_TAB_DRIFT';
+    if(result.ok){
+      const b=result.privateBinding;
+      if(b.teamUuid!==snapshot.teamUuid||b.projectUuid!==snapshot.projectUuid||b.issueTypeUuid!==snapshot.issueTypeUuid||
+        b.fieldId!==snapshot.rootCauseFieldId||b.displayId!==target.displayId)throw 'BLOCKED_SCRIPT_RESULT';
+    }
+  }catch(status){result=ibDenied(typeof status==='string'&&IDENTITY_BINDING_STATUSES.has(status)?status:'BLOCKED_UNCERTAIN');}
+  try{await ibSave(snapshot,result);}catch(_){return ibDenied('BLOCKED_UNCERTAIN');}
+  return result;
+}
+async function ibLast() {
+  const unavailable=()=>({...ibDenied(),historical:true});
+  try {
+    if(bridgeSideChannelBusy)return unavailable();
+    const data=await chrome.storage.session.get(IDENTITY_BINDING_SESSION_KEY),saved=ibOwn(data,IDENTITY_BINDING_SESSION_KEY);
+    if(!saved)return unavailable();
+    const observedAt=ibOwn(saved,'observedAt'),age=ibTime(observedAt)?Date.now()-Date.parse(observedAt):-1;
+    const receipt=ibReceipt(ibOwn(saved,'receipt'));
+    let config;try{config=await ibConfig();}catch(_){config=null;}
+    if(age<0||age>300000||!ibSameConfig(config,ibOwn(saved,'config'))){
+      await ibSave(null,ibDenied());return unavailable();
+    }
+    return {...receipt,validBinding:false,historical:true,observedAt};
+  }catch(_){return unavailable();}
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(message?.type==='ONES_IDENTITY_BINDING_READ'||message?.type==='ONES_IDENTITY_BINDING_LAST') {
+    (async()=>{
+      try {
+        if(ibOwn(sender,'id')!==chrome.runtime.id||ibOwn(sender,'url')!==chrome.runtime.getURL('popup.html'))
+          return sendResponse(ibDenied('BLOCKED_EXTENSION_SOURCE'));
+        const last=message.type==='ONES_IDENTITY_BINDING_LAST',keys=Object.keys(message);
+        if(keys.length!==(last?1:2)||!keys.includes('type')||(!last&&!keys.includes('tabId')))
+          return sendResponse(ibDenied('BLOCKED_INPUT'));
+        if(last)return sendResponse(await ibLast());
+        if(bridgeSideChannelBusy)return sendResponse(ibDenied('BLOCKED_IN_FLIGHT'));
+        bridgeSideChannelBusy=true;
+        try{sendResponse(await ibRead(ibOwn(message,'tabId')));}
+        finally{bridgeSideChannelBusy=false;}
+      }catch(_){sendResponse(ibDenied('BLOCKED_UNCERTAIN'));}
+    })();
+    return true;
+  }
   if (message?.type === "ONES_NATIVE_DIAGNOSTIC_RUN" || message?.type === "ONES_NATIVE_DIAGNOSTIC_VERIFY" || message?.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
     (async () => {
+      if(bridgeSideChannelBusy){sendResponse({ok:false,status:'BLOCKED_IN_FLIGHT',diagnosticOnly:true,saveDispatched:false});return;}
+      bridgeSideChannelBusy=true;
+      try {
       const config = await getRelayConfig();
       if (message.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
         sendResponse(await globalThis.onesNativeEditorDiagnosticLast());
@@ -852,6 +985,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } else {
         sendResponse(await globalThis.onesNativeEditorDiagnosticVerify(config,message.tabId));
       }
+      } finally {bridgeSideChannelBusy=false;}
     })().catch(() => sendResponse({ok:false,status:"BLOCKED_UNCERTAIN",diagnosticOnly:true,saveDispatched:false}));
     return true;
   }

@@ -807,3 +807,128 @@ globalThis.onesNativeEditorDiagnosticLast = async () => {
     warning:receipt.warning || (pending?'CANCEL_DOES_NOT_PROVE_AUTOSYNC_ABSENT':undefined)
   });
 };
+
+// Operator-only read side-channel. Serialized into MAIN without worker closures.
+// This does not arm the diagnostic, read field content or grant write authority.
+async function onesIdentityBindingReadPage(expected) {
+  const own = (o,k) => {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return undefined;
+    const d=Object.getOwnPropertyDescriptor(o,k);
+    return d && Object.prototype.hasOwnProperty.call(d,'value') ? d.value : undefined;
+  };
+  const id = v => typeof v==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
+  const stages=[];
+  let requestCount=0,stage='DOM_BEFORE',httpStatus=0;
+  const stamp = name => {stage=name;stages.push({stage:name,capturedAt:new Date().toISOString()});};
+  const receipt = (status,binding) => ({ok:!!binding,status,readOnly:true,validBinding:!!binding,
+    privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',writeGate:'OFF',requestCount,stage,stages:stages.slice(),
+    ...(status==='BLOCKED_READ_HTTP'?{httpStatus}:{}),...(binding?{privateBinding:binding}: {})});
+  const stop = status => {throw {bindingReadStatus:status};};
+  const initialHref=location.href;
+  try {
+    const origin=own(expected,'onesOrigin'),team=own(expected,'teamUuid'),project=own(expected,'projectUuid');
+    const issueType=own(expected,'issueTypeUuid'),fieldId=own(expected,'rootCauseFieldId'),display=own(expected,'displayId');
+    const expectedHref=own(expected,'href');
+    if (typeof origin!=='string' || ![team,project,issueType,fieldId,display].every(id) ||
+        typeof expectedHref!=='string') stop('BLOCKED_CONFIG');
+    const routeMatches = () => {
+      const u=new URL(location.href),configured=new URL(origin);
+      const route=u.pathname==='/project/'&&u.hash.startsWith('#/team/')?u.hash.slice(1):
+        !u.hash&&u.pathname.startsWith('/team/')?u.pathname:'';
+      const match=route.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
+      return configured.protocol==='https:' && configured.origin===origin && !configured.username &&
+        !configured.password && configured.pathname==='/' && !configured.search && !configured.hash &&
+        u.origin===origin && location.href===initialHref && initialHref===expectedHref && !u.search &&
+        !!match && match[1]===team && match[2]===display;
+    };
+    const guard = () => {if(!routeMatches())stop('BLOCKED_NAVIGATION');};
+    const visible = el => {
+      if(!el?.isConnected)return false;
+      const r=el.getBoundingClientRect(),c=getComputedStyle(el);
+      return r.width>0 && r.height>0 && c.display!=='none' && c.visibility!=='hidden' && Number(c.opacity||'1')>0;
+    };
+    const norm = value => typeof value==='string'?value.replace(/[\u200B\uFEFF]/g,'').trim():'';
+    const labelMatches = label => [label,...label.querySelectorAll('label,span,div,p,h1,h2,h3,h4,h5,h6')]
+      .some(node=>visible(node)&&['问题根因','【问题根因】'].includes(norm(node.innerText||node.textContent)));
+    const bindDom = () => {
+      // Read only canonical label subtrees, never generic page text or field text.
+      const labels=[...document.querySelectorAll('.form-field-label.edit_form_field_label')]
+        .filter(label=>visible(label)&&labelMatches(label));
+      if(labels.length!==1)stop('BLOCKED_DOM_BINDING');
+      const label=labels[0],container=label.closest('.oac-flex.oac-py-1.oac-items-start.oac-flex-col');
+      const roots=[...document.querySelectorAll('[id="'+fieldId+'"]')];
+      if(!container || container===document.body || container===document.documentElement ||
+          !visible(container) || roots.length!==1 || !visible(roots[0]) ||
+          !container.contains(roots[0]) ||
+          roots[0].closest('.oac-flex.oac-py-1.oac-items-start.oac-flex-col')!==container) stop('BLOCKED_DOM_BINDING');
+      return {label,container,fieldRoot:roots[0]};
+    };
+    guard();
+    const before=bindDom();stamp('DOM_BEFORE');
+    const read = async (name,url,init={method:'GET'}) => {
+      stage=name;guard();
+      const controller=new AbortController();
+      let timer;
+      try {
+        const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{
+          controller.abort();reject({bindingReadStatus:'BLOCKED_READ_TIMEOUT'});
+        },5000);});
+        requestCount++;
+        const result=await Promise.race([(async()=>{
+          const response=await fetch(url,{...init,credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
+          if(response.ok!==true){
+            const code=response.status;
+            httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
+            stamp(name);stop('BLOCKED_READ_HTTP');
+          }
+          const text=await response.text();
+          if(typeof text!=='string'||text.length>1048576)stop('BLOCKED_READ_RESPONSE');
+          let body;
+          try{body=JSON.parse(text);}catch(_){stop('BLOCKED_READ_RESPONSE');}
+          if(!body||typeof body!=='object'||Array.isArray(body))stop('BLOCKED_READ_RESPONSE');
+          return body;
+        })(),timeout]);
+        guard();stamp(name);return result;
+      } catch(error) {
+        if(own(error,'bindingReadStatus'))throw error;
+        stop('BLOCKED_READ_FAILED');
+      } finally {clearTimeout(timer);}
+    };
+    const base=origin+'/project/api/project/team/'+encodeURIComponent(team);
+    const first=await read('USER_START',origin+'/project/api/project/users/me');
+    const account=own(first,'uuid');
+    if(!id(account))stop('BLOCKED_IDENTITY_SCHEMA');
+    const resolved=await read('TASK_RESOLVE',origin+'/project/api/ones-project/team/'+encodeURIComponent(team)+'/tasks/identifier',{
+      method:'POST',headers:{'content-type':'application/json; charset=UTF-8'},body:JSON.stringify({display_id_path:display})});
+    const taskUuid=own(resolved,'task_uuid');
+    if(own(resolved,'display_id')!==display||!id(taskUuid))stop('BLOCKED_TASK_RESOLVE');
+    const task=await read('TASK_INFO',base+'/task/'+encodeURIComponent(taskUuid)+'/info');
+    const actualTask=own(task,'uuid'),assignee=own(task,'assign'),actualProject=own(task,'project_uuid'),actualType=own(task,'issue_type_uuid');
+    if(![actualTask,assignee,actualProject,actualType].every(id))stop('BLOCKED_TASK_SCHEMA');
+    if(actualTask!==taskUuid||actualProject!==project||actualType!==issueType)stop('BLOCKED_TASK_SCOPE');
+    if(account!==assignee)stop('BLOCKED_OWNER_MISMATCH');
+    const definitions=own(await read('FIELD_SCHEMA',base+'/fields'),'fields');
+    if(!Array.isArray(definitions)||definitions.length>10000)stop('BLOCKED_FIELD_SCHEMA');
+    const fields=definitions.filter(row=>own(row,'uuid')===fieldId);
+    if(fields.length!==1||!['问题根因','【问题根因】'].includes(own(fields[0],'name'))||own(fields[0],'type')!==15)
+      stop('BLOCKED_FIELD_SCHEMA');
+    const configs=own(await read('FIELD_CONFIG',base+'/field_configs'),'field_configs');
+    if(!Array.isArray(configs)||configs.length>10000)stop('BLOCKED_FIELD_CONFIG');
+    const matches=configs.filter(row=>own(row,'project_uuid')===project&&own(row,'issue_type_uuid')===issueType&&own(row,'field_uuid')===fieldId);
+    if(matches.length!==1)stop('BLOCKED_FIELD_CONFIG');
+    const last=await read('USER_END',origin+'/project/api/project/users/me');
+    if(!id(own(last,'uuid')))stop('BLOCKED_IDENTITY_SCHEMA');
+    if(own(last,'uuid')!==account)stop('BLOCKED_IDENTITY_CHANGED');
+    guard();stage='DOM_AFTER';
+    const after=bindDom();
+    if(before.label!==after.label||before.container!==after.container||before.fieldRoot!==after.fieldRoot)
+      stop('BLOCKED_DOM_BINDING');
+    stamp('DOM_AFTER');
+    return receipt('IDENTITY_BINDING_READ_VERIFIED',{accountUuid:account,assigneeUuid:assignee,taskUuid,
+      resolvedTaskUuid:taskUuid,displayId:display,teamUuid:team,projectUuid:project,issueTypeUuid:issueType,fieldId,fieldType:15});
+  }catch(error){
+    const status=own(error,'bindingReadStatus');
+    return receipt(typeof status==='string'&&/^BLOCKED_[A-Z_]{1,45}$/.test(status)?status:'BLOCKED_READ_FAILED');
+  }
+}
+globalThis.onesIdentityBindingReadPage=onesIdentityBindingReadPage;

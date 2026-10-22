@@ -19,6 +19,7 @@ function environment(options = {}) {
   const session = {};
   const events = [];
   let last={ok:false,status:'NOT_RUN',pendingServerVerification:false};
+  let identityLast={ok:false,status:'NOT_VERIFIED',readOnly:true,validBinding:false,historical:true};
   let handler;
   const noEvent = { addListener() {} };
   const background = {
@@ -43,6 +44,7 @@ function environment(options = {}) {
   const sendMessage = (message) => {
     events.push(message.type);
     if (message.type === 'ONES_NATIVE_DIAGNOSTIC_LAST') return Promise.resolve(clone(last));
+    if (message.type === 'ONES_IDENTITY_BINDING_LAST') return Promise.resolve(clone(identityLast));
     return new Promise((resolve) => {
       const handled = handler(clone(message), {}, (response) => resolve(clone(response)));
       assert.equal(handled, true);
@@ -72,7 +74,7 @@ function environment(options = {}) {
     };
   }
   return { local, session, events, sendMessage, popup,
-    setLast: (x) => { last=clone(x); } };
+    setLast: (x) => { last=clone(x); },setIdentityLast:(x)=>{identityLast=clone(x)} };
 }
 
 function fill(p, changes = {}) {
@@ -359,4 +361,34 @@ test('phase focus evidence survives popup reopen through bounded metadata whitel
  assert.equal(shown.phases[0].elapsedMs,0);assert.equal(shown.phases[0].events.length,40);
  assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
+test('private identity LAST is labeled historical and displayed through a UUID-only whitelist',async()=>{
+ const env=environment(),secret='SYNTHETIC_RAW_PRIVATE_IDENTITY_EXTRA';
+ env.setIdentityLast({ok:true,status:'IDENTITY_BINDING_READ_VERIFIED',readOnly:true,validBinding:false,historical:true,
+  observedAt:'2026-10-23T00:00:00.000Z',requestCount:6,stages:[],raw:secret,
+  privateBinding:{accountUuid:'user',assigneeUuid:'user',taskUuid:'task',resolvedTaskUuid:'task',displayId:'SYN-1',
+   teamUuid:'t',projectUuid:'p',issueTypeUuid:'i',fieldId:'f',fieldType:15,name:secret,token:secret}});
+ const p=await ready(env);await flush();
+ const shown=JSON.parse(p.elements.identityBindingOutput.textContent);
+ assert.equal(shown.historical,true);assert.equal(shown.validBinding,false);
+ assert.equal(shown.privateBinding.accountUuid,'user');
+ assert.match(p.elements.identityBindingStatus.textContent,/历史观测，不授写权限/);
+ assert.equal(p.elements.identityBindingOutput.textContent.includes(secret),false);
+ assert.equal(env.events.filter(x=>x==='ONES_IDENTITY_BINDING_READ').length,0);
+ assert.match(popupHtml,/href="popup.html" target="_blank" rel="noopener"/);
+ env.setIdentityLast({status:'BLOCKED_READ_HTTP',httpStatus:403,stage:'USER_START',historical:true,
+  raw:secret,requestCount:1,stages:[{stage:'USER_START',capturedAt:'2026-10-23T00:00:00.000Z'}]});
+ const again=await ready(env);await flush();
+ assert.equal(JSON.parse(again.elements.identityBindingOutput.textContent).httpStatus,403);
+ assert.equal(JSON.parse(again.elements.identityBindingOutput.textContent).stage,'USER_START');
+ assert.equal(again.elements.identityBindingOutput.textContent.includes(secret),false);
+ for(const status of ['BLOCKED_READ_FAILED','BLOCKED_READ_TIMEOUT']){
+  env.setIdentityLast({status,stage:'FIELD_CONFIG',historical:true,requestCount:5,raw:secret,
+    stages:[{stage:'FIELD_SCHEMA',capturedAt:'2026-10-23T00:00:00.000Z'}]});
+  const failed=await ready(env);await flush();
+  const receipt=JSON.parse(failed.elements.identityBindingOutput.textContent);
+  assert.equal(receipt.stage,'FIELD_CONFIG');assert.equal(receipt.stages.at(-1).stage,'FIELD_SCHEMA');
+  assert.equal(receipt.status,status);assert.equal(failed.elements.identityBindingOutput.textContent.includes(secret),false);
+ }
 });
