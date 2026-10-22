@@ -18,6 +18,8 @@ function environment(options = {}) {
   const local = {};
   const session = {};
   const events = [];
+  let last={ok:false,status:'NOT_RUN',pendingServerVerification:false};
+  let identityLast={ok:false,status:'NOT_VERIFIED',readOnly:true,validBinding:false,historical:true};
   let handler;
   const noEvent = { addListener() {} };
   const background = {
@@ -41,6 +43,8 @@ function environment(options = {}) {
   }, { filename: 'service-worker.js' });
   const sendMessage = (message) => {
     events.push(message.type);
+    if (message.type === 'ONES_NATIVE_DIAGNOSTIC_LAST') return Promise.resolve(clone(last));
+    if (message.type === 'ONES_IDENTITY_BINDING_LAST') return Promise.resolve(clone(identityLast));
     return new Promise((resolve) => {
       const handled = handler(clone(message), {}, (response) => resolve(clone(response)));
       assert.equal(handled, true);
@@ -69,7 +73,8 @@ function environment(options = {}) {
       output: () => JSON.parse(elements.output.textContent)
     };
   }
-  return { local, session, events, sendMessage, popup };
+  return { local, session, events, sendMessage, popup,
+    setLast: (x) => { last=clone(x); },setIdentityLast:(x)=>{identityLast=clone(x)} };
 }
 
 function fill(p, changes = {}) {
@@ -269,4 +274,121 @@ test('double click does not dispatch duplicate config or permission operations',
   finish(true);
   await saving;
   assert.equal(p.elements.saveConfig.disabled, false);
+});
+
+test('popup reopen restores last metadata only and pending readback without CDP',async()=>{
+  const env=environment();
+  env.setLast({ok:true,status:'TRACE_EXACT_ONCE',pendingServerVerification:true,
+    serverVerification:'PENDING_CANCEL_AND_INDEPENDENT_READ',insertTextCount:1,
+    trace:{semantic:'EXACT_ONCE'},secret:'hidden-private'});
+  const first=await ready(env);
+  await flush();
+  assert.match(first.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+  assert.equal(first.elements.nativeDiagOutput.textContent.includes('hidden-private'),false);
+  const second=await ready(env);
+  await flush();
+  assert.match(second.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+  assert.equal(second.elements.nativeDiagOutput.textContent.includes('TRACE_EXACT_ONCE'),true);
+  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_LAST').length,2);
+  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+  env.setLast({ok:false,status:'SERVER_BLANK_OBSERVED',pendingServerVerification:false,
+    serverVerification:'SERVER_BLANK_OBSERVED'});
+  const third=await ready(env);await flush();
+  assert.doesNotMatch(third.elements.nativeDiagStatus.textContent,/待服务端/);
+  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+test('popup reopened after ambiguous interruption retains pending warning',async()=>{
+ const env=environment();
+ env.setLast({ok:false,status:'DIAGNOSTIC_INTERRUPTED',pendingServerVerification:true,interrupted:true});
+ const p=await ready(env);await flush();
+ assert.match(p.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes('DIAGNOSTIC_INTERRUPTED'),true);
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
+test('privacy-safe dirty-block receipt survives popup reopen without diagnostic replay',async()=>{
+ const env=environment();
+ const secret='SYNTHETIC_CUSTOMER_TEXT_NEVER_EXPORT';
+ env.setLast({status:'BLOCKED_DIRTY_DRAFT',insertTextCount:0,saveDispatched:false,
+   pendingServerVerification:false,serverVerification:'NOT_VERIFIED',
+   preflight:{stage:'INSPECT_2',reason:'UNCLASSIFIED_BLOCK_TEXT',nonemptyBlockCount:1,
+    unclassifiedBlockCount:1,authoringSurfaceCount:1,possibleAuthoringCount:0,
+    nonvisibleNonemptyCount:0,textareaCount:1,textareaState:'EMPTY',
+    maxBlockLength:'ONE_TO_32',maxAuthoringLength:'ZERO',domCaretShape:'NO_DOM_RANGE',
+    provenance:{schema:'LEAF_OWNER_V1',nonemptyLeafCount:1,inspectedNodeCount:2,
+      maxLeafLength:'ONE_TO_32',unknownLeaves:1,incomplete:false,
+      rawText:secret,html:'<private>',url:'https://private.invalid',sha256:'1234',
+      arbitraryPayload:{secret}},
+    actualText:secret,html:'<private>',url:'https://private.invalid',sha256:'1234'}});
+ for(let i=0;i<2;i++){
+  const p=await ready(env);await flush();
+  assert.match(p.elements.nativeDiagStatus.textContent,/INSPECT_2.*UNCLASSIFIED_BLOCK_TEXT/);
+  const shown=p.elements.nativeDiagOutput.textContent;
+  assert.equal(shown.includes(secret),false);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes('LEAF_OWNER_V1'),true);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes('unknownLeaves'),true);
+  for(const forbidden of ['private.invalid','sha256','actualText','html','<private>'])assert.equal(shown.includes(forbidden),false);
+ }
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
+test('phase focus evidence survives popup reopen through bounded metadata whitelist',async()=>{
+ const env=environment(),secret='SYNTHETIC_PRIVATE_PHASE';
+ env.setLast({status:'BLOCKED_FOCUS_DRIFT',insertTextCount:0,saveDispatched:false,
+  pendingServerVerification:true,phase:'AFTER_NATIVE_CLICK',phases:[
+   {stage:'AFTER_NATIVE_CLICK',elapsedMs:481,mutationCount:1,blockCount:2,
+    focusedBlockCount:0,sameBoundBlock:false,hostKind:'TEXTAREA',activeHostKind:'TEXTAREA',
+    hostConnected:true,blockConnected:true,rootConnected:true,nativeHostFocused:true,
+    domRangeCount:0,domCollapsed:true,domInBoundBlock:false,selectionProof:'NATIVE_TEXTAREA_CARET',
+    anchorOffset:0,focusOffset:0,raw:secret,
+    events:[{type:'beforeinput',inputType:'insertText',trusted:true,raw:secret}]}]});
+ for(let i=0;i<2;i++) {
+  const p=await ready(env);await flush();
+  const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+  assert.equal(shown.phase,'AFTER_NATIVE_CLICK');
+  assert.equal(shown.phases[0].focusedBlockCount,0);
+  assert.equal(shown.phases[0].hostKind,'TEXTAREA');
+  assert.equal(shown.phases[0].events[0].type,'beforeinput');
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ }
+ env.setLast({status:'BLOCKED_FOCUS_DRIFT',phase:secret,
+   phases:Array(100).fill({stage:secret,hostKind:secret,focusedBlockCount:1e9,
+    elapsedMs:Infinity,events:Array(100).fill({type:secret,inputType:secret,raw:secret}),raw:secret})});
+ const p=await ready(env);await flush();
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.phase,'UNVERIFIED');assert.equal(shown.phases.length,6);
+ assert.equal(shown.phases[0].focusedBlockCount,16);
+ assert.equal(shown.phases[0].elapsedMs,0);assert.equal(shown.phases[0].events.length,40);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
+test('private identity LAST is labeled historical and displayed through a UUID-only whitelist',async()=>{
+ const env=environment(),secret='SYNTHETIC_RAW_PRIVATE_IDENTITY_EXTRA';
+ env.setIdentityLast({ok:true,status:'IDENTITY_BINDING_READ_VERIFIED',readOnly:true,validBinding:false,historical:true,
+  observedAt:'2026-10-23T00:00:00.000Z',requestCount:6,stages:[],raw:secret,
+  privateBinding:{accountUuid:'user',assigneeUuid:'user',taskUuid:'task',resolvedTaskUuid:'task',displayId:'SYN-1',
+   teamUuid:'t',projectUuid:'p',issueTypeUuid:'i',fieldId:'f',fieldType:15,name:secret,token:secret}});
+ const p=await ready(env);await flush();
+ const shown=JSON.parse(p.elements.identityBindingOutput.textContent);
+ assert.equal(shown.historical,true);assert.equal(shown.validBinding,false);
+ assert.equal(shown.privateBinding.accountUuid,'user');
+ assert.match(p.elements.identityBindingStatus.textContent,/历史观测，不授写权限/);
+ assert.equal(p.elements.identityBindingOutput.textContent.includes(secret),false);
+ assert.equal(env.events.filter(x=>x==='ONES_IDENTITY_BINDING_READ').length,0);
+ assert.match(popupHtml,/href="popup.html" target="_blank" rel="noopener"/);
+ env.setIdentityLast({status:'BLOCKED_READ_HTTP',httpStatus:403,stage:'USER_START',historical:true,
+  raw:secret,requestCount:1,stages:[{stage:'USER_START',capturedAt:'2026-10-23T00:00:00.000Z'}]});
+ const again=await ready(env);await flush();
+ assert.equal(JSON.parse(again.elements.identityBindingOutput.textContent).httpStatus,403);
+ assert.equal(JSON.parse(again.elements.identityBindingOutput.textContent).stage,'USER_START');
+ assert.equal(again.elements.identityBindingOutput.textContent.includes(secret),false);
+ for(const status of ['BLOCKED_READ_FAILED','BLOCKED_READ_TIMEOUT']){
+  env.setIdentityLast({status,stage:'FIELD_CONFIG',historical:true,requestCount:5,raw:secret,
+    stages:[{stage:'FIELD_SCHEMA',capturedAt:'2026-10-23T00:00:00.000Z'}]});
+  const failed=await ready(env);await flush();
+  const receipt=JSON.parse(failed.elements.identityBindingOutput.textContent);
+  assert.equal(receipt.stage,'FIELD_CONFIG');assert.equal(receipt.stages.at(-1).stage,'FIELD_SCHEMA');
+  assert.equal(receipt.status,status);assert.equal(failed.elements.identityBindingOutput.textContent.includes(secret),false);
+ }
 });

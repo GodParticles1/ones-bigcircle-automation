@@ -31,6 +31,23 @@
       <button id="pollNow">Poll now</button>
     </div>
 
+    <section aria-label="Private read-only identity binding">
+      <p class="hint">只读核对当前账户、负责人、单工单及问题根因字段。收据含本机私密 UUID，请勿上传或公开；不会读取字段正文、输入或保存。</p>
+      <div id="identityBindingStatus" class="state">本机私密收据：尚未核对</div>
+      <pre id="identityBindingOutput">{}</pre>
+      <div class="row"><button id="identityBindingRead">只读核对身份与工单</button></div>
+      <a href="popup.html" target="_blank" rel="noopener">在标签页查看私密历史收据</a>
+      <p class="hint">标签页仅查看五分钟内的历史观测，不授写权限；新核对须回到 ONES 当前工单并打开扩展。</p>
+    </section>
+    <section aria-label="Native editor diagnostic">
+      <p class="hint">诊断专用：仅在 WRITE_GATE=OFF 且权威字段为空时，尝试一次原生文本输入；不会保存。ONES 在线协作草稿可能自动同步，取消不代表服务端已回滚。</p>
+      <div id="nativeDiagStatus" class="state">诊断状态：读取中</div>
+      <pre id="nativeDiagOutput">{}</pre>
+      <div class="row">
+        <button id="nativeDiagRun">单次原生编辑器诊断</button>
+        <button id="nativeDiagVerify">取消后核查服务端</button>
+      </div>
+    </section>
     <div id="inventoryPage" class="state">Inventory page: not bound</div>
     <div id="runtime" class="state">Runtime: unknown</div>
     <pre id="output">{}</pre>
