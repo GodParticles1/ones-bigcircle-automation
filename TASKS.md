@@ -4,14 +4,28 @@
 
 Current facts and source identities: `docs/context/CURRENT.md`. Existing control: [Issue #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524).
 
+The executable stage gates, exact downloadable package, tests and result branches are owned by [the current test plan](TEST_MATRIX.md#current-0518-test-plan--2026-10-25). Stage-0 uses the accepted package now; Stage-1 native input is HOLD until the bounded #110 confirmation/binding/timing correction is reviewed and separately packaged.
+
 | Priority / owner | Existing lane | Next result / dependency |
 | --- | --- | --- |
 | P0 / one package Writer, independent Leader review | #112 / PR #113 | Source synchronization is complete on the original release branch. Use its exact-release-head CI and actual-archive review receipt to hand over the candidate; do not resynchronize or rebuild unchanged accepted bytes. Preserve the frozen #109 full installer. |
-| P0 / existing local Pro Codex runtime owner | #110 / PR #111, #112 candidate | After exact candidate review, complete the bounded read-only identity/task/type/field check and two fresh authoritative BLANK reads; return exact failed stage/code if unavailable. No generic browser/platform investigation. |
+| P0 / existing local Pro Codex runtime owner | #110 / PR #111, accepted #112 Stage-0 candidate | Execute the already-approved installation/read-only identity/task/type/field check and two fresh authoritative BLANK reads. Return the actual result or precise failed stage/code; do not wait for the next diagnostic package. |
+| P0 / original diagnostic source owner | #110 / PR #111 | In parallel with Stage-0, bind fresh identity, exact marker/recovery confirmation and >=750 ms definite-BLANK ordering to one native attempt. Follow the [bounded continuation](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#issuecomment-6394226007); no production Writer edits. Independent source review/CI precedes one #112 incremental candidate. |
 | P0 / original native-editor source owner | #103 | Supported same-editor trace -> faithful RED reproducer -> smallest GREEN correction -> independent semantic/CI review. Formal Writer remains BLOCKED until the accepted mechanism gate is met. |
 | Dependent / Leader and local runtime owner | #103, #85, #86, #108 | Rebuild final 0.5.18 installation package only from the accepted correction; perform separately authorized single-target runtime acceptance and decide presentation/convergence criteria independently. |
 | Independent closure / existing Big-circle task owner | PR #114 | Source is integrated. Retain a bounded actual task/prompt/document-body/CASE_FEED acceptance follow-up; no duplicate task or source-repository prerequisite. |
 | QUEUED | #97; #115/P7; #21 | #97 follows F2 acceptance. P7 and tooling debt must not delay F2; no new Writer is activated by this priority snapshot. |
+
+### Near-term sequence and useful parallel work
+
+- **Next supported local window:** the runtime owner targets one Stage-0 result in roughly 30–45 minutes of active operator time. This is an operating budget, not a deadline or a reason to skip required waits. If unavailable or blocked, return that precise blocker in the same turn; do not spend another session on generic platform investigation.
+- **During that window:** the original #110 source owner can prepare only the bounded Stage-1 gate correction. No second Writer edits its hot spots. Leader reviews a reviewable checkpoint in the same active turn when received; source/CI acceptance must precede new packaging.
+- **Next native window:** after the new candidate and concrete per-attempt confirmation are ready, collect one trace and independently close server state. A blocked or uncertain outcome is a decision point, not permission for repeated trials. The next #103 implementation budget is set from that trace; no unsupported calendar promise for 0.5.18.
+- **Independent opportunity now:** the existing Big-circle task owner may verify #114's deployed prompt and a bounded native result in its original task, using the merged document-body/result semantics. Do not create another scheduled task or make this a dependency of F2. If that interface is unavailable, report the actual gap.
+- **Prepare once, test once:** define #85/#86 acceptance observations now and collect them from the same later authorized single-target RC run. Do not assign another Writer to the production native-input hot spot or generate separate writes for each issue.
+- **After F2:** freeze the next #97 navigation/stop/resume increment before activating its Writer. #115/P7 stays a separate queued nonproduction opportunity; #21 remains deferred. Neither expands 0.5.18.
+
+Execution remains unobserved until the existing lane supplies a real attributable receipt; publishing this schedule does not start a local task or create background automation.
 
 The old #109 installer work is completed at source level. Do not restart it from a pre-merge handoff. Do not reopen #84, the accepted historical no-input/pending-barrier closure or the completed visible-contract ACK lane without contradictory applicable evidence.
 
@@ -272,3 +286,4 @@ Replace the developer-console layout with a compact product UI: connection/confi
 - automatic ONES create/import;
 - owner/status/project/priority/delete automation;
 - any production write beyond separately accepted bounded field-sync contracts.
+

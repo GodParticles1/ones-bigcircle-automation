@@ -13,6 +13,8 @@ The active integration decision is [Leader Control #1](https://github.com/GodPar
 
 Next product gate: the existing local runtime owner establishes canonical account = assignee and exact task/project/type/field binding, followed by two definite independent authoritative BLANK reads. A separately confirmed one-attempt native diagnostic may then establish the same-editor mechanism. Source/tests and CI are not that runtime proof. #103 formal Writer and production writes remain OFF; #85/#86 keep their separate runtime criteria; #97 remains queued.
 
+The current [test plan](../../TEST_MATRIX.md#current-0518-test-plan--2026-10-25) keeps the accepted #113 candidate available for Stage-0. Stage-1 input is HOLD pending the original #110's execution-bound identity/marker confirmation and definite-BLANK timing correction, independent review and a distinct diagnostic candidate. This is a bounded tooling continuation, not #103 mechanism proof; TASKS owns operating windows and independent opportunities.
+
 The dated sections below retain historical evidence within their original scope. They do not override this current entry or live issue/PR decisions. Follow `TASKS.md` for priorities and `HANDOFF.md` for the executable continuation.
 
 Date: 2026-09-21
@@ -474,3 +476,4 @@ Exact next product action:
 one fresh eligible unique task-level SET_CANDIDATE -> one bounded write acceptance -> collect both #85 rendered-left and #86 convergence evidence without rewriting the already-used YF-12439 target. Then decide #85/#86 closure independently. After that, freeze and activate #97.
 
 Manual pre-opening of a ticket is acceptance scaffolding only and is not the intended production model.
+
