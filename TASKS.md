@@ -1,5 +1,22 @@
 # Tasks
 
+## Current priority — 0.5.18 Gate F2 closure (2026-10-25)
+
+Current facts and source identities: `docs/context/CURRENT.md`. Existing control: [Issue #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524).
+
+| Priority / owner | Existing lane | Next result / dependency |
+| --- | --- | --- |
+| P0 / one package Writer, independent Leader review | #112 / PR #113 | Source synchronization is complete on the original release branch. Use its exact-release-head CI and actual-archive review receipt to hand over the candidate; do not resynchronize or rebuild unchanged accepted bytes. Preserve the frozen #109 full installer. |
+| P0 / existing local Pro Codex runtime owner | #110 / PR #111, #112 candidate | After exact candidate review, complete the bounded read-only identity/task/type/field check and two fresh authoritative BLANK reads; return exact failed stage/code if unavailable. No generic browser/platform investigation. |
+| P0 / original native-editor source owner | #103 | Supported same-editor trace -> faithful RED reproducer -> smallest GREEN correction -> independent semantic/CI review. Formal Writer remains BLOCKED until the accepted mechanism gate is met. |
+| Dependent / Leader and local runtime owner | #103, #85, #86, #108 | Rebuild final 0.5.18 installation package only from the accepted correction; perform separately authorized single-target runtime acceptance and decide presentation/convergence criteria independently. |
+| Independent closure / existing Big-circle task owner | PR #114 | Source is integrated. Retain a bounded actual task/prompt/document-body/CASE_FEED acceptance follow-up; no duplicate task or source-repository prerequisite. |
+| QUEUED | #97; #115/P7; #21 | #97 follows F2 acceptance. P7 and tooling debt must not delay F2; no new Writer is activated by this priority snapshot. |
+
+The old #109 installer work is completed at source level. Do not restart it from a pre-merge handoff. Do not reopen #84, the accepted historical no-input/pending-barrier closure or the completed visible-contract ACK lane without contradictory applicable evidence.
+
+The following historical and future lanes keep their accepted scopes; their older version snapshots do not supersede the current priority above.
+
 ## P0 — Windows Chrome runtime acceptance for Browser Bridge v0.4.1
 
 `LANE_STATE=RETIRED_PASS`
