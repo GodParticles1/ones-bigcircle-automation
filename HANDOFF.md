@@ -1,5 +1,24 @@
 # Handoff
 
+## Immediate continuation — 2026-10-25
+
+Start from `docs/context/CURRENT.md`, the [current Leader decision](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524), PR #111 and dependent PR #113. PR #109 is already merged; no installer rewrite or repeated old review is needed.
+
+1. **Candidate delivery:** use the already synchronized candidate from the existing [#112 continuation](https://github.com/GodParticles1/ones-bigcircle-automation/issues/112#issuecomment-6393740040) from reviewed #111 source `511e880e68fac1e479de1ac63bb5d23fdde627c7`. Require its exact #113 release-head CI and actual-archive acceptance receipt, inheriting still-valid proof rather than repeating synchronization or builds. Use that receipt's release SHA/artifact, not #111's legacy-labelled full-install artifact. Preserve previous candidate and accepted installation bytes.
+2. **Local read-only acceptance:** the original local Pro Codex execution owner uses its supported local capability and existing task. After exact candidate approval, retain the old extension/Relay/database/token and follow the existing diagnostic runbook's new-directory/one-active-Bridge procedure. No new cloud task, guessed owner locator, permission bypass or ONES mutation is authorized here.
+3. **Identity and baseline:** run the candidate's fresh read-only identity/binding action. Require canonical signed-in account = task assignee, exact task/project/type/field binding and stable configured tab. A historical LAST receipt is not a fresh binding. On HTTP/auth/schema/identity failure, report the exact supported stage/code and stop; do not probe alternate endpoints or credentials.
+4. **Two independent server reads:** only a definite successful first authoritative BLANK read starts the at-least-750-ms interval before the second independent read. Preserve uncertain jobs and inspect only the original job; do not enqueue replacements. Nonempty or unknown content blocks input.
+5. **One diagnostic, only after concrete per-run confirmation:** retain the chosen synthetic marker and recovery plan under the existing one-ticket/one-field experimental authority. Capture phase/focus/selection/trusted-event and length/hash transitions from the same editor build, including asynchronous mutations. At most one native insertion; Save=0. Draft input can autosync; Cancel or extension rollback cannot prove server rollback. Independent authoritative readback must close the attempt, with uncertainty stopping further input.
+6. **Source correction and release:** once the trace supports a mechanism, refresh the original #103 Writer base and bounded ownership; implement faithful RED -> GREEN and preserve exact identity, one-input/one-Save and non-retry semantics. Independent review, exact-head CI, final package and separately authorized real acceptance precede 0.5.18 release. Decide #85/#86 separately before #97.
+
+Local-runtime delivery is an assignment until a lane-attributable execution receipt is observed. The current remote Leader session does not by itself prove Windows task start, Chrome control, installation or runtime acceptance. Do not make the user relay routine GitHub state between agents.
+
+The owner contract/ACK follow-up in #111 comment `6339801388` is already closed within its visible scope. Its platform-repair goal is still NOT_REPAIRED, but repeating those requests does not advance the current product gate.
+
+PR #114 source is integrated at `f20320d15e4eee8797d8b7afcca234684fbb98f6`; its existing native task still needs bounded runtime evidence. P7/#115 remains queued and does not occupy the F2 critical path.
+
+Earlier handoffs below are historical. Preserve valid accepted evidence and supersede only the facts explicitly changed above.
+
 ## Integrated bases
 
 - Browser Bridge v0.4.1: integrated on main by merge `89c131d56e156c2977889670ee844392d7eef3f4`; Issue #12 setup-draft persistence correction is closed.
