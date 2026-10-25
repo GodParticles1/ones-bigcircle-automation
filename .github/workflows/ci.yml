@@ -24,6 +24,7 @@ jobs:
       - run: python reconciliation/tests/test_pipeline.py
       - run: node browser-bridge/tests/draft_persistence_test.js
       - run: node --test browser-bridge/tests/popup_save_test.js
+      - run: node --test browser-bridge/tests/identity_binding_read_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
       - run: python local-relay/tests/test_relay.py
       - shell: pwsh
@@ -92,6 +93,7 @@ jobs:
           python-version: '3.12'
       - run: node browser-bridge/tests/draft_persistence_test.js
       - run: node --test browser-bridge/tests/popup_save_test.js
+      - run: node --test browser-bridge/tests/identity_binding_read_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
       - run: python local-relay/tests/test_relay.py
       - shell: powershell
