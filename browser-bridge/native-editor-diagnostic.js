@@ -633,7 +633,7 @@ async function nedCurrentTab(config, tabId, expectedHref) {
 }
 async function nedSaveState(value) { await chrome.storage.session.set({[NED_SESSION_KEY]:value}); }
 async function nedLoadState() { return (await chrome.storage.session.get(NED_SESSION_KEY))?.[NED_SESSION_KEY] || null; }
-async function nedRun(config, tabId) {
+async function nedRun(config, tabId, execution) {
   if (nedInFlight) return nedRedacted('BLOCKED_IN_FLIGHT');
   nedInFlight = true;
   const tabTarget = {tabId};
@@ -642,29 +642,46 @@ async function nedRun(config, tabId) {
   let pending=null;
   let status='BLOCKED_PREFLIGHT';
   try {
+    // The worker owns this execution and its closure. Client messages cannot
+    // supply a function or replace the marker after concrete confirmation.
+    if (!execution || !nedId(execution.run) || !nedId(execution.taskUuid) ||
+        typeof execution.href!=='string' || typeof execution.guard!=='function' ||
+        !/^NDP[0-9a-f]{12}$/.test(execution.marker || '')) return nedRedacted('BLOCKED_EXECUTION_PROOF');
+    const executionGuard=execution.guard;
+    const guard=async()=>{try{return await executionGuard()===true;}catch(_){return false;}};
+    const marker=execution.marker,expectedTask=execution.taskUuid,expectedHref=execution.href;
     if (config.writeEnabled !== false || !nedId(config.rootCauseFieldId)) return nedRedacted('BLOCKED_WRITE_GATE_OR_FIELD');
-    validatedOnesScope(config);
+    // This one-task operation consumes the reader's necessary scope, not the
+    // inventory executor's unrelated department or Relay configuration.
+    const configuredOrigin=new URL(config.onesOrigin);
+    if (configuredOrigin.protocol!=='https:' || configuredOrigin.origin!==config.onesOrigin ||
+        ![config.teamUuid,config.projectUuid,config.issueTypeUuid].every(v=>typeof v==='string'&&nedId(v)))
+      return nedRedacted('BLOCKED_SCOPE');
     const old=await nedLoadState();
     if (old?.pending && !old?.verified) return nedRedacted('BLOCKED_PENDING_SERVER_VERIFICATION');
     const target=await nedCurrentTab(config,tabId);
     if (!target) return nedRedacted('BLOCKED_TARGET_TAB');
+    if (target.href!==expectedHref || !await guard()) return nedRedacted('BLOCKED_EXECUTION_PROOF');
     if (!await chrome.permissions.contains({origins:[config.onesOrigin+'/*']})) return nedRedacted('BLOCKED_ORIGIN_PERMISSION');
-    run=crypto.randomUUID();
-    const b=crypto.getRandomValues(new Uint8Array(6));
-    const marker='NDP'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
+    run=execution.run;
     const req={href:target.href,origin:config.onesOrigin,team:config.teamUuid,
       display:target.display,field:config.rootCauseFieldId,run,marker};
     pageRequest=req;
     const ident=await nedExecuteScript(tabId,nedPageResolve,[req]);
-    if (!nedId(ident?.taskUuid)) return nedRedacted('BLOCKED_TASK_IDENTITY');
+    if (!nedId(ident?.taskUuid) || ident.taskUuid!==expectedTask) return nedRedacted('BLOCKED_TASK_IDENTITY');
     const taskUuid=ident.taskUuid;
     if (await nedAuthoritativeBlank(config,tabId,taskUuid,req.field)!=='BLANK') return nedRedacted('BLOCKED_PRE_READ');
+    const firstBlankCompleted=performance.now();
     const start=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'ARM'}]);
     if (!start?.ok) return nedPageFailure(start,'BLOCKED_EDITOR_PREPARE');
     armed=true;
     await nedWait(450);
     const before=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT',stage:'INSPECT_1'}]);
     if (!before?.ok) return nedPageFailure(before,'BLOCKED_EDITOR_UNSTABLE');
+    const remaining=Math.ceil(750-(performance.now()-firstBlankCompleted));
+    if (remaining>0) await nedWait(remaining);
+    if (performance.now()-firstBlankCompleted<750) return nedRedacted('BLOCKED_PRE_READ_INTERVAL');
+    if (!await guard() || !await nedCurrentTab(config,tabId,req.href)) return nedRedacted('BLOCKED_EXECUTION_PROOF');
     if (await nedAuthoritativeBlank(config,tabId,taskUuid,req.field)!=='BLANK') return nedRedacted('BLOCKED_PRE_READ');
     const afterRead=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'INSPECT',stage:'INSPECT_2'}]);
     if (!afterRead?.ok) return nedPageFailure(afterRead,'BLOCKED_EDITOR_UNSTABLE');
@@ -673,13 +690,19 @@ async function nedRun(config, tabId) {
       return nedRedacted('BLOCKED_COORDINATE_DRIFT');
     }
     if (!await nedCurrentTab(config,tabId,req.href)) return nedRedacted('BLOCKED_NAVIGATION');
+    if (!await guard()) return nedRedacted('BLOCKED_EXECUTION_PROOF');
     pending={pending:true,verified:false,tabId,href:req.href,origin:config.onesOrigin,
       team:config.teamUuid,display:target.display,taskUuid,field:req.field,run};
     await nedSaveState(pending); // durable one-attempt barrier before any CDP command
     try { await chrome.debugger.attach(tabTarget,'1.3'); attached=true; }
     catch (_) { await nedSaveState({...pending,pending:false,verified:true}); return nedRedacted('BLOCKED_DEBUGGER_CONFLICT'); }
+    const insertTextCommand='Input.insertText';
     const send=async (name,parameters)=>{
+      if (!await guard()) throw new Error('EXECUTION_CHANGED');
       if (!await nedCurrentTab(config,tabId,req.href)) throw new Error('NAVIGATION');
+      // Count only an attempted dispatch after both guards. A rejected guard is
+      // zero input; a send that rejects after dispatch remains uncertain/one.
+      if (name===insertTextCommand) insertCount=1;
       await chrome.debugger.sendCommand(tabTarget,name,parameters);
     };
     const point=afterRead.point;
@@ -704,9 +727,7 @@ async function nedRun(config, tabId) {
     if (!ready.point || Math.abs(point.x-ready.point.x)>2 || Math.abs(point.y-ready.point.y)>2) {
       return nedRedacted('BLOCKED_COORDINATE_DRIFT',0,nedPhaseReceipt(ready));
     }
-    // Counts attempted sends, including an ambiguous rejection/timeout. Never retry.
-    insertCount=1;
-    await send('Input.insertText',{text:marker});
+    await send(insertTextCommand,{text:marker});
     await nedWait(2500);
     const result=await nedExecuteScript(tabId,nedPageControl,[{...req,action:'FINISH'}]);
     status=result?.status || 'TRACE_UNCERTAIN';
@@ -761,9 +782,9 @@ async function nedVerify(config,tabId) {
 // Recording a failed preflight must not create a pending server transaction.
 // For a native-click/insert attempt, keep the existing pending barrier and
 // replace only its generic fallback receipt with the exact scrubbed outcome.
-async function nedRunWithReceipt(config, tabId) {
+async function nedRunWithReceipt(config, tabId, execution) {
   const before = await nedLoadState().catch(() => null);
-  const receipt = await nedRun(config, tabId);
+  const receipt = await nedRun(config, tabId, execution);
   if (receipt?.status === 'BLOCKED_IN_FLIGHT' ||
       receipt?.status === 'BLOCKED_PENDING_SERVER_VERIFICATION') return receipt;
   const status = typeof receipt?.status === 'string' &&
@@ -818,11 +839,14 @@ async function onesIdentityBindingReadPage(expected) {
   };
   const id = v => typeof v==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
   const stages=[];
-  let requestCount=0,stage='DOM_BEFORE',httpStatus=0;
+  let requestCount=0,stage='DOM_BEFORE',httpStatus=0,fieldInvariant=null,fieldTypeCode=null;
   const stamp = name => {stage=name;stages.push({stage:name,capturedAt:new Date().toISOString()});};
   const receipt = (status,binding) => ({ok:!!binding,status,readOnly:true,validBinding:!!binding,
     privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',writeGate:'OFF',requestCount,stage,stages:stages.slice(),
-    ...(status==='BLOCKED_READ_HTTP'?{httpStatus}:{}),...(binding?{privateBinding:binding}: {})});
+    ...(status==='BLOCKED_READ_HTTP'?{httpStatus}:{}),
+    ...(status==='BLOCKED_FIELD_SCHEMA'&&fieldInvariant?{fieldInvariant,
+      ...(Number.isInteger(fieldTypeCode)?{fieldTypeCode}: {})}:{}),
+    ...(binding?{privateBinding:binding}: {})});
   const stop = status => {throw {bindingReadStatus:status};};
   const initialHref=location.href;
   try {
@@ -908,10 +932,18 @@ async function onesIdentityBindingReadPage(expected) {
     if(actualTask!==taskUuid||actualProject!==project||actualType!==issueType)stop('BLOCKED_TASK_SCOPE');
     if(account!==assignee)stop('BLOCKED_OWNER_MISMATCH');
     const definitions=own(await read('FIELD_SCHEMA',base+'/fields'),'fields');
-    if(!Array.isArray(definitions)||definitions.length>10000)stop('BLOCKED_FIELD_SCHEMA');
+    if(!Array.isArray(definitions)){fieldInvariant='FIELDS_ARRAY_MISSING_OR_INVALID';stop('BLOCKED_FIELD_SCHEMA');}
+    if(definitions.length>10000){fieldInvariant='FIELDS_TOO_MANY';stop('BLOCKED_FIELD_SCHEMA');}
     const fields=definitions.filter(row=>own(row,'uuid')===fieldId);
-    if(fields.length!==1||!['问题根因','【问题根因】'].includes(own(fields[0],'name'))||own(fields[0],'type')!==15)
+    if(fields.length===0){fieldInvariant='TARGET_MATCH_ZERO';stop('BLOCKED_FIELD_SCHEMA');}
+    if(fields.length!==1){fieldInvariant='TARGET_MATCH_MULTIPLE';stop('BLOCKED_FIELD_SCHEMA');}
+    if(!['问题根因','【问题根因】'].includes(own(fields[0],'name'))){fieldInvariant='TARGET_NAME_MISMATCH';stop('BLOCKED_FIELD_SCHEMA');}
+    if(own(fields[0],'type')!==15){
+      fieldInvariant='TARGET_TYPE_NOT_15';
+      const type=own(fields[0],'type');
+      if(Number.isInteger(type)&&type>=0&&type<=255)fieldTypeCode=type;
       stop('BLOCKED_FIELD_SCHEMA');
+    }
     const configs=own(await read('FIELD_CONFIG',base+'/field_configs'),'field_configs');
     if(!Array.isArray(configs)||configs.length>10000)stop('BLOCKED_FIELD_CONFIG');
     const matches=configs.filter(row=>own(row,'project_uuid')===project&&own(row,'issue_type_uuid')===issueType&&own(row,'field_uuid')===fieldId);

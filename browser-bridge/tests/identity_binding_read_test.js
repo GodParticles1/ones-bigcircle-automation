@@ -16,7 +16,7 @@ async function harness(options={}) {
   const requests=[],effects={debugger:0,relay:0,sessionWrites:0,cacheWrites:0,logs:0,bodyReads:0,poisonReads:0,permissionRequests:0};
   const stored={onesRelayConfig:{...config,baseUrl:'http://127.0.0.1:18731',enabled:false,
     executorId:'synthetic-executor',token:'synthetic-token',inventoryPageUrl:'',assigneeDepartmentUuid:'',...options.config}};
-  const pending={onesNativeDiagnosticV1:{pending:true,verified:false,run:'unrelated-run'}};
+  const pending={onesNativeDiagnosticV1:{pending:options.stage1?false:true,verified:false,run:'unrelated-run'}};
   const beforePending=JSON.stringify(pending.onesNativeDiagnosticV1);
   const location={href,origin:config.onesOrigin};
   const rect={width:100,height:20};
@@ -53,7 +53,7 @@ async function harness(options={}) {
       if(options.hold && index===0){heldStarted();await held;}
       if(options.timeoutAt===index) return new Promise(()=>{});
       if(options.errorAt===index) throw Error(secret);
-      const body=bodyFor(index);
+      const body=bodyFor(index%6);
       if(options.changeBody) options.changeBody(index,body);
       if(options.navigationAt===index) location.href=href+'/changed';
       if(options.domDriftAt===index) field.isConnected=false;
@@ -95,7 +95,14 @@ async function harness(options={}) {
   if(options.poisonToken) Object.defineProperty(stored.onesRelayConfig,'token',{get(){effects.poisonReads++;throw Error(secret);}});
   const send=(message={type:'ONES_IDENTITY_BINDING_READ',tabId:1},sender={id:'synthetic-bridge',url:popupUrl})=>
     new Promise((resolve,reject)=>{try{const accepted=handler(message,sender,resolve);assert.equal(accepted,true)}catch(e){reject(e)}});
-  return {send,requests,effects,stored,pending,beforePending,started,release:heldResolve,worker,
+  const nativeRuns=[];
+  if(options.stage1)worker.onesNativeEditorDiagnosticRun=async(c,tabId,execution)=>{
+    const guardResult=typeof execution?.guard==='function'&&await execution.guard();
+    nativeRuns.push({config:c,tabId,execution,guardResult});
+    if(!guardResult)return {ok:false,status:'BLOCKED_TEST_GUARD',insertTextCount:0,saveDispatched:false};
+    return {ok:true,status:'TRACE_EXACT_ONCE',insertTextCount:1,saveDispatched:false};
+  };
+  return {send,requests,effects,stored,pending,beforePending,started,release:heldResolve,worker,nativeRuns,
     setActive:(id,url)=>{activeId=id;activeUrl=url},
     scriptCalls:()=>scriptCalls,assertReadOnly(){assert.equal(effects.debugger,0);assert.equal(effects.relay,0);
       assert.equal(effects.sessionWrites,0);assert.equal(effects.permissionRequests,0);assert.equal(effects.bodyReads,0);
@@ -150,6 +157,11 @@ test('field definition and exact field configuration must be unique and correctl
   const h=await harness({changeBody:(i,b)=>{if(i===3)b.fields[0].name='【问题根因】'}});
   assert.equal((await h.send()).ok,true);h.assertReadOnly();
 });
+test('FIELD_SCHEMA failure exports only the first fixed invariant and a bounded numeric type code',async()=>{
+  const h=await harness({changeBody:(i,b)=>{if(i===3)b.fields[0].type=8}}),r=await h.send();
+  denied(r);assert.equal(r.fieldInvariant,'TARGET_TYPE_NOT_15');assert.equal(r.fieldTypeCode,8);
+  assert.equal(JSON.stringify(r).includes(secret),false);
+});
 test('DOM lineage and configured field node stay bound without reading field content',async()=>{
   for(const options of [{missingDom:true},{duplicateLabel:true},{duplicateDomId:true},{domDriftAt:4},{navigationAt:1}]){
     const h=await harness(options);denied(await h.send());h.assertReadOnly();
@@ -194,8 +206,8 @@ test('identity reads and diagnostic actions share a one-operation lock without t
   h.release();assert.equal((await reading).ok,true);h.assertReadOnly();
   let release,started;
   const gate=new Promise(r=>{release=r}),signal=new Promise(r=>{started=r});
-  h.worker.onesNativeEditorDiagnosticRun=async()=>{started();await gate;return{ok:false,status:'SYNTHETIC_STOP'}};
-  const running=h.send({type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1});await signal;
+  h.worker.onesNativeEditorDiagnosticVerify=async()=>{started();await gate;return{ok:false,status:'SYNTHETIC_STOP'}};
+  const running=h.send({type:'ONES_NATIVE_DIAGNOSTIC_VERIFY',tabId:1});await signal;
   denied(await h.send());release();await running;h.assertReadOnly();
 });
 test('LAST is private historical observation only, with no request or active-ONES selection',async()=>{
@@ -227,4 +239,87 @@ test('a new failed READ replaces a previous success and invalid LAST payloads ar
   denied(await h.send());const last=await h.send({type:'ONES_IDENTITY_BINDING_LAST'});denied(last);
   assert.equal(last.historical,true);assert.equal(h.requests.length,6);
   denied(await h.send({type:'ONES_IDENTITY_BINDING_LAST',url:href}));h.assertReadOnly();
+});
+
+test('Stage1 actual worker rejects a generic RUN without a prepared concrete confirmation',async()=>{
+  const h=await harness({stage1:true});
+  const r=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1});
+  assert.match(r.status,/^BLOCKED_PREPARED_/);assert.equal(h.nativeRuns.length,0);
+  assert.equal(h.requests.length,0);
+});
+test('Stage1 historical identity cannot authorize a newly prepared attempt',async()=>{
+  const h=await harness({stage1:true});await h.send();
+  const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});
+  assert.equal(p.status,'DIAGNOSTIC_PREPARED');assert.match(p.marker,/^NDP[0-9a-f]{12}$/);
+  await h.send({type:'ONES_IDENTITY_BINDING_LAST'});
+  const r=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,
+    recovery:p.recovery,confirmed:true});
+  assert.match(r.status,/^BLOCKED_PREPARED_/);assert.equal(h.nativeRuns.length,0);assert.equal(h.requests.length,6);
+});
+test('Stage1 RUN rereads backend identity and refuses a changed assignee without native dispatch',async()=>{
+  const h=await harness({stage1:true,changeBody:(i,b)=>{if(i===8)b.assign='other'}});
+  const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});
+  assert.equal(p.status,'DIAGNOSTIC_PREPARED');await h.send();
+  const r=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,
+    recovery:p.recovery,confirmed:true});
+  assert.equal(r.status,'BLOCKED_PREPARED_IDENTITY');assert.equal(h.nativeRuns.length,0);
+  assert.equal(h.requests.length,9);
+});
+test('Stage1 matching concrete confirmation consumes once and gives native only an internal execution guard',async()=>{
+  const h=await harness({stage1:true}),p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});
+  assert.equal(h.requests.length,0);const bound=await h.send();assert.equal(bound.preparedNonce,p.nonce);
+  const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+  assert.equal((await h.send(packet)).status,'TRACE_EXACT_ONCE');assert.equal(h.requests.length,12);
+  const e=h.nativeRuns[0].execution;assert.equal(e.run,p.nonce);assert.equal(e.marker,p.marker);
+  assert.equal(h.nativeRuns[0].guardResult,true);
+  assert.equal(e.taskUuid,'task');assert.equal(e.href,href);assert.equal(typeof e.guard,'function');
+  assert.equal(await e.guard(),false);assert.equal(h.nativeRuns.length,1);
+  assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);assert.equal(h.nativeRuns.length,1);
+});
+test('Stage1 cancellation, expired or mismatched confirmations and caller identity overrides never dispatch native',async()=>{
+  for(const mode of ['CANCEL','EXPIRED','IDENTITY_EXPIRED','NONCE','MARKER','RECOVERY','FALSE','EXTRA','CONFIG','TAB']){
+    const h=await harness({stage1:true}),p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});await h.send();
+    const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+    if(mode==='CANCEL')await h.send({type:'ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED',nonce:p.nonce});
+    if(mode==='EXPIRED')h.pending.onesNativeDiagnosticPreparedV1.preparedAt='2000-01-01T00:00:00.000Z';
+    if(mode==='IDENTITY_EXPIRED')h.pending.onesNativeDiagnosticPreparedV1.identityObservedAt='2000-01-01T00:00:00.000Z';
+    if(mode==='NONCE')packet.nonce='wrong';if(mode==='MARKER')packet.marker='NDP000000000000';
+    if(mode==='RECOVERY')packet.recovery='AUTOMATIC_CLEAR';if(mode==='FALSE')packet.confirmed=false;
+    if(mode==='EXTRA')packet.identity={accountUuid:'forged'};
+    if(mode==='CONFIG')h.stored.onesRelayConfig.projectUuid='changed';if(mode==='TAB')h.setActive(2,href);
+    assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);assert.equal(h.nativeRuns.length,0);
+    assert.equal(h.requests.length,6);h.assertReadOnly();
+  }
+});
+test('Stage1 execution-time account changes cannot hide behind unchanged tab, config or cached tuple',async()=>{
+  const h=await harness({stage1:true,changeBody:(i,b)=>{if(i===6||i===11)b.uuid='newuser';if(i===8)b.assign='newuser'}});
+  const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});await h.send();
+  const r=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true});
+  assert.equal(r.status,'BLOCKED_PREPARED_IDENTITY');assert.equal(h.requests.length,12);assert.equal(h.nativeRuns.length,0);
+});
+test('Stage1 a failed repeated preparation READ invalidates its earlier identity proof',async()=>{
+  const h=await harness({stage1:true,changeBody:(i,b)=>{if(i===6)delete b.uuid}});
+  const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});await h.send();
+  denied(await h.send());
+  const r=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true});
+  assert.equal(r.status,'BLOCKED_PREPARED_IDENTITY');assert.equal(h.nativeRuns.length,0);assert.equal(h.requests.length,7);
+});
+test('Stage1 an early RUN config rejection consumes the original confirmed packet permanently',async()=>{
+  const h=await harness({stage1:true}),p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});
+  await h.send();
+  const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+  h.stored.onesRelayConfig.projectUuid='changed';
+  assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);assert.equal(h.nativeRuns.length,0);
+  h.stored.onesRelayConfig.projectUuid='p';
+  assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);
+  assert.equal(h.nativeRuns.length,0);assert.equal(h.requests.length,6);
+});
+test('Stage1 an early repeated READ config rejection revokes the old prepared identity permanently',async()=>{
+  const h=await harness({stage1:true}),p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});
+  await h.send();
+  h.stored.onesRelayConfig.projectUuid='';denied(await h.send());
+  h.stored.onesRelayConfig.projectUuid='p';
+  const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+  assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);
+  assert.equal(h.nativeRuns.length,0);assert.equal(h.requests.length,6);
 });
