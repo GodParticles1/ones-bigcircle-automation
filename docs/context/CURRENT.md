@@ -1,10 +1,29 @@
 # Current Context
 
-Date: 2026-10-27
+## Source checkpoint — 2026-10-27
 
-## Current Gate F2 continuation — 2026-10-27
+The original #110 source owner delivered reviewed Stage-1 tooling delta `e47d23f491018d078ba6f907905fa6aa18d58959` for concrete one-shot marker/recovery consent, fresh execution identity and measured >=750 ms definite-BLANK ordering. Local Native 40/40, identity 22/22, popup 21/21 and Writer 125/125 passed with independent source ACCEPT. Exact-head CI and a distinct #112 archive still gate the next candidate. This source branch inherits accepted main's plan/priority entries; product/test blobs remain those reviewed bytes.
 
-The current user-authorized acting Leader operates through [Issue #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6433422298). Original #110 / Draft PR #111 owns the bounded Stage-1 identity/marker-confirmation/BLANK-timing correction. Existing #112 / Draft PR #113 Stage-0 candidate `1ab2c06fe01cdd02f0d13ac380a07bb1aa94f86d` and its independent source/package acceptance are inherited; do not rebuild or relabel those accepted bytes. The [live-main test plan](https://github.com/GodParticles1/ones-bigcircle-automation/blob/b857d2d3a84d99117db14722b65b26c2f887d68a/TEST_MATRIX.md) keeps that old candidate read-only until the new gates and distinct package are independently accepted. The real fourth-request FIELD_SCHEMA failure remains a separate unresolved guard mismatch; no type or binding check is weakened. The original local execution owner actually attempted Computer Use on the personal machine and received a browser-URL enforcement policy stop, released control and preserved unknown pending state. No page/field/input/Save operation followed. This does not block independent source/package work or establish a Dot fallback. #103 native-editor mechanism remains unproven; production Writer is unchanged and WRITE_GATE stays OFF.
+Current page execution is not accepted: native Computer Use stopped on URL enforcement; the supported Chrome-extension read reached a connection-error page, not loaded ONES business content. Pending remains unmodified, and metadata/Field/input/Save are zero. FIELD_SCHEMA's deployed mismatch is unresolved; only bounded failure reporting was added. The existing Stage-0 `1ab2c06` remains read-only. Issue #1 remains the single control lane; #103 Writer stays OFF/BLOCKED and 0.5.18 remains unimplemented.
+
+## Current continuation — 2026-10-25
+
+The active integration decision is [Leader Control #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524). The current Leader owns priorities, independent review, integration and release decisions under `docs/governance/LEAD_RESPONSIBILITY.md`; local Pro Codex owns the bounded native-editor implementation and Windows runtime execution lane, with Dot providing coordination.
+
+- **Accepted baseline:** Bridge **0.5.17**, Relay **0.3.8**, Planner **0.2.0**. The fresh-install source in PR #109 was already merged at `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f`. Its installer/source acceptance is inherited; the original operator installation/runtime gap is separate.
+- **0.5.18:** not implemented or released. #103 remains blocked by `REAL_EDITOR_SEMANTICS_NOT_PROVEN`; the old 0.5.18 Writer branch is still at its unchanged base. The 0.5.17 wait-only correction was contradicted by the later native-input reproduction. Do not redispatch that wait-only fix.
+- **Diagnostic source:** PR #111 `511e880e68fac1e479de1ac63bb5d23fdde627c7` has independent source acceptance for the existing #112 synchronization and exact Linux/Windows CI `39821431966`. It supplies six fixed read-only identity/binding requests. Real API compatibility and current runtime binding remain unverified.
+- **Distribution:** use the existing #112 / PR #113 diagnostic-only candidate. Its exact current release SHA, CI and archive digest are owned by that PR and the #112 delivery receipt. The earlier `0663a03` candidate lacks the new identity preflight; the frozen #109 full-install archive is not the diagnostic candidate. Both diagnostic PRs retain Draft / MERGE_HOLD; no version promotion or production acceptance follows from synchronization.
+- **Independent source closure:** PR #114 merged at `f20320d15e4eee8797d8b7afcca234684fbb98f6` after exact-head CI and independent review. It corrects case-result and document-body evidence semantics in two existing documents. Actual Big-circle deployed-prompt and bounded native-run acceptance remain unverified.
+- **Retired evidence:** the visible-contract owner ACK/evidence lane in #111 comment `6339801388` is CLOSED. Platform execution-chain repair remains NOT_REPAIRED; do not request the same absent traces or retry unknown-admission tasks. It is not a prerequisite for already-authorized source/Bridge work.
+
+Next product gate: the existing local runtime owner establishes canonical account = assignee and exact task/project/type/field binding, followed by two definite independent authoritative BLANK reads. A separately confirmed one-attempt native diagnostic may then establish the same-editor mechanism. Source/tests and CI are not that runtime proof. #103 formal Writer and production writes remain OFF; #85/#86 keep their separate runtime criteria; #97 remains queued.
+
+The current [test plan](../../TEST_MATRIX.md#current-0518-test-plan--2026-10-25) keeps the accepted #113 candidate available for Stage-0. Stage-1 input is HOLD pending the original #110's execution-bound identity/marker confirmation and definite-BLANK timing correction, independent review and a distinct diagnostic candidate. This is a bounded tooling continuation, not #103 mechanism proof; TASKS owns operating windows and independent opportunities.
+
+The dated sections below retain historical evidence within their original scope. They do not override this current entry or live issue/PR decisions. Follow `TASKS.md` for priorities and `HANDOFF.md` for the executable continuation.
+
+Date: 2026-09-21
 
 ## Repository bootstrap
 
