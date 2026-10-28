@@ -1,10 +1,30 @@
 # Current Context
 
-Date: 2026-10-23
+## Diagnostic release checkpoint — 2026-10-28
 
-## Current Gate F2 diagnostic candidate — 2026-10-23
+The original #112 / PR #113 release preparation now synchronizes the eight reviewed diagnostic/UI/test files from #110 source `85449e4c96f85b7ed09626b180da1f51a0864223`. [Independent source review 5665434991](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#pullrequestreview-5665434991) accepted the source; [CI 40483588375](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40483588375) completed SUCCESS on Linux and Windows. The correction binds prepared nonce/marker/recovery consent to fresh identity and one-shot RUN, with >=750 ms measured from the first successful authoritative BLANK completion to the second dispatch. It is a diagnostic gate correction, not #103 native-editor mechanism proof.
 
-Issue #103 remains blocked on real native-editor semantics. This #112 release candidate synchronizes only the diagnostic and diagnostic-test blobs from #110 source `4b5f8b888ccf8773473098e1a29768ecffe44d5d`, whose Linux and Windows checks passed. Its FINISH correction rejects unsettled observations and revalidates final editor binding after asynchronous digest work; it does not establish the cause or repair of ONES duplication, focus drift or persistence. The exact release HEAD and ZIP still require their own verification: BUNDLE v1 `sourceHead` remains the packaged release commit, distinct from the upstream source SHA. Existing PR #111/#113 remain Draft / MERGE_HOLD, manifest `0.5.17` is unchanged, and production WRITE_GATE remains OFF. The current execution blocker and exact continuation are in `HANDOFF.md` and the PR discussions.
+Preparation retains accepted Stage-0 release `1ab2c06fe01cdd02f0d13ac380a07bb1aa94f86d` and incorporates the complete accepted-main `b857d2d3a84d99117db14722b65b26c2f887d68a` context below. The old Stage-0 package remains unchanged; the new final release HEAD and ZIP require their own review/CI/package acceptance. BUNDLE v1 `sourceHead` remains the exact packaged release commit, manifest remains 0.5.17, and WRITE_GATE stays OFF. The latest recorded @Chrome read reached an `ERR_CONNECTION_CLOSED` target page with native input=0; genuine runtime prerequisites and Stage-1 remain HOLD. Follow the new `HANDOFF.md` checkpoint for the next action. Older source/release/runtime statements below retain their dated scope.
+
+
+## Current continuation — 2026-10-25
+
+The active integration decision is [Leader Control #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524). The current Leader owns priorities, independent review, integration and release decisions under `docs/governance/LEAD_RESPONSIBILITY.md`; local Pro Codex owns the bounded native-editor implementation and Windows runtime execution lane, with Dot providing coordination.
+
+- **Accepted baseline:** Bridge **0.5.17**, Relay **0.3.8**, Planner **0.2.0**. The fresh-install source in PR #109 was already merged at `ec1c6ede144c255ebd8b9918e5a5bca9f907cc7f`. Its installer/source acceptance is inherited; the original operator installation/runtime gap is separate.
+- **0.5.18:** not implemented or released. #103 remains blocked by `REAL_EDITOR_SEMANTICS_NOT_PROVEN`; the old 0.5.18 Writer branch is still at its unchanged base. The 0.5.17 wait-only correction was contradicted by the later native-input reproduction. Do not redispatch that wait-only fix.
+- **Diagnostic source:** PR #111 `511e880e68fac1e479de1ac63bb5d23fdde627c7` has independent source acceptance for the existing #112 synchronization and exact Linux/Windows CI `39821431966`. It supplies six fixed read-only identity/binding requests. Real API compatibility and current runtime binding remain unverified.
+- **Distribution:** use the existing #112 / PR #113 diagnostic-only candidate. Its exact current release SHA, CI and archive digest are owned by that PR and the #112 delivery receipt. The earlier `0663a03` candidate lacks the new identity preflight; the frozen #109 full-install archive is not the diagnostic candidate. Both diagnostic PRs retain Draft / MERGE_HOLD; no version promotion or production acceptance follows from synchronization.
+- **Independent source closure:** PR #114 merged at `f20320d15e4eee8797d8b7afcca234684fbb98f6` after exact-head CI and independent review. It corrects case-result and document-body evidence semantics in two existing documents. Actual Big-circle deployed-prompt and bounded native-run acceptance remain unverified.
+- **Retired evidence:** the visible-contract owner ACK/evidence lane in #111 comment `6339801388` is CLOSED. Platform execution-chain repair remains NOT_REPAIRED; do not request the same absent traces or retry unknown-admission tasks. It is not a prerequisite for already-authorized source/Bridge work.
+
+Next product gate: the existing local runtime owner establishes canonical account = assignee and exact task/project/type/field binding, followed by two definite independent authoritative BLANK reads. A separately confirmed one-attempt native diagnostic may then establish the same-editor mechanism. Source/tests and CI are not that runtime proof. #103 formal Writer and production writes remain OFF; #85/#86 keep their separate runtime criteria; #97 remains queued.
+
+The current [test plan](../../TEST_MATRIX.md#current-0518-test-plan--2026-10-25) keeps the accepted #113 candidate available for Stage-0. Stage-1 input is HOLD pending the original #110's execution-bound identity/marker confirmation and definite-BLANK timing correction, independent review and a distinct diagnostic candidate. This is a bounded tooling continuation, not #103 mechanism proof; TASKS owns operating windows and independent opportunities.
+
+The dated sections below retain historical evidence within their original scope. They do not override this current entry or live issue/PR decisions. Follow `TASKS.md` for priorities and `HANDOFF.md` for the executable continuation.
+
+Date: 2026-09-21
 
 ## Repository bootstrap
 

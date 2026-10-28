@@ -169,6 +169,35 @@ load().catch((error) => show({ok:false,error:String(error)}));
 
 let nativeDiagBusy = false;
 let identityBindingBusy = false;
+let preparedDiagnostic = null;
+function nativePreparedRender(){
+  if($("nativeDiagRun"))$("nativeDiagRun").disabled=nativeDiagBusy||identityBindingBusy||!preparedDiagnostic?.identityBound;
+  if($("nativeDiagPrepare"))$("nativeDiagPrepare").disabled=nativeDiagBusy||identityBindingBusy;
+  if($("nativeDiagPrepared"))$("nativeDiagPrepared").textContent=preparedDiagnostic?
+    '本机私密 · 本次目标 '+preparedDiagnostic.target.displayId+' / '+preparedDiagnostic.target.fieldId+
+    '\n实际 marker：'+preparedDiagnostic.marker+'\n恢复意图：取消后独立核查同一服务端字段；改变或未知即停止，不自动清理或覆盖。'+
+    '\n恢复策略：'+preparedDiagnostic.recovery+'\n到期：'+preparedDiagnostic.expiresAt+
+    '\n本次 fresh 身份绑定：'+(preparedDiagnostic.identityBound?'已核对':'尚未核对'):
+    '先准备本次 marker，再只读核对身份；历史收据不授权输入。';
+}
+$("nativeDiagPrepare")?.addEventListener('click',async()=>{
+  if(nativeDiagBusy||identityBindingBusy)return;
+  nativeDiagBusy=true;preparedDiagnostic=null;nativePreparedRender();
+  try{
+    const tabs=await chrome.tabs.query({active:true,currentWindow:true});
+    if(tabs.length!==1||!Number.isInteger(tabs[0]?.id))return show({ok:false,status:'BLOCKED_NO_ACTIVE_TAB'});
+    const p=await chrome.runtime.sendMessage({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:tabs[0].id});
+    const id=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
+    if(p?.ok===true&&p.status==='DIAGNOSTIC_PREPARED'&&id(p.nonce)&&typeof p.marker==='string'&&
+      /^NDP[0-9a-f]{12}$/.test(p.marker)&&p.recovery==='CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE'&&
+      [p.target?.displayId,p.target?.projectUuid,p.target?.issueTypeUuid,p.target?.fieldId].every(id)&&
+      Number.isFinite(Date.parse(p.expiresAt))){
+      preparedDiagnostic={nonce:p.nonce,marker:p.marker,recovery:p.recovery,expiresAt:p.expiresAt,
+        tabId:tabs[0].id,identityBound:false,target:{displayId:p.target.displayId,fieldId:p.target.fieldId}};
+    }else show(nativeDiagReceipt(p));
+  }catch(_){show({ok:false,status:'BLOCKED_PREPARED_UNCERTAIN'});}
+  finally{nativeDiagBusy=false;nativePreparedRender();}
+});
 async function nativeDiagRestore() {
   try {
     const result=await chrome.runtime.sendMessage({type:"ONES_NATIVE_DIAGNOSTIC_LAST"});
@@ -264,20 +293,26 @@ async function nativeDiagAction(type) {
   try {
     const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
     if (!tab?.id) return show({ok:false,status:"BLOCKED_NO_ACTIVE_TAB"});
+    let packet={type,tabId:tab.id};
     if (type === "ONES_NATIVE_DIAGNOSTIC_RUN") {
-      const config = await chrome.runtime.sendMessage({type:"ONES_RELAY_GET_CONFIG"});
-      if (!config?.ok || config.config?.writeEnabled !== false)
-        return show({ok:false,status:"BLOCKED_WRITE_GATE"});
-      if (!confirm("仅允许一个工单一个问题根因字段、一次合成文本输入，绝不点击保存。ONES 协作草稿可能自动同步；取消后还必须独立核查服务端。确认开始？"))
-        return show({ok:false,status:"OPERATOR_CANCELLED"});
+      const p=preparedDiagnostic;
+      if(!p?.identityBound||p.tabId!==tab.id)return show({ok:false,status:'BLOCKED_PREPARED_IDENTITY'});
+      preparedDiagnostic=null;nativePreparedRender();
+      if(!confirm('本次工单 '+p.target.displayId+'，问题根因字段 '+p.target.fieldId+
+        '\n实际输入 marker：\n'+p.marker+'\n恢复意图：取消后独立核查服务端；改变或未知即停止，不自动清理/覆盖。'+
+        '\n策略：'+p.recovery+'\n至多一次输入，Save=0；草稿可能自动同步。确认本次精确 marker？')){
+        await chrome.runtime.sendMessage({type:'ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED',nonce:p.nonce});
+        return show({ok:false,status:'OPERATOR_CANCELLED'});
+      }
+      packet={...packet,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
     } else if (!confirm("请先在 ONES 页面点击取消，保持同一工单页面。现在只读核查服务器字段，继续？")) {
       return show({ok:false,status:"OPERATOR_CANCELLED"});
     }
-    const result = await chrome.runtime.sendMessage({type,tabId:tab.id});
+    const result = await chrome.runtime.sendMessage(packet);
     show(nativeDiagReceipt(result));
     await nativeDiagRestore();
   } catch (_) { show({ok:false,status:"BLOCKED_UNCERTAIN"}); }
-  finally { nativeDiagBusy=false; $("nativeDiagRun").disabled=false; $("nativeDiagVerify").disabled=false; }
+  finally { nativeDiagBusy=false; $("nativeDiagVerify").disabled=false;nativePreparedRender(); }
 }
 $("nativeDiagRun")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_RUN"));
 $("nativeDiagVerify")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_VERIFY"));
@@ -309,13 +344,21 @@ function identityBindingReceipt(value) {
     if(status==='BLOCKED_READ_HTTP'){
       const code=own(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
     }
+    if(status==='BLOCKED_FIELD_SCHEMA'){
+      const reason=own(value,'fieldInvariant'),code=own(value,'fieldTypeCode');
+      if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
+        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15'].includes(reason))out.fieldInvariant=reason;
+      if(reason==='TARGET_TYPE_NOT_15'&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
+    }
     if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
     const raw=own(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
       'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
     const b=Object.fromEntries(keys.map(k=>[k,own(raw,k)]));
     if(own(value,'ok')!==true||!Object.values(b).every(v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v))||
       b.accountUuid!==b.assigneeUuid||b.taskUuid!==b.resolvedTaskUuid||own(raw,'fieldType')!==15)return empty();
-    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType:15}};
+    const nonce=own(value,'preparedNonce');
+    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType:15},
+      ...(!historical&&typeof nonce==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(nonce)?{preparedNonce:nonce}:{})};
   }catch(_){return empty();}
 }
 function identityBindingShow(value) {
@@ -331,14 +374,19 @@ async function identityBindingRestore() {
 $("identityBindingRead")?.addEventListener('click',async()=>{
   if(identityBindingBusy||nativeDiagBusy)return;
   identityBindingBusy=true;$("identityBindingRead").disabled=true;
+  if(preparedDiagnostic)preparedDiagnostic.identityBound=false;
+  nativePreparedRender();
   if($("nativeDiagRun"))$("nativeDiagRun").disabled=true;
   if($("nativeDiagVerify"))$("nativeDiagVerify").disabled=true;
   try{
     const tabs=await chrome.tabs.query({active:true,currentWindow:true});
     if(tabs.length!==1||!Number.isInteger(tabs[0]?.id))return identityBindingShow({status:'BLOCKED_ACTIVE_TAB'});
-    identityBindingShow(await chrome.runtime.sendMessage({type:'ONES_IDENTITY_BINDING_READ',tabId:tabs[0].id}));
+    const receipt=identityBindingReceipt(await chrome.runtime.sendMessage({type:'ONES_IDENTITY_BINDING_READ',tabId:tabs[0].id}));
+    identityBindingShow(receipt);
+    if(preparedDiagnostic)preparedDiagnostic.identityBound=receipt.ok===true&&receipt.validBinding===true&&
+      receipt.historical!==true&&receipt.preparedNonce===preparedDiagnostic.nonce;
   }catch(_){identityBindingShow({status:'BLOCKED_UNCERTAIN'});}
   finally{identityBindingBusy=false;$("identityBindingRead").disabled=false;
-    if($("nativeDiagRun"))$("nativeDiagRun").disabled=false;
-    if($("nativeDiagVerify"))$("nativeDiagVerify").disabled=false;}
+    if($("nativeDiagVerify"))$("nativeDiagVerify").disabled=false;nativePreparedRender();}
 });
+nativePreparedRender();

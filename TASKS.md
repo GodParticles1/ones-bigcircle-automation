@@ -1,5 +1,36 @@
 # Tasks
 
+## Current priority — 0.5.18 Gate F2 closure (2026-10-25)
+
+Current facts and source identities: `docs/context/CURRENT.md`. Existing control: [Issue #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524).
+
+The executable stage gates, exact downloadable package, tests and result branches are owned by [the current test plan](TEST_MATRIX.md#current-0518-test-plan--2026-10-25). Stage-0 uses the accepted package now; Stage-1 native input is HOLD until the bounded #110 confirmation/binding/timing correction is reviewed and separately packaged.
+
+| Priority / owner | Existing lane | Next result / dependency |
+| --- | --- | --- |
+| P0 / one package Writer, independent Leader review | #112 / PR #113 | Source synchronization is complete on the original release branch. Use its exact-release-head CI and actual-archive review receipt to hand over the candidate; do not resynchronize or rebuild unchanged accepted bytes. Preserve the frozen #109 full installer. |
+| P0 / existing local Pro Codex runtime owner | #110 / PR #111, accepted #112 Stage-0 candidate | Execute the already-approved installation/read-only identity/task/type/field check and two fresh authoritative BLANK reads. Return the actual result or precise failed stage/code; do not wait for the next diagnostic package. |
+| P0 / original diagnostic source owner | #110 / PR #111 | In parallel with Stage-0, bind fresh identity, exact marker/recovery confirmation and >=750 ms definite-BLANK ordering to one native attempt. Follow the [bounded continuation](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#issuecomment-6394226007); no production Writer edits. Independent source review/CI precedes one #112 incremental candidate. |
+| P0 / original native-editor source owner | #103 | Supported same-editor trace -> faithful RED reproducer -> smallest GREEN correction -> independent semantic/CI review. Formal Writer remains BLOCKED until the accepted mechanism gate is met. |
+| Dependent / Leader and local runtime owner | #103, #85, #86, #108 | Rebuild final 0.5.18 installation package only from the accepted correction; perform separately authorized single-target runtime acceptance and decide presentation/convergence criteria independently. |
+| Independent closure / existing Big-circle task owner | PR #114 | Source is integrated. Retain a bounded actual task/prompt/document-body/CASE_FEED acceptance follow-up; no duplicate task or source-repository prerequisite. |
+| QUEUED | #97; #115/P7; #21 | #97 follows F2 acceptance. P7 and tooling debt must not delay F2; no new Writer is activated by this priority snapshot. |
+
+### Near-term sequence and useful parallel work
+
+- **Next supported local window:** the runtime owner targets one Stage-0 result in roughly 30–45 minutes of active operator time. This is an operating budget, not a deadline or a reason to skip required waits. If unavailable or blocked, return that precise blocker in the same turn; do not spend another session on generic platform investigation.
+- **During that window:** the original #110 source owner can prepare only the bounded Stage-1 gate correction. No second Writer edits its hot spots. Leader reviews a reviewable checkpoint in the same active turn when received; source/CI acceptance must precede new packaging.
+- **Next native window:** after the new candidate and concrete per-attempt confirmation are ready, collect one trace and independently close server state. A blocked or uncertain outcome is a decision point, not permission for repeated trials. The next #103 implementation budget is set from that trace; no unsupported calendar promise for 0.5.18.
+- **Independent opportunity now:** the existing Big-circle task owner may verify #114's deployed prompt and a bounded native result in its original task, using the merged document-body/result semantics. Do not create another scheduled task or make this a dependency of F2. If that interface is unavailable, report the actual gap.
+- **Prepare once, test once:** define #85/#86 acceptance observations now and collect them from the same later authorized single-target RC run. Do not assign another Writer to the production native-input hot spot or generate separate writes for each issue.
+- **After F2:** freeze the next #97 navigation/stop/resume increment before activating its Writer. #115/P7 stays a separate queued nonproduction opportunity; #21 remains deferred. Neither expands 0.5.18.
+
+Execution remains unobserved until the existing lane supplies a real attributable receipt; publishing this schedule does not start a local task or create background automation.
+
+The old #109 installer work is completed at source level. Do not restart it from a pre-merge handoff. Do not reopen #84, the accepted historical no-input/pending-barrier closure or the completed visible-contract ACK lane without contradictory applicable evidence.
+
+The following historical and future lanes keep their accepted scopes; their older version snapshots do not supersede the current priority above.
+
 ## P0 — Windows Chrome runtime acceptance for Browser Bridge v0.4.1
 
 `LANE_STATE=RETIRED_PASS`
@@ -222,6 +253,33 @@ Future packaging target: one Windows-side ONES Big-circle Agent that owns Local 
 `LANE_STATE=QUEUED`
 
 Replace the developer-console layout with a compact product UI: connection/config card, status summary, manual actions, inventory/reconciliation summary, diagnostics drawer and settings. Visual direction may borrow the compact card/grid hierarchy shown by AI Exporter without copying its branding or assets.
+
+## P7 — Model-neutral Agent interoperability (future planning only)
+
+`LANE_STATE=QUEUED` / `IMPLEMENTATION=NOT_STARTED` / `PRODUCTION_WRITE=OFF`
+
+**Near-term Pro pilot (separate nonproduction slice):** [Issue #115](https://github.com/GodParticles1/ones-bigcircle-automation/issues/115) owns a bounded manifest-based plugin registry with reversible enable/disable/reload for new calls and a stable MCP/CLI facade. Its external-memory capability delegates to the **existing** chat-memory Memory Control Layer; [chat-memory #43](https://github.com/GodParticles1/chat-memory/issues/43) owns cross-Codex/Claude shared context and sourced-learning validation. These issues do not activate production writers, require a new backend, or make hot tool-list refresh in active Agent sessions a guaranteed feature.
+
+**Product intent:** evolve the accepted ONES-specific deterministic execution spine into optional Agent-assisted planning, browser diagnosis and eventually broader business UI workflows, without making a particular LLM, Agent harness, browser automation framework or cloud service mandatory. The first user experience is a natural-language request that leads to transparent **read -> plan -> approved bounded action -> independently verified result**. Never replace trusted exact task/field binding, evidence classification or fail-closed receipts with model guesses.
+
+**Three independent compatibility surfaces (not interchangeable):**
+
+- **Model provider:** configurable DeepSeek, OpenAI or other model adapters for planning/reasoning. Do not assume identical APIs, tool-calling guarantees, data-handling terms or performance; prove each supported integration in its actual configuration. Do not send ONES login material, private ticket text or raw browser DOM to a remote model by default.
+- **Agent runtime:** optional adapters for DeepSeek Harness (DSH's plugin runtime), local Codex CLI and other supported MCP/tool-capable runtimes. Codex cloud/Web access is separate and cannot be presumed to control the user's signed-in local Chrome or loopback Relay. No vendor-specific instructions should become ONES core business authority.
+- **Execution tools:** preserve the existing local Windows Agent, Browser Bridge, Local Relay, read-only field/inventory, reconciliation, planner and exact-receipt capabilities. Publish a **small, typed, versioned capability contract** for Agent callers, with MCP as the first interoperability candidate where both sides actually support it; allow a thin local CLI/adapter where needed. A DSH-specific plugin or Codex-specific connector is optional, not a required rewrite or dependency.
+
+**Candidate capability boundary:** start with read/status/plan/diagnostic and synthetic browser tasks. Treat page content, model responses and remote tool output as untrusted; authorize capabilities per task (read-only default), bind exact identity/field/origin, cap actions and budget, expose deterministic `NOOP/BLOCK/WAIT/verified` outcomes and provenance. A model may recommend actions, but only accepted deterministic executors may mutate state. Draft edits can autosync even without Save; require explicit scoped authorization, the existing one-attempt/no-hidden-retry rules and independent server readback. Create/import, destructive actions, bulk write, unsolicited Bilibili-style comments or other public posting are **not** activated by this roadmap.
+
+**Future bounded validation sequence:**
+
+1. Inventory already accepted ONES read-only tool primitives and define one versioned, privacy-safe `AgentToolRequest/Result` schema; no new mandatory daemon/OAuth/payment or separate control plane.
+2. Run the *same synthetic read-only ONES task* through at least two independently configured clients (candidate: DSH adapter and local Codex CLI adapter), comparing input identity, receipts, failure handling, tool permissions and no side effects. Do not claim compatibility from a README or protocol name alone.
+3. Pilot one operator-confirmed, locally authenticated Chrome/Bridge interaction only when actual browser access is demonstrated and with safe rollback/independent readback; a cloud CI success is not a live-browser pass.
+4. Consider single-field approved mutation/orchestrated multi-target automation only **after** Gate F2/#103 native-editor semantics and applicable #85/#86 runtime gates pass; retain the queued #97 task-level execution constraints and explicit separate write acceptance. Broader cross-site Agent workflows require their own evidence and owner.
+
+**Reference candidates, not frozen dependencies:** [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (plugin-based developer preview; potentially breaking changes), [dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll) (example of task-scoped read/write tools, not ONES runtime proof), [Codex CLI](https://github.com/openai/codex) (local coding-Agent candidate). Evaluate real API/adapter/version support before adopting any implementation.
+
+**Priority and stop:** research backlog only; no Writer assignment, new infrastructure, CI work or production permissions now. P5/P6 productization and existing Gate F2 stabilization must not wait on P7. Revisit when an accepted ONES tool boundary and a real testable Agent client are available; stop if proposed abstraction adds cost or risk without reducing operator effort.
 
 ## Deferred
 

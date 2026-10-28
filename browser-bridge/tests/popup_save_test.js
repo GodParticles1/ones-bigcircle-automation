@@ -18,6 +18,11 @@ function environment(options = {}) {
   const local = {};
   const session = {};
   const events = [];
+  const packets=[],confirmations=[];
+  let identityReads=0;
+  const prepared={ok:true,status:'DIAGNOSTIC_PREPARED',nonce:'synthetic-nonce',marker:'NDP001122aabbcc',
+    recovery:'CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE',expiresAt:new Date(Date.now()+60000).toISOString(),
+    target:{displayId:'SYN-1',projectUuid:'p',issueTypeUuid:'i',fieldId:'f'}};
   let last={ok:false,status:'NOT_RUN',pendingServerVerification:false};
   let identityLast={ok:false,status:'NOT_VERIFIED',readOnly:true,validBinding:false,historical:true};
   let handler;
@@ -43,6 +48,18 @@ function environment(options = {}) {
   }, { filename: 'service-worker.js' });
   const sendMessage = (message) => {
     events.push(message.type);
+    packets.push(clone(message));
+    if(options.stage1&&message.type==='ONES_NATIVE_DIAGNOSTIC_PREPARE')return Promise.resolve(clone(prepared));
+    if(options.stage1&&message.type==='ONES_IDENTITY_BINDING_READ'){
+      identityReads++;
+      if(options.failSecondIdentity&&identityReads===2)return Promise.reject(Error('synthetic identity transport failure'));
+      return Promise.resolve({
+      ok:true,status:'IDENTITY_BINDING_READ_VERIFIED',readOnly:true,validBinding:!options.historicalIdentity,
+      historical:!!options.historicalIdentity,preparedNonce:prepared.nonce,
+      privateBinding:{accountUuid:'user',assigneeUuid:'user',taskUuid:'task',resolvedTaskUuid:'task',
+        displayId:'SYN-1',teamUuid:'t',projectUuid:'p',issueTypeUuid:'i',fieldId:'f',fieldType:15}});}
+    if(options.stage1&&['ONES_NATIVE_DIAGNOSTIC_RUN','ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED'].includes(message.type))
+      return Promise.resolve({ok:false,status:'SYNTHETIC_STOP',insertTextCount:0,saveDispatched:false});
     if (message.type === 'ONES_NATIVE_DIAGNOSTIC_LAST') return Promise.resolve(clone(last));
     if (message.type === 'ONES_IDENTITY_BINDING_LAST') return Promise.resolve(clone(identityLast));
     return new Promise((resolve) => {
@@ -63,17 +80,19 @@ function environment(options = {}) {
         remove: async (key) => { delete session[key]; events.push('DRAFT_CLEARED'); }
       } },
       permissions: { request: async (request) => { events.push('PERMISSION_REQUEST'); return permission(clone(request)); } },
-      tabs: { query: async () => [] }
+      tabs: { query: async () => options.stage1?[{id:1,url:'https://synthetic.invalid/project/#/team/t/issue/SYN-1'}]:[] }
     };
-    vm.runInNewContext(popupSource, { chrome, URL, document: { getElementById: (id) => elements[id] } }, { filename: 'popup.js' });
+    vm.runInNewContext(popupSource, { chrome, URL,document: { getElementById: (id) => elements[id] },
+      confirm:text=>{confirmations.push(text);return options.confirm!==false} }, { filename: 'popup.js' });
     return {
       elements,
       click: () => elements.saveConfig.listeners.click(),
+      press:id=>elements[id].listeners.click(),
       input: (id) => elements[id].listeners.input(),
       output: () => JSON.parse(elements.output.textContent)
     };
   }
-  return { local, session, events, sendMessage, popup,
+  return { local, session, events,packets,confirmations,prepared, sendMessage, popup,
     setLast: (x) => { last=clone(x); },setIdentityLast:(x)=>{identityLast=clone(x)} };
 }
 
@@ -391,4 +410,49 @@ test('private identity LAST is labeled historical and displayed through a UUID-o
   assert.equal(receipt.stage,'FIELD_CONFIG');assert.equal(receipt.stages.at(-1).stage,'FIELD_SCHEMA');
   assert.equal(receipt.status,status);assert.equal(failed.elements.identityBindingOutput.textContent.includes(secret),false);
  }
+});
+
+test('Stage1 popup displays the actual prepared marker and confirms that same marker only after fresh identity',async()=>{
+ const env=environment({stage1:true}),p=await ready(env);await flush();
+ await p.press('nativeDiagRun');assert.equal(env.confirmations.length,0);
+ await p.press('nativeDiagPrepare');
+ assert.equal(p.elements.nativeDiagPrepared.textContent.includes(env.prepared.marker),true);
+ assert.equal(p.elements.nativeDiagPrepared.textContent.includes(env.prepared.recovery),true);
+ assert.equal(p.elements.nativeDiagRun.disabled,true);
+ await p.press('identityBindingRead');assert.equal(p.elements.nativeDiagRun.disabled,false);
+ await p.press('nativeDiagRun');
+ assert.equal(env.confirmations.length,1);assert.equal(env.confirmations[0].includes(env.prepared.marker),true);
+ assert.equal(env.confirmations[0].includes(env.prepared.recovery),true);
+ const run=env.packets.find(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN');
+ assert.deepEqual(Object.keys(run).sort(),['confirmed','marker','nonce','recovery','tabId','type']);
+ assert.equal(run.marker,env.prepared.marker);assert.equal(run.nonce,env.prepared.nonce);assert.equal(run.confirmed,true);
+ await p.press('nativeDiagRun');assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
+});
+test('Stage1 popup cancellation and historical identity do not dispatch RUN',async()=>{
+ for(const options of [{stage1:true,confirm:false},{stage1:true,historicalIdentity:true}]){
+  const env=environment(options),p=await ready(env);await flush();
+  await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+  assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+  if(options.confirm===false){const cancel=env.packets.find(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED');
+    assert.equal(cancel.nonce,env.prepared.nonce);}
+  else assert.equal(env.confirmations.length,0);
+ }
+});
+test('Stage1 a failed fresh identity request removes a prior popup-ready indication',async()=>{
+ const env=environment({stage1:true,failSecondIdentity:true}),p=await ready(env);await flush();
+ await p.press('nativeDiagPrepare');await p.press('identityBindingRead');
+ assert.equal(p.elements.nativeDiagRun.disabled,false);
+ await p.press('identityBindingRead');assert.equal(p.elements.nativeDiagRun.disabled,true);
+ await p.press('nativeDiagRun');assert.equal(env.confirmations.length,0);
+ assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+test('FIELD_SCHEMA popup projects only fixed invariant enums and bounded numeric type',async()=>{
+ const env=environment();env.setIdentityLast({status:'BLOCKED_FIELD_SCHEMA',historical:true,
+   fieldInvariant:'TARGET_TYPE_NOT_15',fieldTypeCode:8,raw:'PRIVATE_EXTRA'});
+ const p=await ready(env);await flush();let r=JSON.parse(p.elements.identityBindingOutput.textContent);
+ assert.equal(r.fieldInvariant,'TARGET_TYPE_NOT_15');assert.equal(r.fieldTypeCode,8);
+ env.setIdentityLast({status:'BLOCKED_FIELD_SCHEMA',fieldInvariant:'PRIVATE_EXTRA',fieldTypeCode:999});
+ const other=await ready(env);await flush();r=JSON.parse(other.elements.identityBindingOutput.textContent);
+ assert.equal(r.fieldInvariant,undefined);assert.equal(r.fieldTypeCode,undefined);
+ assert.equal(other.elements.identityBindingOutput.textContent.includes('PRIVATE_EXTRA'),false);
 });

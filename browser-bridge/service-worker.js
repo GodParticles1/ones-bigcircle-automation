@@ -841,6 +841,75 @@ const IDENTITY_BINDING_STATUSES=new Set(['NOT_VERIFIED','IDENTITY_BINDING_READ_V
   'BLOCKED_TASK_SCHEMA','BLOCKED_TASK_SCOPE','BLOCKED_OWNER_MISMATCH','BLOCKED_FIELD_SCHEMA',
   'BLOCKED_FIELD_CONFIG','BLOCKED_SCRIPT_RESULT','BLOCKED_UNCERTAIN']);
 let bridgeSideChannelBusy=false;
+const BRIDGE_PREPARED_KEY='onesNativeDiagnosticPreparedV1';
+const BRIDGE_RECOVERY='CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE';
+const BRIDGE_TUPLE_KEYS=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid','displayId',
+  'teamUuid','projectUuid','issueTypeUuid','fieldId','fieldType'];
+const bridgeGateFailure=status=>({ok:false,status,diagnosticOnly:true,writeGate:'OFF',insertTextCount:0,saveDispatched:false});
+async function bridgePreparedRead(){return ibOwn(await chrome.storage.session.get(BRIDGE_PREPARED_KEY),BRIDGE_PREPARED_KEY);}
+async function bridgePreparedSave(value){await chrome.storage.session.set({[BRIDGE_PREPARED_KEY]:value});}
+function bridgeFresh(value){const t=ibTime(value)?Date.parse(value):NaN;return Number.isFinite(t)&&Date.now()-t>=0&&Date.now()-t<=300000;}
+function bridgeSameTuple(a,b){return !!a&&!!b&&BRIDGE_TUPLE_KEYS.every(k=>ibOwn(a,k)===ibOwn(b,k));}
+function bridgePreparedMatches(p,config,target,tabId,phase='PREPARED'){
+  return p&&ibOwn(p,'phase')===phase&&ibId(ibOwn(p,'nonce'))&&/^NDP[0-9a-f]{12}$/.test(ibOwn(p,'marker'))&&
+    ibOwn(p,'recovery')===BRIDGE_RECOVERY&&bridgeFresh(ibOwn(p,'preparedAt'))&&
+    ibOwn(p,'tabId')===tabId&&ibOwn(p,'href')===target.href&&ibSameConfig(ibOwn(p,'config'),config);
+}
+async function bridgePending(){const p=ibOwn(await chrome.storage.session.get('onesNativeDiagnosticV1'),'onesNativeDiagnosticV1');
+  return ibOwn(p,'pending')===true&&ibOwn(p,'verified')!==true;}
+async function bridgePrepare(tabId){
+  if(await bridgePending())return bridgeGateFailure('BLOCKED_PENDING_SERVER_VERIFICATION');
+  const config=await ibConfig(),target=await ibTarget(config,tabId);
+  if(!await chrome.permissions.contains({origins:[config.onesOrigin+'/*']}))return bridgeGateFailure('BLOCKED_ORIGIN_PERMISSION');
+  const bytes=crypto.getRandomValues(new Uint8Array(6)),marker='NDP'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  const p={nonce:crypto.randomUUID(),marker,recovery:BRIDGE_RECOVERY,phase:'PREPARED',tabId,
+    href:target.href,displayId:target.displayId,config,preparedAt:new Date().toISOString()};
+  await bridgePreparedSave(p);
+  return {ok:true,status:'DIAGNOSTIC_PREPARED',nonce:p.nonce,marker,recovery:p.recovery,preparedAt:p.preparedAt,
+    expiresAt:new Date(Date.parse(p.preparedAt)+300000).toISOString(),identityBound:false,
+    privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',target:{displayId:target.displayId,projectUuid:config.projectUuid,
+      issueTypeUuid:config.issueTypeUuid,fieldId:config.rootCauseFieldId},insertTextCount:0,saveDispatched:false};
+}
+async function bridgeCancel(nonce){
+  const p=await bridgePreparedRead();
+  if(!p||ibOwn(p,'nonce')!==nonce||ibOwn(p,'phase')!=='PREPARED')return bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION');
+  await bridgePreparedSave({...p,phase:'CANCELLED'});return bridgeGateFailure('PREPARED_CANCELLED');
+}
+async function bridgeRun(message){
+  const p=await bridgePreparedRead();
+  if(!p)return bridgeGateFailure('BLOCKED_PREPARED_REQUIRED');
+  const keys=Object.keys(message),allowed=['type','tabId','nonce','marker','recovery','confirmed'];
+  if(keys.length!==allowed.length||!keys.every(k=>allowed.includes(k))||ibOwn(message,'confirmed')!==true||
+    ibOwn(message,'nonce')!==ibOwn(p,'nonce')||ibOwn(message,'marker')!==ibOwn(p,'marker')||
+    ibOwn(message,'recovery')!==BRIDGE_RECOVERY){
+    if(ibOwn(p,'phase')==='PREPARED')await bridgePreparedSave({...p,phase:'INVALIDATED'});
+    return bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION');
+  }
+  if(ibOwn(p,'phase')!=='PREPARED')return bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION');
+  // A concrete confirmation is one-shot even when a subsequent guard fails.
+  await bridgePreparedSave({...p,phase:'CONSUMED'});
+  if(await bridgePending())return bridgeGateFailure('BLOCKED_PENDING_SERVER_VERIFICATION');
+  const config=await ibConfig(),tabId=ibOwn(message,'tabId'),target=await ibTarget(config,tabId);
+  if(!bridgePreparedMatches(p,config,target,tabId)||!bridgeFresh(ibOwn(p,'identityObservedAt'))||
+    Date.parse(p.identityObservedAt)<Date.parse(p.preparedAt)||!ibOwn(p,'identity'))
+    return bridgeGateFailure('BLOCKED_PREPARED_IDENTITY');
+  // Independently revalidate identity after consuming this exact confirmation.
+  const fresh=await ibRead(tabId);
+  if(!fresh.ok||!bridgeSameTuple(p.identity,fresh.privateBinding))return bridgeGateFailure('BLOCKED_PREPARED_IDENTITY');
+  let executing=true;
+  const execution={run:p.nonce,marker:p.marker,taskUuid:fresh.privateBinding.taskUuid,href:target.href,
+    guard:async()=>{
+      if(!executing)return false;
+      try{
+        const live=await bridgePreparedRead(),current=await ibConfig(),page=await ibTarget(current,tabId);
+        return bridgePreparedMatches(live,current,page,tabId,'CONSUMED')&&live.nonce===p.nonce&&
+          live.marker===p.marker&&bridgeFresh(live.identityObservedAt)&&
+          bridgeSameTuple(live.identity,p.identity)&&ibSameConfig(config,current)&&page.href===target.href;
+      }catch(_){return false;}
+    }};
+  try{return await globalThis.onesNativeEditorDiagnosticRun(config,tabId,execution);}
+  finally{executing=false;}
+}
 function ibOwn(o,k) {
   if(!o||typeof o!=='object'||Array.isArray(o))return undefined;
   const d=Object.getOwnPropertyDescriptor(o,k);
@@ -864,6 +933,12 @@ function ibReceipt(value) {
     const stage=ibOwn(value,'stage');if(IDENTITY_BINDING_STAGES.includes(stage))out.stage=stage;
     if(status==='BLOCKED_READ_HTTP'){
       const code=ibOwn(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
+    }
+    if(status==='BLOCKED_FIELD_SCHEMA'){
+      const reason=ibOwn(value,'fieldInvariant'),code=ibOwn(value,'fieldTypeCode');
+      if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
+        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15'].includes(reason))out.fieldInvariant=reason;
+      if(reason==='TARGET_TYPE_NOT_15'&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
     }
     if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
     const b=ibOwn(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
@@ -904,10 +979,15 @@ async function ibSave(config,receipt) {
 async function ibRead(tabId) {
   let snapshot=null,result=ibDenied();
   try {
+    // Revoke prepared proof before any cache/config/tab operation can fail.
+    const prepared=await bridgePreparedRead();
+    if(ibOwn(prepared,'phase')==='PREPARED')
+      await bridgePreparedSave({...prepared,identity:null,identityObservedAt:null});
     // Invalidate an older success before any new read, without touching diagnostic pending.
     await ibSave(null,result);
     snapshot=await ibConfig();
     const target=await ibTarget(snapshot,tabId);
+    const bindPrepared=bridgePreparedMatches(prepared,snapshot,target,tabId);
     if(!await chrome.permissions.contains({origins:[snapshot.onesOrigin+'/*']}))throw 'BLOCKED_ORIGIN_PERMISSION';
     const executions=await chrome.scripting.executeScript({target:{tabId},world:'MAIN',
       func:globalThis.onesIdentityBindingReadPage,args:[{...snapshot,...target}]});
@@ -923,6 +1003,12 @@ async function ibRead(tabId) {
       const b=result.privateBinding;
       if(b.teamUuid!==snapshot.teamUuid||b.projectUuid!==snapshot.projectUuid||b.issueTypeUuid!==snapshot.issueTypeUuid||
         b.fieldId!==snapshot.rootCauseFieldId||b.displayId!==target.displayId)throw 'BLOCKED_SCRIPT_RESULT';
+      if(bindPrepared){
+        const live=await bridgePreparedRead();
+        if(!bridgePreparedMatches(live,after,afterTarget,tabId)||live.nonce!==prepared.nonce)throw 'BLOCKED_SCRIPT_RESULT';
+        await bridgePreparedSave({...live,identity:{...b},identityObservedAt:new Date().toISOString()});
+        result={...result,preparedNonce:live.nonce};
+      }
     }
   }catch(status){result=ibDenied(typeof status==='string'&&IDENTITY_BINDING_STATUSES.has(status)?status:'BLOCKED_UNCERTAIN');}
   try{await ibSave(snapshot,result);}catch(_){return ibDenied('BLOCKED_UNCERTAIN');}
@@ -944,6 +1030,22 @@ async function ibLast() {
   }catch(_){return unavailable();}
 }
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(['ONES_NATIVE_DIAGNOSTIC_PREPARE','ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED','ONES_NATIVE_DIAGNOSTIC_RUN'].includes(message?.type)){
+    (async()=>{
+      if(ibOwn(sender,'id')!==chrome.runtime.id||ibOwn(sender,'url')!==chrome.runtime.getURL('popup.html'))
+        return sendResponse(bridgeGateFailure('BLOCKED_PREPARED_SOURCE'));
+      if(bridgeSideChannelBusy)return sendResponse(bridgeGateFailure('BLOCKED_IN_FLIGHT'));
+      bridgeSideChannelBusy=true;
+      try{
+        if(message.type==='ONES_NATIVE_DIAGNOSTIC_RUN')return sendResponse(await bridgeRun(message));
+        const cancel=message.type==='ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED',keys=Object.keys(message);
+        if(keys.length!==2||!keys.includes('type')||!keys.includes(cancel?'nonce':'tabId'))
+          return sendResponse(bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION'));
+        sendResponse(cancel?await bridgeCancel(ibOwn(message,'nonce')):await bridgePrepare(ibOwn(message,'tabId')));
+      }catch(_){sendResponse(bridgeGateFailure('BLOCKED_PREPARED_UNCERTAIN'));}
+      finally{bridgeSideChannelBusy=false;}
+    })();return true;
+  }
   if(message?.type==='ONES_IDENTITY_BINDING_READ'||message?.type==='ONES_IDENTITY_BINDING_LAST') {
     (async()=>{
       try {
@@ -961,7 +1063,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
-  if (message?.type === "ONES_NATIVE_DIAGNOSTIC_RUN" || message?.type === "ONES_NATIVE_DIAGNOSTIC_VERIFY" || message?.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
+  if (message?.type === "ONES_NATIVE_DIAGNOSTIC_VERIFY" || message?.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
     (async () => {
       if(bridgeSideChannelBusy){sendResponse({ok:false,status:'BLOCKED_IN_FLIGHT',diagnosticOnly:true,saveDispatched:false});return;}
       bridgeSideChannelBusy=true;
@@ -980,11 +1082,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ok:false,status:"BLOCKED_ACTIVE_TAB",diagnosticOnly:true,saveDispatched:false});
         return;
       }
-      if (message.type === "ONES_NATIVE_DIAGNOSTIC_RUN") {
-        sendResponse(await globalThis.onesNativeEditorDiagnosticRun(config,message.tabId));
-      } else {
-        sendResponse(await globalThis.onesNativeEditorDiagnosticVerify(config,message.tabId));
-      }
+      sendResponse(await globalThis.onesNativeEditorDiagnosticVerify(config,message.tabId));
       } finally {bridgeSideChannelBusy=false;}
     })().catch(() => sendResponse({ok:false,status:"BLOCKED_UNCERTAIN",diagnosticOnly:true,saveDispatched:false}));
     return true;

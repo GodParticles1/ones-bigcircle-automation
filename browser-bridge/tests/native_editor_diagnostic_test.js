@@ -3,11 +3,17 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const {test} = require("node:test");
 const {webcrypto} = require("node:crypto");
+const {performance:hostPerformance} = require("node:perf_hooks");
 const source = fs.readFileSync(require("node:path").join(__dirname,"..","native-editor-diagnostic.js"),"utf8");
+const workerScopeSource=fs.readFileSync(require('node:path').join(__dirname,'..','service-worker.js'),'utf8');
+const actualScopeValidators=workerScopeSource.slice(workerScopeSource.indexOf('function normalizeOnesOrigin('),
+  workerScopeSource.indexOf('function validateInventoryUrl('));
 const href="https://synthetic.invalid/project/#/team/t/project/p/issue/SYN-1";
 const config={writeEnabled:false,rootCauseFieldId:"f",onesOrigin:"https://synthetic.invalid",teamUuid:"t",projectUuid:"p",issueTypeUuid:"i"};
 function harness(opts={}) {
-  const sent=[],store={},events={},observers=[],undeliveredMutations=[];
+  const sent=[],store={},events={},observers=[],undeliveredMutations=[],fieldReads=[];
+  let virtualTime=0;
+  const now=()=>opts.realTimers?hostPerformance.now():virtualTime;
   const rect={left:30,top:40,right:230,height:25,width:200};
   const textSurface={textContent:opts.authoringText||""};
   const block={textContent:opts.authoringText||opts.accessoryText||(opts.dirty?"synthetic draft":""),
@@ -153,16 +159,83 @@ function harness(opts={}) {
     MutationObserver:class{constructor(f){this.f=f}observe(){observers.push(this.f)}
       takeRecords(){return undeliveredMutations.splice(0)}
       disconnect(){const i=observers.indexOf(this.f);if(i>=0)observers.splice(i,1);undeliveredMutations.length=0}},
-    queueMicrotask,setTimeout:(f)=>setImmediate(f),console,
-    relayReadTaskFields:async(_s,p)=>({ok:!opts.badRead,complete:!opts.badRead,readOnly:true,requestedTaskCount:1,fieldId:p.fieldId,
-      reads:[{status:"READ_VERIFIED",onesTaskUuid:"task",fieldId:p.fieldId,value:opts.nonempty?"something":""}]}),
-    validatedOnesScope:()=>config});
+    // Virtual time accelerates locator tests only. The interval regression below
+    // uses actual host timers and a deferred first authoritative result.
+    performance:{now},queueMicrotask,setTimeout:(f,ms)=>opts.realTimers?setTimeout(f,ms):
+      (virtualTime+=Number(ms)||0,setImmediate(f)),console,
+    relayReadTaskFields:async(_s,p)=>{
+      const row={dispatch:now()};fieldReads.push(row);
+      if(fieldReads.length===1&&opts.firstReadDelayMs)await new Promise(r=>setTimeout(r,opts.firstReadDelayMs));
+      const bad=opts.badRead||(fieldReads.length===1&&opts.firstReadState==='UNKNOWN');
+      const nonempty=opts.nonempty||(fieldReads.length===1&&opts.firstReadState==='NONEMPTY');
+      const result={ok:!bad,complete:!bad,readOnly:true,requestedTaskCount:1,fieldId:p.fieldId,
+        reads:[{status:"READ_VERIFIED",onesTaskUuid:"task",fieldId:p.fieldId,value:nonempty?"something":""}]};
+      row.complete=now();return result;
+    }});
+  vm.runInContext(actualScopeValidators,context);
   vm.runInContext(source,context);
-  return {sent,root,opts,armed:()=>!!context.window[Symbol.for('ones.native.editor.diagnostic.v1')],
+  // Unit fixture for the already-authorized NATIVE core. Real identity/consent
+  // acquisition is covered separately through the actual worker message path.
+  const execution={run:'synthetic-run',marker:'NDP0123456789ab',taskUuid:'task',href,
+    guard:async()=>!opts.executionDrift&&!(opts.stopAfterSecondRead&&fieldReads.length>=2)&&
+      !(opts.rejectBeforeInsert&&sent.length>=5)};
+  return {sent,root,opts,execution,fieldReads,currentText:()=>block.textContent,
+    armed:()=>!!context.window[Symbol.for('ones.native.editor.diagnostic.v1')],
     blur:()=>{active=null;opts.popupBlur=true},finishMutationApplied:()=>finishMutationApplied,
-    run:(c=config)=>context.onesNativeEditorDiagnosticRun(c,1),
+    run:(c=config,e=execution)=>context.onesNativeEditorDiagnosticRun(c,1,e),
+    runWithoutExecution:()=>context.onesNativeEditorDiagnosticRun(config,1),
     verify:()=>context.onesNativeEditorDiagnosticVerify(config,1),last:()=>context.onesNativeEditorDiagnosticLast()};
 }
+test("unprepared or mismatched execution never reaches native commands",async()=>{
+  const missing=harness();await missing.runWithoutExecution();
+  assert.equal(missing.sent.length,0);assert.equal(missing.fieldReads.length,0);
+  for(const delta of [{marker:'another-marker'},{taskUuid:'another-task'},{href:href+'/other'},
+    {run:''},{guard:null}]){
+    const h=harness();await h.run(config,{...h.execution,...delta});
+    assert.equal(h.sent.length,0);assert.equal(h.fieldReads.length,0);
+  }
+});
+test("the sole inserted marker is the exact prepared value",async()=>{
+  const h=harness(),r=await h.run();assert.equal(r.status,'TRACE_EXACT_ONCE');
+  assert.equal(h.currentText(),h.execution.marker);
+  assert.equal(h.sent.filter(x=>x==='Input.insertText').length,1);
+});
+test("native core accepts the exact necessary identity scope without unrelated department configuration",async()=>{
+  const h=harness(),r=await h.run();
+  assert.equal(Object.hasOwn(config,'assigneeDepartmentUuid'),false);
+  assert.equal(r.status,'TRACE_EXACT_ONCE');
+});
+test("execution guard rejection stops before any native command",async()=>{
+  const h=harness({executionDrift:true});await h.run();
+  assert.equal(h.sent.length,0);assert.equal(h.fieldReads.length,0);
+});
+test("late execution rejection counts zero inserts but a dispatched uncertain insert counts one",async()=>{
+  const denied=harness({rejectBeforeInsert:true}),blocked=await denied.run();
+  assert.equal(denied.sent.filter(x=>x==='Input.insertText').length,0);
+  assert.equal(blocked.insertTextCount,0);
+  assert.equal((await denied.last()).pendingServerVerification,true);
+  assert.equal((await denied.run()).status,'BLOCKED_PENDING_SERVER_VERIFICATION');
+  const uncertain=harness({throwAfter:true}),result=await uncertain.run();
+  assert.equal(uncertain.sent.filter(x=>x==='Input.insertText').length,1);
+  assert.equal(result.insertTextCount,1);
+  assert.equal((await uncertain.last()).pendingServerVerification,true);
+});
+test("first failed or nonempty authoritative read never dispatches a second",async()=>{
+  for(const firstReadState of ['UNKNOWN','NONEMPTY']){
+    const h=harness({firstReadState});await h.run();
+    assert.equal(h.fieldReads.length,1);assert.equal(h.sent.length,0);
+  }
+});
+test("real elapsed pre-read interval starts after the deferred successful first completion",async(t)=>{
+  const h=harness({realTimers:true,firstReadDelayMs:35,stopAfterSecondRead:true});await h.run();
+  assert.equal(h.fieldReads.length,2);
+  assert.ok(h.fieldReads[0].complete-h.fieldReads[0].dispatch>=30);
+  const elapsed=h.fieldReads[1].dispatch-h.fieldReads[0].complete;
+  t.diagnostic(JSON.stringify({clock:'host_monotonic',firstCompleted:h.fieldReads[0].complete,
+    secondDispatched:h.fieldReads[1].dispatch,elapsedMs:elapsed,minimumMs:750}));
+  assert.ok(elapsed>=750,`real first-completion to second-dispatch interval: ${elapsed}ms`);
+  assert.equal(h.sent.length,0);
+});
 test("one insert, metadata-only events, zero Save",async()=>{const h=harness(),r=await h.run();
   assert.equal(r.status,"TRACE_EXACT_ONCE");assert.equal(r.trace.semantic,"EXACT_ONCE");
   assert.equal(r.trace.observationStable,true);assert.equal(r.trace.pendingMutationRecordCount,0);
