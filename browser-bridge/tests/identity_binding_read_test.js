@@ -14,6 +14,20 @@ const config={onesOrigin:'https://synthetic.invalid',teamUuid:'t',projectUuid:'p
 const stages=['DOM_BEFORE','USER_START','TASK_RESOLVE','TASK_INFO','FIELD_SCHEMA','FIELD_CONFIG','USER_END','DOM_AFTER'];
 const richtextType=()=>({uuid:'synthetic-richtext-type',name:'富文本',value_type:'richtext',
   can_be_custom_field:true,can_be_frozen:false});
+function detailForm(){
+  const form={uuid:'synthetic-widget-root',type:'root',children:[],rules:{field_uuid:'f',padding:''}};
+  const parents=[form];let parent=form;
+  for(let i=0;i<5;i++){const child={uuid:'chain-'+i,type:'group',children:[]};parent.children.push(child);parents.push(child);parent=child;}
+  for(let i=0;i<19;i++){const child={uuid:'group-'+i,type:'group',children:[]};form.children.push(child);parents.push(child);}
+  for(let i=0;i<54;i++)parents[i%parents.length].children.push({uuid:'widget-'+i,type:'field',
+    config:{field_uuid:i===5?'f':'synthetic-field-'+i,frozen:false,visible:'DO_NOT_EVALUATE()',title:'Synthetic alternate title'}});
+  const result={project_uuid:'p',issue_type_uuid:'i',form_type:'detail',form_uuid:'synthetic-form',
+    layout_uuid:'synthetic-layout',form};
+  form.rules.padding='x'.repeat(22373-JSON.stringify(result).length);
+  return result;
+}
+function detailTarget(body){const todo=[body.form];while(todo.length){const n=todo.pop();
+  if(n.type==='field'&&n.config?.field_uuid==='f')return n;todo.push(...(n.children||[]));}}
 async function harness(options={}) {
   const requests=[],effects={debugger:0,relay:0,sessionWrites:0,cacheWrites:0,logs:0,bodyReads:0,poisonReads:0,permissionRequests:0};
   const stored={onesRelayConfig:{...config,baseUrl:'http://127.0.0.1:18731',enabled:false,
@@ -34,11 +48,13 @@ async function harness(options={}) {
   let heldResolve,heldStarted;
   const held=new Promise(resolve=>{heldResolve=resolve});
   const started=new Promise(resolve=>{heldStarted=resolve});
-  const bodyFor=index=>index===0||index===5?{uuid:'user'}:index===1?
+  const bodyFor=(index,url)=>index===0||index===5?{uuid:'user'}:index===1?
     {display_id:'SYN-1',task_uuid:'task'}:index===2?
     {uuid:'task',assign:'user',owner:'creator',project_uuid:'p',issue_type_uuid:'i'}:index===3?
-    {fields:[{uuid:'f',name:'问题根因',type:15}]}:
-    {field_configs:[{project_uuid:'p',issue_type_uuid:'i',field_uuid:'f'}]};
+    {fields:[{uuid:'f',name:'问题根因',type:options.richtext?richtextType():15}]}:
+    url.endsWith('/detail_form')?detailForm():{field_configs:options.largeLegacy?
+      Array.from({length:8110},(_,i)=>({project_uuid:'p',issue_type_uuid:'i',field_uuid:'other-'+i,padding:'x'.repeat(420)})):
+      [{project_uuid:'p',issue_type_uuid:'i',field_uuid:options.missingLegacy?'other':'f'}]};
   let parseIndex=0;
   const pageJson={stringify:JSON.stringify,parse:text=>{
     const value=JSON.parse(text),index=parseIndex++;
@@ -56,12 +72,13 @@ async function harness(options={}) {
       if(options.hold && index===0){heldStarted();await held;}
       if(options.timeoutAt===index) return new Promise(()=>{});
       if(options.errorAt===index) throw Error(secret);
-      const body=bodyFor(index%6);
+      const body=bodyFor(index%6,url);
       if(options.changeBody) options.changeBody(index,body);
       if(options.navigationAt===index) location.href=href+'/changed';
       if(options.domDriftAt===index) field.isConnected=false;
       return {ok:options.httpAt!==index,status:options.httpAt===index?(options.httpCode??401):200,
-        text:async()=>options.htmlAt===index?'<html>'+secret+'</html>':JSON.stringify(body)};
+        text:async()=>options.responseAt===index?options.responseText:
+          options.htmlAt===index?'<html>'+secret+'</html>':JSON.stringify(body)};
     }});
   let handler,worker,scriptCalls=0,activeId=1,activeUrl=options.activeUrl??href;
   const noEvent={addListener(){}};
@@ -173,6 +190,101 @@ test('nested richtext metadata completes the actual six-request binding without 
   assert.equal(last.historical,true);assert.equal(last.validBinding,false);
   assert.equal(last.privateBinding.fieldTypeUuid,r.privateBinding.fieldTypeUuid);h.assertReadOnly();
 });
+test('richtext uses the bounded task detail form instead of a huge incomplete global field catalog',async()=>{
+  assert.equal(JSON.stringify(detailForm()).length,22373);
+  for(const options of [{largeLegacy:true},{missingLegacy:true}]){
+    const h=await harness({richtext:true,...options}),r=await h.send();
+    assert.equal(r.status,'IDENTITY_BINDING_READ_VERIFIED');assert.equal(r.requestCount,6);
+    assert.equal(new URL(h.requests[4].url).pathname,'/project/api/ones-project/team/t/issue/task/detail_form');
+    assert.equal(h.requests[4].init.method,'GET');assert.equal(h.requests[4].init.body,undefined);
+    assert.equal(new URL(h.requests[4].url).search,'');
+    assert.equal(r.privateBinding.fieldFormUuid,'synthetic-form');assert.equal(r.privateBinding.fieldLayoutUuid,'synthetic-layout');
+    const last=await h.send({type:'ONES_IDENTITY_BINDING_LAST'});
+    assert.equal(last.privateBinding.fieldFormUuid,'synthetic-form');assert.equal(last.validBinding,false);h.assertReadOnly();
+  }
+});
+test('richtext detail form rejects a scope mismatch without trying legacy field configs',async()=>{
+  const h=await harness({richtext:true,changeBody:(i,b)=>{if(i===4)b.project_uuid='other'}}),r=await h.send();
+  denied(r);assert.equal(r.status,'BLOCKED_FIELD_CONFIG');assert.equal(r.fieldConfigInvariant,'FORM_SCOPE_MISMATCH');
+  assert.equal(h.requests.length,5);assert.equal(h.requests.filter(x=>x.url.endsWith('/field_configs')).length,0);h.assertReadOnly();
+});
+test('richtext detail form validates exact scope, envelope IDs and root independently',async()=>{
+  for(const [mutate,invariant]of [
+    [b=>{b.issue_type_uuid='other'},'FORM_SCOPE_MISMATCH'],[b=>{b.form_type='create'},'FORM_SCOPE_MISMATCH'],
+    [b=>{delete b.project_uuid},'FORM_SCOPE_MISMATCH'],[b=>{delete b.form_uuid},'FORM_ID_INVALID'],
+    [b=>{b.layout_uuid='bad/id'},'FORM_ID_INVALID'],[b=>{delete b.form.uuid},'FORM_ID_INVALID'],
+    [b=>{b.form.type='group'},'FORM_TREE_INVALID']]){
+    const h=await harness({richtext:true,changeBody:(i,b)=>{if(i===4)mutate(b)}}),r=await h.send();
+    denied(r);assert.equal(r.fieldConfigInvariant,invariant);assert.equal(h.requests.length,5);h.assertReadOnly();
+  }
+});
+test('richtext scans the entire own children tree and refuses malformed, late duplicate, fake or frozen targets',async()=>{
+  for(const [mutate,invariant]of [
+    [b=>{b.form.children=null},'FORM_TREE_INVALID'],[b=>{b.form.children.push(null)},'FORM_TREE_INVALID'],
+    [b=>{b.form.children.push({type:15})},'FORM_TREE_INVALID'],
+    [b=>{b.form.children.push({type:'field',config:{}})},'FORM_TREE_INVALID'],
+    [b=>{b.form.children.push({type:'unknown_widget',config:{field_uuid:'f'}})},'FORM_TREE_INVALID'],
+    [b=>{b.form.children.push({type:'field',config:{field_uuid:'f',frozen:false}})},'TARGET_NOT_UNIQUE'],
+    [b=>{detailTarget(b).config.field_uuid='other';b.form.default_value={field_uuid:'f'}},'TARGET_NOT_UNIQUE'],
+    [b=>{detailTarget(b).config.frozen=true},'TARGET_FROZEN'],
+    [b=>{delete detailTarget(b).config.frozen},'TARGET_FROZEN'],
+    [b=>{detailTarget(b).config.frozen='false'},'TARGET_FROZEN'],
+    [b=>{b.form.children=Array.from({length:2000},()=>({type:'group'}))},'FORM_TREE_INVALID'],
+    [b=>{let node=b.form;for(let i=0;i<33;i++){const child={type:'group'};node.children=[child];node=child;}
+      node.type='field';node.config={field_uuid:'f',frozen:false}},'FORM_TREE_INVALID']]){
+    const h=await harness({richtext:true,changeBody:(i,b)=>{if(i===4)mutate(b)}}),r=await h.send();
+    denied(r);assert.equal(r.status,'BLOCKED_FIELD_CONFIG');assert.equal(r.fieldConfigInvariant,invariant);
+    assert.equal(h.requests.length,5);assert.equal(h.requests.some(x=>x.url.endsWith('/field_configs')),false);h.assertReadOnly();
+  }
+});
+test('richtext tree accessors cannot run and unrelated rule strings cannot become members',async()=>{
+  for(const mode of ['CHILDREN_GETTER','CONFIG_GETTER','INHERITED_CHILDREN']){
+    const h=await harness({richtext:true,afterParse:(i,b,e)=>{if(i!==4)return;
+      if(mode==='CHILDREN_GETTER')Object.defineProperty(b.form,'children',{get(){e.poisonReads++;throw Error(secret)}});
+      if(mode==='CONFIG_GETTER')Object.defineProperty(detailTarget(b),'config',{get(){e.poisonReads++;throw Error(secret)}});
+      if(mode==='INHERITED_CHILDREN'){const children=b.form.children;delete b.form.children;Object.setPrototypeOf(b.form,{children});}
+    }}),r=await h.send();denied(r);assert.equal(h.effects.poisonReads,0);assert.equal(h.requests.length,5);h.assertReadOnly();
+  }
+});
+test('richtext rejects inherited children hiding a late duplicate under an otherwise valid target',async()=>{
+  const h=await harness({richtext:true,afterParse:(i,b)=>{if(i===4)Object.setPrototypeOf(detailTarget(b),{
+    children:[{type:'field',config:{field_uuid:'f',frozen:false}}]});}}),r=await h.send();
+  denied(r);assert.equal(r.fieldConfigInvariant,'FORM_TREE_INVALID');assert.equal(h.requests.length,5);h.assertReadOnly();
+});
+test('richtext form traversal accepts the exact node and depth bounds without evaluating rule or visibility text',async()=>{
+  for(const mode of ['NODES','DEPTH']){
+    const h=await harness({richtext:true,changeBody:(i,b)=>{if(i!==4)return;
+      if(mode==='NODES')b.form.children=Array.from({length:1999},(_,j)=>({type:'field',config:{field_uuid:j?'other-'+j:'f',frozen:false}}));
+      else{let node=b.form;for(let j=0;j<32;j++){const child={type:'group'};node.children=[child];node=child;}
+        node.type='field';node.config={field_uuid:'f',frozen:false};}
+    }}),r=await h.send();assert.equal(r.ok,true);assert.equal(h.requests.length,6);h.assertReadOnly();
+  }
+});
+test('richtext detail form HTTP, network, timeout and HTML failures never trigger catalog fallback or retry',async()=>{
+  for(const options of [{httpAt:4},{errorAt:4},{timeoutAt:4,fastTimeout:true},{htmlAt:4}]){
+    const h=await harness({richtext:true,...options}),r=await h.send();denied(r);assert.equal(h.requests.length,5);
+    assert.equal(r.stage,'FIELD_CONFIG');assert.equal(h.requests.some(x=>x.url.endsWith('/field_configs')),false);h.assertReadOnly();
+  }
+});
+test('legacy numeric type keeps its global catalog, unchanged response cap and no richtext fallback',async()=>{
+  for(const options of [{largeLegacy:true},{missingLegacy:true}]){
+    const h=await harness(options),r=await h.send();denied(r);assert.equal(h.requests.length,5);
+    assert.equal(h.requests[4].url.endsWith('/field_configs'),true);
+    if(options.largeLegacy){assert.equal(r.status,'BLOCKED_READ_RESPONSE');assert.equal(r.responseInvariant,'CHAR_LIMIT_EXCEEDED');}
+    else assert.equal(r.status,'BLOCKED_FIELD_CONFIG');h.assertReadOnly();
+  }
+});
+test('response parsing reports only the bounded failure invariant',async()=>{
+  for(const [responseText,invariant]of [[undefined,'TEXT_NOT_STRING'],['x'.repeat(1048577),'CHAR_LIMIT_EXCEEDED'],
+    ['<html>'+secret+'</html>','JSON_PARSE_FAILED'],['[]','ROOT_NOT_OBJECT']]){
+    for(const responseAt of [0,4]){
+      const h=await harness({richtext:true,responseAt,responseText}),r=await h.send();denied(r);
+      assert.equal(r.status,'BLOCKED_READ_RESPONSE');assert.equal(r.responseInvariant,invariant);
+      assert.equal(r.stage,responseAt===0?'USER_START':'FIELD_CONFIG');
+      assert.equal(h.requests.length,responseAt+1);h.assertReadOnly();
+    }
+  }
+});
 test('nested richtext metadata requires exact own name, value type, UUID and both boolean flags',async()=>{
   for(const [key,value]of [['name','多行文本'],['value_type','text'],['uuid','bad/id'],['uuid',''],
     ['uuid',undefined],['can_be_custom_field',undefined],['can_be_custom_field','true'],
@@ -200,7 +312,7 @@ test('worker rejects forged richtext bindings and contradictory legacy type UUID
     denied(h.worker.ibReceipt({...legacy,privateBinding}));
   }
   const valid=h.worker.ibReceipt({...legacy,privateBinding:{...legacy.privateBinding,
-    fieldType:'richtext',fieldTypeUuid:'synthetic-richtext-type',raw:secret}});
+    fieldType:'richtext',fieldTypeUuid:'synthetic-richtext-type',fieldFormUuid:'synthetic-form',fieldLayoutUuid:'synthetic-layout',raw:secret}});
   assert.equal(valid.ok,true);assert.equal(valid.privateBinding.fieldTypeUuid,'synthetic-richtext-type');
   const poison={...legacy.privateBinding,fieldType:'richtext'};
   Object.defineProperty(poison,'fieldTypeUuid',{get(){h.effects.poisonReads++;throw Error(secret)}});
@@ -210,6 +322,16 @@ test('worker rejects forged richtext bindings and contradictory legacy type UUID
     assert.equal(failed.fieldInvariant,reason);assert.equal(failed.fieldTypeCode,8);
   }
   assert.equal(JSON.stringify(valid).includes(secret),false);h.assertReadOnly();
+});
+test('worker richtext bindings require both form IDs and legacy receipts reject either extra ID',async()=>{
+  const h=await harness({richtext:true}),r=await h.send();assert.equal(r.ok,true);
+  for(const key of ['fieldFormUuid','fieldLayoutUuid']){
+    const missing={...r.privateBinding};delete missing[key];denied(h.worker.ibReceipt({...r,privateBinding:missing}));
+    denied(h.worker.ibReceipt({...r,privateBinding:{...r.privateBinding,[key]:'bad/id'}}));
+  }
+  const legacy=await harness(),old=await legacy.send();
+  for(const key of ['fieldFormUuid','fieldLayoutUuid'])denied(h.worker.ibReceipt({...old,privateBinding:{...old.privateBinding,[key]:'extra'}}));
+  h.assertReadOnly();legacy.assertReadOnly();
 });
 test('Stage1 unchanged richtext type UUID survives fresh execution binding and the internal guard',async()=>{
   const h=await harness({stage1:true,changeBody:(i,b)=>{if(i%6===3)b.fields[0].type=richtextType()}});
@@ -229,6 +351,15 @@ test('Stage1 fresh richtext type UUID drift consumes the attempt without native 
   const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
   assert.equal((await h.send(packet)).status,'BLOCKED_PREPARED_IDENTITY');assert.equal(h.requests.length,12);
   assert.equal(h.nativeRuns.length,0);assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);h.assertReadOnly();
+});
+test('Stage1 fresh richtext form or layout UUID drift is rejected after all six reads with no native retry',async()=>{
+  for(const key of ['form_uuid','layout_uuid']){
+    const h=await harness({stage1:true,richtext:true,changeBody:(i,b)=>{if(i===10)b[key]='changed-id'}});
+    const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1});assert.equal((await h.send()).ok,true);
+    const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+    assert.equal((await h.send(packet)).status,'BLOCKED_PREPARED_IDENTITY');assert.equal(h.requests.length,12);
+    assert.equal(h.nativeRuns.length,0);assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);h.assertReadOnly();
+  }
 });
 test('DOM lineage and configured field node stay bound without reading field content',async()=>{
   for(const options of [{missingDom:true},{duplicateLabel:true},{duplicateDomId:true},{domDriftAt:4},{navigationAt:1}]){
