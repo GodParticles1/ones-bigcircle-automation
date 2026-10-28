@@ -844,7 +844,7 @@ let bridgeSideChannelBusy=false;
 const BRIDGE_PREPARED_KEY='onesNativeDiagnosticPreparedV1';
 const BRIDGE_RECOVERY='CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE';
 const BRIDGE_TUPLE_KEYS=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid','displayId',
-  'teamUuid','projectUuid','issueTypeUuid','fieldId','fieldType','fieldTypeUuid'];
+  'teamUuid','projectUuid','issueTypeUuid','fieldId','fieldType','fieldTypeUuid','fieldFormUuid','fieldLayoutUuid'];
 const bridgeGateFailure=status=>({ok:false,status,diagnosticOnly:true,writeGate:'OFF',insertTextCount:0,saveDispatched:false});
 async function bridgePreparedRead(){return ibOwn(await chrome.storage.session.get(BRIDGE_PREPARED_KEY),BRIDGE_PREPARED_KEY);}
 async function bridgePreparedSave(value){await chrome.storage.session.set({[BRIDGE_PREPARED_KEY]:value});}
@@ -934,6 +934,10 @@ function ibReceipt(value) {
     if(status==='BLOCKED_READ_HTTP'){
       const code=ibOwn(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
     }
+    if(status==='BLOCKED_READ_RESPONSE'&&['TEXT_NOT_STRING','CHAR_LIMIT_EXCEEDED','JSON_PARSE_FAILED','ROOT_NOT_OBJECT'].includes(ibOwn(value,'responseInvariant')))
+      out.responseInvariant=ibOwn(value,'responseInvariant');
+    if(status==='BLOCKED_FIELD_CONFIG'&&['FORM_SCOPE_MISMATCH','FORM_ID_INVALID','FORM_TREE_INVALID','TARGET_NOT_UNIQUE','TARGET_FROZEN'].includes(ibOwn(value,'fieldConfigInvariant')))
+      out.fieldConfigInvariant=ibOwn(value,'fieldConfigInvariant');
     if(status==='BLOCKED_FIELD_SCHEMA'){
       const reason=ibOwn(value,'fieldInvariant'),code=ibOwn(value,'fieldTypeCode');
       if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
@@ -944,15 +948,16 @@ function ibReceipt(value) {
     const b=ibOwn(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
       'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
     const binding=Object.fromEntries(keys.map(k=>[k,ibOwn(b,k)]));
-    const fieldType=ibOwn(b,'fieldType'),fieldTypeUuid=ibOwn(b,'fieldTypeUuid');
-    const richtext=fieldType==='richtext'&&ibId(fieldTypeUuid);
-    const legacy=fieldType===15&&!Object.getOwnPropertyDescriptor(b,'fieldTypeUuid');
+    const fieldType=ibOwn(b,'fieldType'),metadataKeys=['fieldTypeUuid','fieldFormUuid','fieldLayoutUuid'];
+    const metadata=Object.fromEntries(metadataKeys.map(k=>[k,ibOwn(b,k)]));
+    const richtext=fieldType==='richtext'&&Object.values(metadata).every(ibId);
+    const legacy=fieldType===15&&metadataKeys.every(k=>!Object.getOwnPropertyDescriptor(b,k));
     if(ibOwn(value,'ok')!==true||ibOwn(value,'validBinding')!==true||ibOwn(value,'readOnly')!==true||
       out.requestCount!==6||out.stages.length!==8||
       !out.stages.every((s,i)=>s.stage===IDENTITY_BINDING_STAGES[i])||
       !Object.values(binding).every(ibId)||binding.accountUuid!==binding.assigneeUuid||
       binding.taskUuid!==binding.resolvedTaskUuid||(!legacy&&!richtext))return ibDenied('BLOCKED_SCRIPT_RESULT');
-    return {...out,ok:true,validBinding:true,privateBinding:{...binding,fieldType,...(richtext?{fieldTypeUuid}:{})}};
+    return {...out,ok:true,validBinding:true,privateBinding:{...binding,fieldType,...(richtext?metadata:{})}};
   }catch(_){return ibDenied('BLOCKED_SCRIPT_RESULT');}
 }
 async function ibConfig() {

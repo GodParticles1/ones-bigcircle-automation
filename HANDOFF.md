@@ -1,5 +1,13 @@
 # Handoff
 
+## FIELD_CONFIG successor checkpoint — 2026-10-28
+
+- SOURCE: the five reviewed files from #110 `69f0a18aff2ba96f5cb86311405d148ad931f202` are synchronized; identity 39, popup 23 and native 40 local regressions are inherited. [Exact-source CI 40687131864](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40687131864) completed SUCCESS at `69f0a18aff2ba96f5cb86311405d148ad931f202`; Linux/python and Windows/windows-relay both completed SUCCESS. This is source CI, not the new release CI or package acceptance.
+- CONTRACT: only richtext request 5 changes to the proved same-task `detail_form` GET. Require exact project/type/detail scope, valid form/layout UUIDs, a complete bounded own-children tree, one target field and `frozen=false`. Type/form/layout UUIDs remain in the fresh identity/prepared/execution tuple; legacy integer-15 configuration checks remain separate, with no fallback or authentication change.
+- P0 NEXT: with source CI complete, still require independent exact-release/package acceptance before following [P0 dispatch 6468419556](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#issuecomment-6468419556): supported installation plus one read-only identity action only, native=0 and Save=0. Do not PREPARE or RUN. Return the first terminal receipt; full binding and field baseline are not yet proven.
+- HOLD: this successor package/install/runtime are NOT_RUN. Preserve 386, f60 and Stage-0 archives, WRITE_GATE OFF and unresolved/unknown pending state; never use disable/reload/restart as a reset. Stage-1 input and #103 acceptance remain blocked.
+
+
 ## Metadata successor checkpoint — 2026-10-28
 
 - SOURCE: #110 `f92739b17c6db1b3039d8b83cf50d3a5716982d2` has independent SOURCE ACCEPT and 89/89 local regressions (identity 27, popup 22, native 40). [Exact-source CI 40651789808](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40651789808) completed SUCCESS at `f92739b17c6db1b3039d8b83cf50d3a5716982d2`; Linux/python and Windows/windows-relay both completed SUCCESS. This is source CI, not a new release/package acceptance.

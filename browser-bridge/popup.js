@@ -344,6 +344,10 @@ function identityBindingReceipt(value) {
     if(status==='BLOCKED_READ_HTTP'){
       const code=own(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
     }
+    if(status==='BLOCKED_READ_RESPONSE'&&['TEXT_NOT_STRING','CHAR_LIMIT_EXCEEDED','JSON_PARSE_FAILED','ROOT_NOT_OBJECT'].includes(own(value,'responseInvariant')))
+      out.responseInvariant=own(value,'responseInvariant');
+    if(status==='BLOCKED_FIELD_CONFIG'&&['FORM_SCOPE_MISMATCH','FORM_ID_INVALID','FORM_TREE_INVALID','TARGET_NOT_UNIQUE','TARGET_FROZEN'].includes(own(value,'fieldConfigInvariant')))
+      out.fieldConfigInvariant=own(value,'fieldConfigInvariant');
     if(status==='BLOCKED_FIELD_SCHEMA'){
       const reason=own(value,'fieldInvariant'),code=own(value,'fieldTypeCode');
       if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
@@ -354,13 +358,14 @@ function identityBindingReceipt(value) {
     const raw=own(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
       'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
     const b=Object.fromEntries(keys.map(k=>[k,own(raw,k)]));
-    const fieldType=own(raw,'fieldType'),fieldTypeUuid=own(raw,'fieldTypeUuid');
-    const richtext=fieldType==='richtext'&&typeof fieldTypeUuid==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(fieldTypeUuid);
-    const legacy=fieldType===15&&!Object.getOwnPropertyDescriptor(raw,'fieldTypeUuid');
+    const fieldType=own(raw,'fieldType'),metadataKeys=['fieldTypeUuid','fieldFormUuid','fieldLayoutUuid'];
+    const metadata=Object.fromEntries(metadataKeys.map(k=>[k,own(raw,k)]));
+    const richtext=fieldType==='richtext'&&Object.values(metadata).every(v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v));
+    const legacy=fieldType===15&&metadataKeys.every(k=>!Object.getOwnPropertyDescriptor(raw,k));
     if(own(value,'ok')!==true||!Object.values(b).every(v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v))||
       b.accountUuid!==b.assigneeUuid||b.taskUuid!==b.resolvedTaskUuid||(!legacy&&!richtext))return empty();
     const nonce=own(value,'preparedNonce');
-    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType,...(richtext?{fieldTypeUuid}:{})},
+    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType,...(richtext?metadata:{})},
       ...(!historical&&typeof nonce==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(nonce)?{preparedNonce:nonce}:{})};
   }catch(_){return empty();}
 }

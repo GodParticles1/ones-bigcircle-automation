@@ -1,5 +1,12 @@
 # Current Context
 
+## FIELD_CONFIG successor — 2026-10-28
+
+The original #112 preparation synchronizes five reviewed files from #110 source `69f0a18aff2ba96f5cb86311405d148ad931f202`; local identity 39/popup 23/native 40 evidence is inherited. [Exact-source CI 40687131864](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40687131864) completed SUCCESS at `69f0a18aff2ba96f5cb86311405d148ad931f202`; Linux/python and Windows/windows-relay both completed SUCCESS. This does not establish the new release's CI, ZIP or installation acceptance. Richtext request 5 now uses the proved same-task detail form, requiring complete bounded own-children traversal, one unfrozen target and fresh form/layout UUID binding. Legacy integer-15 handling remains separate; no fallback, capability, Writer or authentication expansion is included.
+
+The current P0 is installation of a separately accepted new candidate and one read-only identity action, native=0/Save=0. No PREPARE/RUN is authorized by that P0. Full binding and authoritative field baseline remain unproven; this new package/install/runtime are NOT_RUN. Preserve prior candidate bytes, current pending/lifecycle guards and production WRITE_GATE OFF. This checkpoint supersedes only the older richtext catalog-only/source/runtime statements below.
+
+
 ## Metadata successor — 2026-10-28
 
 The #112 preparation now synchronizes six changed blobs from independently accepted #110 source `f92739b17c6db1b3039d8b83cf50d3a5716982d2` (89/89 local regressions). [Exact-source CI 40651789808](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40651789808) completed SUCCESS at `f92739b17c6db1b3039d8b83cf50d3a5716982d2`, with both Linux/python and Windows/windows-relay completed SUCCESS. This does not establish the successor release's CI or package acceptance. Legacy integer 15 and the observed complete richtext object remain distinct contracts; richtext is not coerced to 15, and its private type UUID stays in the fresh prepared/execution binding.

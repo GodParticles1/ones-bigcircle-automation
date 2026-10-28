@@ -840,12 +840,15 @@ async function onesIdentityBindingReadPage(expected) {
   const id = v => typeof v==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
   const stages=[];
   let requestCount=0,stage='DOM_BEFORE',httpStatus=0,fieldInvariant=null,fieldTypeCode=null;
+  let responseInvariant=null,fieldConfigInvariant=null;
   const stamp = name => {stage=name;stages.push({stage:name,capturedAt:new Date().toISOString()});};
   const receipt = (status,binding) => ({ok:!!binding,status,readOnly:true,validBinding:!!binding,
     privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',writeGate:'OFF',requestCount,stage,stages:stages.slice(),
     ...(status==='BLOCKED_READ_HTTP'?{httpStatus}:{}),
     ...(status==='BLOCKED_FIELD_SCHEMA'&&fieldInvariant?{fieldInvariant,
       ...(Number.isInteger(fieldTypeCode)?{fieldTypeCode}: {})}:{}),
+    ...(status==='BLOCKED_READ_RESPONSE'&&responseInvariant?{responseInvariant}:{}),
+    ...(status==='BLOCKED_FIELD_CONFIG'&&fieldConfigInvariant?{fieldConfigInvariant}:{}),
     ...(binding?{privateBinding:binding}: {})});
   const stop = status => {throw {bindingReadStatus:status};};
   const initialHref=location.href;
@@ -906,10 +909,11 @@ async function onesIdentityBindingReadPage(expected) {
             stamp(name);stop('BLOCKED_READ_HTTP');
           }
           const text=await response.text();
-          if(typeof text!=='string'||text.length>1048576)stop('BLOCKED_READ_RESPONSE');
+          if(typeof text!=='string'){responseInvariant='TEXT_NOT_STRING';stop('BLOCKED_READ_RESPONSE');}
+          if(text.length>1048576){responseInvariant='CHAR_LIMIT_EXCEEDED';stop('BLOCKED_READ_RESPONSE');}
           let body;
-          try{body=JSON.parse(text);}catch(_){stop('BLOCKED_READ_RESPONSE');}
-          if(!body||typeof body!=='object'||Array.isArray(body))stop('BLOCKED_READ_RESPONSE');
+          try{body=JSON.parse(text);}catch(_){responseInvariant='JSON_PARSE_FAILED';stop('BLOCKED_READ_RESPONSE');}
+          if(!body||typeof body!=='object'||Array.isArray(body)){responseInvariant='ROOT_NOT_OBJECT';stop('BLOCKED_READ_RESPONSE');}
           return body;
         })(),timeout]);
         guard();stamp(name);return result;
@@ -947,10 +951,48 @@ async function onesIdentityBindingReadPage(expected) {
       if(Number.isInteger(type)&&type>=0&&type<=255)fieldTypeCode=type;
       stop('BLOCKED_FIELD_SCHEMA');
     }
-    const configs=own(await read('FIELD_CONFIG',base+'/field_configs'),'field_configs');
-    if(!Array.isArray(configs)||configs.length>10000)stop('BLOCKED_FIELD_CONFIG');
-    const matches=configs.filter(row=>own(row,'project_uuid')===project&&own(row,'issue_type_uuid')===issueType&&own(row,'field_uuid')===fieldId);
-    if(matches.length!==1)stop('BLOCKED_FIELD_CONFIG');
+    let fieldFormUuid,fieldLayoutUuid;
+    if(richtext){
+      const detail=await read('FIELD_CONFIG',origin+'/project/api/ones-project/team/'+encodeURIComponent(team)+
+        '/issue/'+encodeURIComponent(taskUuid)+'/detail_form');
+      const rejectForm=invariant=>{fieldConfigInvariant=invariant;stop('BLOCKED_FIELD_CONFIG');};
+      if(own(detail,'project_uuid')!==project||own(detail,'issue_type_uuid')!==issueType||own(detail,'form_type')!=='detail')
+        rejectForm('FORM_SCOPE_MISMATCH');
+      fieldFormUuid=own(detail,'form_uuid');fieldLayoutUuid=own(detail,'layout_uuid');
+      const root=own(detail,'form');
+      if(![fieldFormUuid,fieldLayoutUuid,own(root,'uuid')].every(id))rejectForm('FORM_ID_INVALID');
+      if(own(root,'type')!=='root')rejectForm('FORM_TREE_INVALID');
+      const pending=[{node:root,depth:0}],matches=[];let visited=0;
+      while(pending.length){
+        const {node,depth}=pending.pop();
+        if(++visited>2000||depth>32||!node||typeof node!=='object'||Array.isArray(node)||!id(own(node,'type')))
+          rejectForm('FORM_TREE_INVALID');
+        const nodeType=own(node,'type'),config=own(node,'config'),candidate=own(config,'field_uuid');
+        if(nodeType==='field'&&!id(candidate))rejectForm('FORM_TREE_INVALID');
+        if(candidate===fieldId){
+          if(nodeType!=='field')rejectForm('FORM_TREE_INVALID');
+          matches.push(node);
+        }
+        const childrenDescriptor=Object.getOwnPropertyDescriptor(node,'children');
+        if(!childrenDescriptor&&'children' in node)rejectForm('FORM_TREE_INVALID');
+        if(childrenDescriptor){
+          const children=own(node,'children');
+          if(!Array.isArray(children)||visited+pending.length+children.length>2000)rejectForm('FORM_TREE_INVALID');
+          for(let i=children.length-1;i>=0;i--){
+            const child=Object.getOwnPropertyDescriptor(children,String(i));
+            if(!child||!Object.prototype.hasOwnProperty.call(child,'value'))rejectForm('FORM_TREE_INVALID');
+            pending.push({node:child.value,depth:depth+1});
+          }
+        }
+      }
+      if(matches.length!==1)rejectForm('TARGET_NOT_UNIQUE');
+      if(own(own(matches[0],'config'),'frozen')!==false)rejectForm('TARGET_FROZEN');
+    }else{
+      const configs=own(await read('FIELD_CONFIG',base+'/field_configs'),'field_configs');
+      if(!Array.isArray(configs)||configs.length>10000)stop('BLOCKED_FIELD_CONFIG');
+      const matches=configs.filter(row=>own(row,'project_uuid')===project&&own(row,'issue_type_uuid')===issueType&&own(row,'field_uuid')===fieldId);
+      if(matches.length!==1)stop('BLOCKED_FIELD_CONFIG');
+    }
     const last=await read('USER_END',origin+'/project/api/project/users/me');
     if(!id(own(last,'uuid')))stop('BLOCKED_IDENTITY_SCHEMA');
     if(own(last,'uuid')!==account)stop('BLOCKED_IDENTITY_CHANGED');
@@ -961,7 +1003,7 @@ async function onesIdentityBindingReadPage(expected) {
     stamp('DOM_AFTER');
     return receipt('IDENTITY_BINDING_READ_VERIFIED',{accountUuid:account,assigneeUuid:assignee,taskUuid,
       resolvedTaskUuid:taskUuid,displayId:display,teamUuid:team,projectUuid:project,issueTypeUuid:issueType,fieldId,
-      ...(richtext?{fieldType:'richtext',fieldTypeUuid:own(type,'uuid')}:{fieldType:15})});
+      ...(richtext?{fieldType:'richtext',fieldTypeUuid:own(type,'uuid'),fieldFormUuid,fieldLayoutUuid}:{fieldType:15})});
   }catch(error){
     const status=own(error,'bindingReadStatus');
     return receipt(typeof status==='string'&&/^BLOCKED_[A-Z_]{1,45}$/.test(status)?status:'BLOCKED_READ_FAILED');
