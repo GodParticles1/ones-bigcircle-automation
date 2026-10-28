@@ -12,6 +12,8 @@ const secret='SYNTHETIC_PRIVATE_VALUE_MUST_NOT_ESCAPE';
 const config={onesOrigin:'https://synthetic.invalid',teamUuid:'t',projectUuid:'p',issueTypeUuid:'i',
   rootCauseFieldId:'f',writeEnabled:false};
 const stages=['DOM_BEFORE','USER_START','TASK_RESOLVE','TASK_INFO','FIELD_SCHEMA','FIELD_CONFIG','USER_END','DOM_AFTER'];
+const richtextType=()=>({uuid:'synthetic-richtext-type',name:'富文本',value_type:'richtext',
+  can_be_custom_field:true,can_be_frozen:false});
 async function harness(options={}) {
   const requests=[],effects={debugger:0,relay:0,sessionWrites:0,cacheWrites:0,logs:0,bodyReads:0,poisonReads:0,permissionRequests:0};
   const stored={onesRelayConfig:{...config,baseUrl:'http://127.0.0.1:18731',enabled:false,
@@ -42,6 +44,7 @@ async function harness(options={}) {
     const value=JSON.parse(text),index=parseIndex++;
     if(options.poisonRequired && index===0) Object.defineProperty(value,'uuid',{get(){effects.poisonReads++;throw Error(secret);}});
     if(options.poisonExtra) Object.defineProperty(value,'privateExtra',{get(){effects.poisonReads++;throw Error(secret);}});
+    if(options.afterParse)options.afterParse(index,value,effects);
     return value;
   }};
   const page=vm.createContext({URL,location,document,JSON:pageJson,Date,AbortController,
@@ -159,8 +162,73 @@ test('field definition and exact field configuration must be unique and correctl
 });
 test('FIELD_SCHEMA failure exports only the first fixed invariant and a bounded numeric type code',async()=>{
   const h=await harness({changeBody:(i,b)=>{if(i===3)b.fields[0].type=8}}),r=await h.send();
-  denied(r);assert.equal(r.fieldInvariant,'TARGET_TYPE_NOT_15');assert.equal(r.fieldTypeCode,8);
+  denied(r);assert.equal(r.fieldInvariant,'TARGET_TYPE_UNSUPPORTED');assert.equal(r.fieldTypeCode,8);
   assert.equal(JSON.stringify(r).includes(secret),false);
+});
+test('nested richtext metadata completes the actual six-request binding without coercing legacy type 15',async()=>{
+  const h=await harness({changeBody:(i,b)=>{if(i===3)b.fields[0].type=richtextType()}}),r=await h.send();
+  assert.equal(r.status,'IDENTITY_BINDING_READ_VERIFIED');assert.equal(r.ok,true);assert.equal(r.requestCount,6);
+  assert.equal(r.privateBinding.fieldType,'richtext');assert.equal(r.privateBinding.fieldTypeUuid,'synthetic-richtext-type');
+  const last=await h.send({type:'ONES_IDENTITY_BINDING_LAST'});
+  assert.equal(last.historical,true);assert.equal(last.validBinding,false);
+  assert.equal(last.privateBinding.fieldTypeUuid,r.privateBinding.fieldTypeUuid);h.assertReadOnly();
+});
+test('nested richtext metadata requires exact own name, value type, UUID and both boolean flags',async()=>{
+  for(const [key,value]of [['name','多行文本'],['value_type','text'],['uuid','bad/id'],['uuid',''],
+    ['uuid',undefined],['can_be_custom_field',undefined],['can_be_custom_field','true'],
+    ['can_be_frozen',undefined],['can_be_frozen',0]]){
+    const h=await harness({changeBody:(i,b)=>{if(i===3){const type=richtextType();
+      if(value===undefined)delete type[key];else type[key]=value;b.fields[0].type=type;}}}),r=await h.send();
+    denied(r);assert.equal(r.fieldInvariant,'TARGET_TYPE_UNSUPPORTED');assert.equal(r.fieldTypeCode,undefined);
+    assert.equal(h.requests.length,4);h.assertReadOnly();
+  }
+  for(const mode of ['INHERITED','GETTER']){
+    const h=await harness({changeBody:(i,b)=>{if(i===3)b.fields[0].type=richtextType()},afterParse:(i,b,e)=>{
+      if(i!==3)return;const type=b.fields[0].type,uuid=type.uuid;delete type.uuid;
+      if(mode==='INHERITED')Object.setPrototypeOf(type,{uuid});
+      else Object.defineProperty(type,'uuid',{get(){e.poisonReads++;throw Error(secret)}});
+    }}),r=await h.send();denied(r);assert.equal(r.fieldInvariant,'TARGET_TYPE_UNSUPPORTED');
+    assert.equal(h.effects.poisonReads,0);h.assertReadOnly();
+  }
+});
+test('worker rejects forged richtext bindings and contradictory legacy type UUIDs',async()=>{
+  const h=await harness(),legacy=await h.send();
+  for(const privateBinding of [{...legacy.privateBinding,fieldType:'richtext'},
+    {...legacy.privateBinding,fieldType:'richtext',fieldTypeUuid:'bad/id'},
+    {...legacy.privateBinding,fieldType:'15'},
+    {...legacy.privateBinding,fieldType:15,fieldTypeUuid:'synthetic-richtext-type'}]){
+    denied(h.worker.ibReceipt({...legacy,privateBinding}));
+  }
+  const valid=h.worker.ibReceipt({...legacy,privateBinding:{...legacy.privateBinding,
+    fieldType:'richtext',fieldTypeUuid:'synthetic-richtext-type',raw:secret}});
+  assert.equal(valid.ok,true);assert.equal(valid.privateBinding.fieldTypeUuid,'synthetic-richtext-type');
+  const poison={...legacy.privateBinding,fieldType:'richtext'};
+  Object.defineProperty(poison,'fieldTypeUuid',{get(){h.effects.poisonReads++;throw Error(secret)}});
+  denied(h.worker.ibReceipt({...legacy,privateBinding:poison}));assert.equal(h.effects.poisonReads,0);
+  for(const reason of ['TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED']){
+    const failed=h.worker.ibReceipt({status:'BLOCKED_FIELD_SCHEMA',fieldInvariant:reason,fieldTypeCode:8});
+    assert.equal(failed.fieldInvariant,reason);assert.equal(failed.fieldTypeCode,8);
+  }
+  assert.equal(JSON.stringify(valid).includes(secret),false);h.assertReadOnly();
+});
+test('Stage1 unchanged richtext type UUID survives fresh execution binding and the internal guard',async()=>{
+  const h=await harness({stage1:true,changeBody:(i,b)=>{if(i%6===3)b.fields[0].type=richtextType()}});
+  const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1}),bound=await h.send();
+  assert.equal(bound.privateBinding.fieldTypeUuid,'synthetic-richtext-type');
+  const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+  assert.equal((await h.send(packet)).status,'TRACE_EXACT_ONCE');assert.equal(h.requests.length,12);
+  assert.equal(h.nativeRuns.length,1);assert.equal(h.nativeRuns[0].guardResult,true);
+  assert.equal(h.pending.onesNativeDiagnosticPreparedV1.identity.fieldTypeUuid,'synthetic-richtext-type');
+  h.assertReadOnly();
+});
+test('Stage1 fresh richtext type UUID drift consumes the attempt without native dispatch',async()=>{
+  const h=await harness({stage1:true,changeBody:(i,b)=>{if(i%6===3){b.fields[0].type=richtextType();
+    if(i===9)b.fields[0].type.uuid='changed-richtext-type';}}});
+  const p=await h.send({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:1}),bound=await h.send();
+  assert.equal(bound.ok,true);assert.equal(bound.privateBinding.fieldType,'richtext');
+  const packet={type:'ONES_NATIVE_DIAGNOSTIC_RUN',tabId:1,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
+  assert.equal((await h.send(packet)).status,'BLOCKED_PREPARED_IDENTITY');assert.equal(h.requests.length,12);
+  assert.equal(h.nativeRuns.length,0);assert.match((await h.send(packet)).status,/^BLOCKED_PREPARED_/);h.assertReadOnly();
 });
 test('DOM lineage and configured field node stay bound without reading field content',async()=>{
   for(const options of [{missingDom:true},{duplicateLabel:true},{duplicateDomId:true},{domDriftAt:4},{navigationAt:1}]){

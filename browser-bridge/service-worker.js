@@ -844,7 +844,7 @@ let bridgeSideChannelBusy=false;
 const BRIDGE_PREPARED_KEY='onesNativeDiagnosticPreparedV1';
 const BRIDGE_RECOVERY='CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE';
 const BRIDGE_TUPLE_KEYS=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid','displayId',
-  'teamUuid','projectUuid','issueTypeUuid','fieldId','fieldType'];
+  'teamUuid','projectUuid','issueTypeUuid','fieldId','fieldType','fieldTypeUuid'];
 const bridgeGateFailure=status=>({ok:false,status,diagnosticOnly:true,writeGate:'OFF',insertTextCount:0,saveDispatched:false});
 async function bridgePreparedRead(){return ibOwn(await chrome.storage.session.get(BRIDGE_PREPARED_KEY),BRIDGE_PREPARED_KEY);}
 async function bridgePreparedSave(value){await chrome.storage.session.set({[BRIDGE_PREPARED_KEY]:value});}
@@ -937,19 +937,22 @@ function ibReceipt(value) {
     if(status==='BLOCKED_FIELD_SCHEMA'){
       const reason=ibOwn(value,'fieldInvariant'),code=ibOwn(value,'fieldTypeCode');
       if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
-        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15'].includes(reason))out.fieldInvariant=reason;
-      if(reason==='TARGET_TYPE_NOT_15'&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
+        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED'].includes(reason))out.fieldInvariant=reason;
+      if(['TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED'].includes(reason)&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
     }
     if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
     const b=ibOwn(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
       'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
     const binding=Object.fromEntries(keys.map(k=>[k,ibOwn(b,k)]));
+    const fieldType=ibOwn(b,'fieldType'),fieldTypeUuid=ibOwn(b,'fieldTypeUuid');
+    const richtext=fieldType==='richtext'&&ibId(fieldTypeUuid);
+    const legacy=fieldType===15&&!Object.getOwnPropertyDescriptor(b,'fieldTypeUuid');
     if(ibOwn(value,'ok')!==true||ibOwn(value,'validBinding')!==true||ibOwn(value,'readOnly')!==true||
       out.requestCount!==6||out.stages.length!==8||
       !out.stages.every((s,i)=>s.stage===IDENTITY_BINDING_STAGES[i])||
       !Object.values(binding).every(ibId)||binding.accountUuid!==binding.assigneeUuid||
-      binding.taskUuid!==binding.resolvedTaskUuid||ibOwn(b,'fieldType')!==15)return ibDenied('BLOCKED_SCRIPT_RESULT');
-    return {...out,ok:true,validBinding:true,privateBinding:{...binding,fieldType:15}};
+      binding.taskUuid!==binding.resolvedTaskUuid||(!legacy&&!richtext))return ibDenied('BLOCKED_SCRIPT_RESULT');
+    return {...out,ok:true,validBinding:true,privateBinding:{...binding,fieldType,...(richtext?{fieldTypeUuid}:{})}};
   }catch(_){return ibDenied('BLOCKED_SCRIPT_RESULT');}
 }
 async function ibConfig() {

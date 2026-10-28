@@ -1,5 +1,13 @@
 # Handoff
 
+## Metadata successor checkpoint — 2026-10-28
+
+- SOURCE: #110 `f92739b17c6db1b3039d8b83cf50d3a5716982d2` has independent SOURCE ACCEPT and 89/89 local regressions (identity 27, popup 22, native 40). [Exact-source CI 40651789808](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40651789808) completed SUCCESS at `f92739b17c6db1b3039d8b83cf50d3a5716982d2`; Linux/python and Windows/windows-relay both completed SUCCESS. This is source CI, not a new release/package acceptance.
+- CURRENT: six changed source/test blobs are synchronized for a distinct #112 candidate. The strict legacy integer-15 and observed complete richtext-object contracts stay separate; richtext retains its own type UUID, which must remain bound across fresh identity/preparation/execution. Preserve the existing f60 candidate and old Stage-0 package unchanged.
+- RUNTIME: the operator's one read-only identity attempt stopped at request 4 / FIELD_SCHEMA; its local receipt reports native=0, Save=0 and pending=false. The same-endpoint target metadata projection supports the richtext contract, not complete binding or a field baseline; those remain NOT_RUN.
+- NEXT: after the completed source CI, obtain independent release review and a new exact-release-HEAD package before original supported installation. No lifecycle reset of unresolved/unknown pending state. Stage-1 remains HOLD and production Writer remains OFF/BLOCKED.
+
+
 ## Release checkpoint — 2026-10-28
 
 - DONE: #110 source `85449e4c96f85b7ed09626b180da1f51a0864223` has independent source acceptance ([review 5665434991](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#pullrequestreview-5665434991)) and [exact-source CI 40483588375](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40483588375), Linux and Windows SUCCESS. Its eight diagnostic/UI/test files are synchronized into this release preparation. The Stage-1 correction binds preparation, fresh identity, exact marker/recovery consent and one-shot execution; it enforces >=750 ms from the first successful authoritative BLANK completion to the second dispatch. It does not establish the ONES native-editor root cause.

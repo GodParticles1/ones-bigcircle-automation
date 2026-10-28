@@ -456,3 +456,24 @@ test('FIELD_SCHEMA popup projects only fixed invariant enums and bounded numeric
  assert.equal(r.fieldInvariant,undefined);assert.equal(r.fieldTypeCode,undefined);
  assert.equal(other.elements.identityBindingOutput.textContent.includes('PRIVATE_EXTRA'),false);
 });
+
+test('popup preserves validated richtext type UUID and rejects missing, invalid or contradictory type bindings',async()=>{
+ const binding={accountUuid:'user',assigneeUuid:'user',taskUuid:'task',resolvedTaskUuid:'task',displayId:'SYN-1',
+  teamUuid:'t',projectUuid:'p',issueTypeUuid:'i',fieldId:'f',fieldType:'richtext',fieldTypeUuid:'synthetic-richtext-type'};
+ const receipt={ok:true,status:'IDENTITY_BINDING_READ_VERIFIED',readOnly:true,validBinding:false,historical:true,
+  privateBinding:binding};
+ const env=environment();env.setIdentityLast(receipt);const p=await ready(env);await flush();
+ let shown=JSON.parse(p.elements.identityBindingOutput.textContent);
+ assert.equal(shown.privateBinding.fieldType,'richtext');assert.equal(shown.privateBinding.fieldTypeUuid,'synthetic-richtext-type');
+ assert.equal(shown.validBinding,false);assert.equal(shown.historical,true);
+ for(const privateBinding of [{...binding,fieldTypeUuid:undefined},{...binding,fieldTypeUuid:'bad/id'},
+  {...binding,fieldType:15},{...binding,fieldType:'15'}]){
+  env.setIdentityLast({...receipt,privateBinding});const invalid=await ready(env);await flush();
+  shown=JSON.parse(invalid.elements.identityBindingOutput.textContent);
+  assert.equal(shown.ok,false);assert.equal(shown.privateBinding,undefined);
+ }
+ env.setIdentityLast({status:'BLOCKED_FIELD_SCHEMA',fieldInvariant:'TARGET_TYPE_UNSUPPORTED',fieldTypeCode:8,raw:'PRIVATE_EXTRA'});
+ const failed=await ready(env);await flush();shown=JSON.parse(failed.elements.identityBindingOutput.textContent);
+ assert.equal(shown.fieldInvariant,'TARGET_TYPE_UNSUPPORTED');assert.equal(shown.fieldTypeCode,8);
+ assert.equal(failed.elements.identityBindingOutput.textContent.includes('PRIVATE_EXTRA'),false);
+});

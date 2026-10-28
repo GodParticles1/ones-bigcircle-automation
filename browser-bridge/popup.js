@@ -347,17 +347,20 @@ function identityBindingReceipt(value) {
     if(status==='BLOCKED_FIELD_SCHEMA'){
       const reason=own(value,'fieldInvariant'),code=own(value,'fieldTypeCode');
       if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
-        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15'].includes(reason))out.fieldInvariant=reason;
-      if(reason==='TARGET_TYPE_NOT_15'&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
+        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED'].includes(reason))out.fieldInvariant=reason;
+      if(['TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED'].includes(reason)&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
     }
     if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
     const raw=own(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
       'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
     const b=Object.fromEntries(keys.map(k=>[k,own(raw,k)]));
+    const fieldType=own(raw,'fieldType'),fieldTypeUuid=own(raw,'fieldTypeUuid');
+    const richtext=fieldType==='richtext'&&typeof fieldTypeUuid==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(fieldTypeUuid);
+    const legacy=fieldType===15&&!Object.getOwnPropertyDescriptor(raw,'fieldTypeUuid');
     if(own(value,'ok')!==true||!Object.values(b).every(v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v))||
-      b.accountUuid!==b.assigneeUuid||b.taskUuid!==b.resolvedTaskUuid||own(raw,'fieldType')!==15)return empty();
+      b.accountUuid!==b.assigneeUuid||b.taskUuid!==b.resolvedTaskUuid||(!legacy&&!richtext))return empty();
     const nonce=own(value,'preparedNonce');
-    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType:15},
+    return {...out,ok:true,validBinding:!historical&&own(value,'validBinding')===true,privateBinding:{...b,fieldType,...(richtext?{fieldTypeUuid}:{})},
       ...(!historical&&typeof nonce==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(nonce)?{preparedNonce:nonce}:{})};
   }catch(_){return empty();}
 }
