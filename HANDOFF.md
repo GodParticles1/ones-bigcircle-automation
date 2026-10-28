@@ -1,5 +1,11 @@
 # Handoff
 
+## 2026-10-28 exact fields-metadata continuation
+
+Candidate release `f60f989faf678613bca1358fc22573a1a421a480` and actual artifact `12794654097` are independently accepted within their diagnostic scope; CI `40639831210` passed both platforms. The operator approved installation/read-only verification, reported current-session pending=false and a fresh `FIELD_SCHEMA / TARGET_TYPE_NOT_15` at request4. The same already-supported fields endpoint then yielded decisive permitted runtime metadata: exact field UUID/name matched; its type is a richtext object with valid type UUID and the observed named/Boolean properties. No field content, credentials, new API family or native input was used.
+
+Continue only the original #110 source correction: recognize that exact object contract separately from legacy integer15, carry its type UUID through fresh binding and reject type drift. Add faithful RED/GREEN and independent review, exact source CI, then sync the reviewed delta once through original #112. Preserve the prior package and installation; no repeated old CI/Relay/Ping or speculative fallback. FIELD_CONFIG, ending-user/DOM stability and authoritative field reads remain separate unmet gates. No native input without a new accepted exact candidate and concrete per-attempt consent; Save=0, #103 Writer OFF. Do not repeat the old failed READ while source is unchanged.
+
 ## 2026-10-27 bounded Stage-1 source checkpoint
 
 The reviewed source delta is `e47d23f491018d078ba6f907905fa6aa18d58959`: worker-owned concrete nonce/marker/recovery confirmation, fresh execution-time identity, one-shot failure revocation and >=750 ms from successful first BLANK completion. Independent source review ACCEPT followed two RETURN corrections. Native 40/40, identity 22/22, popup 21/21, Writer 125/125 and static/draft/syntax checks passed; actual old-path timing RED was 466.0664 ms and corrected host-clock timing exceeded 750 ms. These are source proofs, not ONES editor semantics.

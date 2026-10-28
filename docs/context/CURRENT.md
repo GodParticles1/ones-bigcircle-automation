@@ -1,5 +1,11 @@
 # Current Context
 
+## Exact metadata-contract correction — 2026-10-28
+
+The original #112 release `f60f989faf678613bca1358fc22573a1a421a480` passed exact Linux/Windows CI `40639831210` and independent actual-artifact verification. The operator approved candidate installation/read-only verification and reported a fresh request-4 `TARGET_TYPE_NOT_15` result. A separate permitted read of that same existing fields endpoint proved the exact configured target uses a richtext type object, not the legacy numeric metadata contract. The local pending receipt reported false; server field state remains NOT_VERIFIED.
+
+The original #110 source lane now corrects only that proven representation mismatch, preserving legacy15 and explicit richtext/type-UUID semantics through fresh binding. Source review, exact new CI and a distinct #112 archive still gate the corrected candidate; do not hot-patch the already verified archive or repeat its CI. No full current identity/field-config binding, authoritative BLANK pair or native editor mechanism is accepted. #103 Writer stays OFF/BLOCKED; Save=0. Dated checkpoints below retain their original scope.
+
 ## Source checkpoint — 2026-10-27
 
 The original #110 source owner delivered reviewed Stage-1 tooling delta `e47d23f491018d078ba6f907905fa6aa18d58959` for concrete one-shot marker/recovery consent, fresh execution identity and measured >=750 ms definite-BLANK ordering. Local Native 40/40, identity 22/22, popup 21/21 and Writer 125/125 passed with independent source ACCEPT. Exact-head CI and a distinct #112 archive still gate the next candidate. This source branch inherits accepted main's plan/priority entries; product/test blobs remain those reviewed bytes.

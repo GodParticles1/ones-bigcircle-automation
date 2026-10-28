@@ -938,9 +938,12 @@ async function onesIdentityBindingReadPage(expected) {
     if(fields.length===0){fieldInvariant='TARGET_MATCH_ZERO';stop('BLOCKED_FIELD_SCHEMA');}
     if(fields.length!==1){fieldInvariant='TARGET_MATCH_MULTIPLE';stop('BLOCKED_FIELD_SCHEMA');}
     if(!['问题根因','【问题根因】'].includes(own(fields[0],'name'))){fieldInvariant='TARGET_NAME_MISMATCH';stop('BLOCKED_FIELD_SCHEMA');}
-    if(own(fields[0],'type')!==15){
-      fieldInvariant='TARGET_TYPE_NOT_15';
-      const type=own(fields[0],'type');
+    const type=own(fields[0],'type');
+    const richtext=own(type,'name')==='富文本'&&own(type,'value_type')==='richtext'&&
+      id(own(type,'uuid'))&&typeof own(type,'can_be_custom_field')==='boolean'&&
+      typeof own(type,'can_be_frozen')==='boolean';
+    if(type!==15&&!richtext){
+      fieldInvariant='TARGET_TYPE_UNSUPPORTED';
       if(Number.isInteger(type)&&type>=0&&type<=255)fieldTypeCode=type;
       stop('BLOCKED_FIELD_SCHEMA');
     }
@@ -957,7 +960,8 @@ async function onesIdentityBindingReadPage(expected) {
       stop('BLOCKED_DOM_BINDING');
     stamp('DOM_AFTER');
     return receipt('IDENTITY_BINDING_READ_VERIFIED',{accountUuid:account,assigneeUuid:assignee,taskUuid,
-      resolvedTaskUuid:taskUuid,displayId:display,teamUuid:team,projectUuid:project,issueTypeUuid:issueType,fieldId,fieldType:15});
+      resolvedTaskUuid:taskUuid,displayId:display,teamUuid:team,projectUuid:project,issueTypeUuid:issueType,fieldId,
+      ...(richtext?{fieldType:'richtext',fieldTypeUuid:own(type,'uuid')}:{fieldType:15})});
   }catch(error){
     const status=own(error,'bindingReadStatus');
     return receipt(typeof status==='string'&&/^BLOCKED_[A-Z_]{1,45}$/.test(status)?status:'BLOCKED_READ_FAILED');
