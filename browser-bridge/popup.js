@@ -170,22 +170,33 @@ load().catch((error) => show({ok:false,error:String(error)}));
 let nativeDiagBusy = false;
 let identityBindingBusy = false;
 let preparedDiagnostic = null;
+let nativeDiagCurrent = null;
+let nativeDiagPendingHold = true;
+let nativeDiagUnknownHold = false;
+let nativeDiagLastKnown = null;
+let nativeDiagLastRead = 0;
 function nativePreparedRender(){
-  if($("nativeDiagRun"))$("nativeDiagRun").disabled=nativeDiagBusy||identityBindingBusy||!preparedDiagnostic?.identityBound;
-  if($("nativeDiagPrepare"))$("nativeDiagPrepare").disabled=nativeDiagBusy||identityBindingBusy;
+  if($("nativeDiagRun"))$("nativeDiagRun").disabled=nativeDiagBusy||identityBindingBusy||nativeDiagPendingHold||!preparedDiagnostic?.identityBound;
+  if($("nativeDiagPrepare"))$("nativeDiagPrepare").disabled=nativeDiagBusy||identityBindingBusy||nativeDiagPendingHold;
   if($("nativeDiagPrepared"))$("nativeDiagPrepared").textContent=preparedDiagnostic?
     '本机私密 · 本次目标 '+preparedDiagnostic.target.displayId+' / '+preparedDiagnostic.target.fieldId+
     '\n实际 marker：'+preparedDiagnostic.marker+'\n恢复意图：取消后独立核查同一服务端字段；改变或未知即停止，不自动清理或覆盖。'+
     '\n恢复策略：'+preparedDiagnostic.recovery+'\n到期：'+preparedDiagnostic.expiresAt+
     '\n本次 fresh 身份绑定：'+(preparedDiagnostic.identityBound?'已核对':'尚未核对'):
     '先准备本次 marker，再只读核对身份；历史收据不授权输入。';
+  if(preparedDiagnostic&&!nativeDiagPendingHold&&$("nativeDiagNextAction"))
+    $("nativeDiagNextAction").textContent=preparedDiagnostic.identityBound?
+      '身份已核对；请核对本次标记和恢复说明，再亲自决定是否确认。':
+      preparedDiagnostic.identityAttempted?'本次身份未通过，请停止；不要复用历史收据或旧标记。':
+      '准备完成；下一步仅点击“只读核对身份与工单”。';
 }
 $("nativeDiagPrepare")?.addEventListener('click',async()=>{
-  if(nativeDiagBusy||identityBindingBusy)return;
+  if(nativeDiagBusy||identityBindingBusy||nativeDiagPendingHold)return;
   nativeDiagBusy=true;preparedDiagnostic=null;nativePreparedRender();
   try{
     const tabs=await chrome.tabs.query({active:true,currentWindow:true});
-    if(tabs.length!==1||!Number.isInteger(tabs[0]?.id))return show({ok:false,status:'BLOCKED_NO_ACTIVE_TAB'});
+    if(tabs.length!==1||!Number.isInteger(tabs[0]?.id))
+      return await nativeDiagPublish({ok:false,status:'BLOCKED_NO_ACTIVE_TAB'},'PREPARE');
     const p=await chrome.runtime.sendMessage({type:'ONES_NATIVE_DIAGNOSTIC_PREPARE',tabId:tabs[0].id});
     const id=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
     if(p?.ok===true&&p.status==='DIAGNOSTIC_PREPARED'&&id(p.nonce)&&typeof p.marker==='string'&&
@@ -194,24 +205,64 @@ $("nativeDiagPrepare")?.addEventListener('click',async()=>{
       Number.isFinite(Date.parse(p.expiresAt))){
       preparedDiagnostic={nonce:p.nonce,marker:p.marker,recovery:p.recovery,expiresAt:p.expiresAt,
         tabId:tabs[0].id,identityBound:false,target:{displayId:p.target.displayId,fieldId:p.target.fieldId}};
-    }else show(nativeDiagReceipt(p));
-  }catch(_){show({ok:false,status:'BLOCKED_PREPARED_UNCERTAIN'});}
+      await nativeDiagPublish(p,'PREPARE');
+    }else await nativeDiagPublish(p,'PREPARE');
+  }catch(_){await nativeDiagPublish({ok:false,status:'BLOCKED_PREPARED_UNCERTAIN'},'PREPARE');}
   finally{nativeDiagBusy=false;nativePreparedRender();}
 });
+async function nativeDiagPublish(value,action) {
+  const receipt=nativeDiagReceipt(value);
+  if(typeof receipt.status!=='string'||!receipt.status||
+    ['BLOCKED_UNCERTAIN','BLOCKED_PREPARED_UNCERTAIN'].includes(receipt.status))nativeDiagUnknownHold=true;
+  nativeDiagCurrent={receipt,action,receivedAt:new Date().toISOString()};
+  show(nativeDiagCurrent.receipt);
+  await nativeDiagRestore();
+}
+function nativeDiagRender(last,pendingCheck) {
+  const receipt=nativeDiagCurrent?.receipt || last || {ok:false,status:'NOT_VERIFIED'};
+  const unknown=nativeDiagUnknownHold;
+  const pending=last?.pendingServerVerification===true||receipt.pendingServerVerification===true;
+  nativeDiagPendingHold=pending||unknown||pendingCheck!=='CLEAR';
+  const display={...receipt,receiptOrigin:nativeDiagCurrent?'CURRENT_ACTION':'HISTORICAL_LAST',
+    pendingCheck:pending?'PENDING':unknown?'UNKNOWN_RESULT':pendingCheck,
+    ...(nativeDiagCurrent?{action:nativeDiagCurrent.action,receivedAt:nativeDiagCurrent.receivedAt}:{})};
+  const dirtyReason=receipt.status==='BLOCKED_DIRTY_DRAFT'&&receipt.preflight?
+    ' · '+receipt.preflight.stage+' / '+receipt.preflight.reason:'';
+  if($("nativeDiagStatus"))$("nativeDiagStatus").textContent=
+    (nativeDiagCurrent?'本次操作结果：':'历史诊断（不代表本次操作）：')+(receipt.status||'UNKNOWN')+dirtyReason+
+    (pending?' · 诊断待服务端独立复核（不得再次输入）':nativeDiagPendingHold?' · 未决状态未确认，请停止输入':'');
+  if($("nativeDiagOutput"))$("nativeDiagOutput").textContent=JSON.stringify(display,null,2);
+  if($("nativeDiagHistoryOutput"))$("nativeDiagHistoryOutput").textContent=JSON.stringify(last||{status:'NOT_VERIFIED'},null,2);
+  if($("nativeDiagNextAction"))$("nativeDiagNextAction").textContent=pending?
+    '请先在工单取消，再仅核查服务端；不要再次诊断。':nativeDiagPendingHold?
+    '请停止并保留现场；不要重试、清状态或重新加载扩展。':
+    receipt.status==='DIAGNOSTIC_PREPARED'?'下一步仅点击“只读核对身份与工单”。':
+    receipt.status==='NOT_RUN'?'先点击问题根因右上角铅笔进入编辑态，再准备本次诊断。':
+    receipt.status==='SERVER_BLANK_OBSERVED'?'本次服务端已观察为空；请停止，不再输入。':
+    '请停止并交由 Leader 核查；不要重复点击诊断或复用旧标记。';
+  nativePreparedRender();
+}
 async function nativeDiagRestore() {
+  const read=++nativeDiagLastRead;
   try {
     const result=await chrome.runtime.sendMessage({type:"ONES_NATIVE_DIAGNOSTIC_LAST"});
+    if(read!==nativeDiagLastRead)return;
     const receipt=nativeDiagReceipt(result);
-    const pending=receipt.pendingServerVerification === true;
-    const dirtyReason=receipt.status==="BLOCKED_DIRTY_DRAFT" && receipt.preflight ?
-      " · " + receipt.preflight.stage + " / " + receipt.preflight.reason : "";
-    if ($("nativeDiagStatus")) $("nativeDiagStatus").textContent =
-      pending ? "诊断待服务端独立复核（不得再次输入）" :
-      receipt.status==="NOT_RUN" ? "尚无诊断结果" :
-      "上次诊断状态：" + (receipt.status || "UNKNOWN") + dirtyReason;
-    if ($("nativeDiagOutput")) $("nativeDiagOutput").textContent=JSON.stringify(receipt,null,2);
+    const noRecord=receipt.status==='NOT_RUN'&&receipt.insertTextCount===0&&receipt.saveDispatched===false;
+    const hasPendingProof=typeof receipt.pendingServerVerification==='boolean'||noRecord;
+    if(hasPendingProof)nativeDiagLastKnown=receipt;
+    // The existing verifier binds the exact pending target. Its direct result
+    // and the subsequent matching final LAST must both prove the readback.
+    // A cancelled/rejected check or old CLEAR history cannot resolve unknown.
+    if(nativeDiagCurrent?.action==='VERIFY'&&nativeDiagCurrent.receipt.status==='SERVER_BLANK_OBSERVED'&&
+      nativeDiagCurrent.receipt.serverVerification==='SERVER_BLANK_OBSERVED'&&receipt.ok===true&&
+      receipt.status==='SERVER_BLANK_OBSERVED'&&receipt.serverVerification==='SERVER_BLANK_OBSERVED'&&
+      receipt.pendingServerVerification===false)nativeDiagUnknownHold=false;
+    nativeDiagRender(hasPendingProof?receipt:nativeDiagLastKnown||receipt,
+      receipt.pendingServerVerification===false||noRecord?'CLEAR':'UNAVAILABLE');
   } catch (_) {
-    if ($("nativeDiagStatus")) $("nativeDiagStatus").textContent="诊断状态读取失败，请停止输入";
+    if(read!==nativeDiagLastRead)return;
+    nativeDiagRender(nativeDiagLastKnown,'UNAVAILABLE');
   }
 }
 function nativeDiagReceipt(value) {
@@ -302,26 +353,27 @@ async function nativeDiagAction(type) {
   $("nativeDiagVerify").disabled = true;
   try {
     const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
-    if (!tab?.id) return show({ok:false,status:"BLOCKED_NO_ACTIVE_TAB"});
+    if (!tab?.id) return await nativeDiagPublish({ok:false,status:"BLOCKED_NO_ACTIVE_TAB"},'LOCAL_GUARD');
     let packet={type,tabId:tab.id};
     if (type === "ONES_NATIVE_DIAGNOSTIC_RUN") {
+      if(nativeDiagPendingHold)return;
       const p=preparedDiagnostic;
-      if(!p?.identityBound||p.tabId!==tab.id)return show({ok:false,status:'BLOCKED_PREPARED_IDENTITY'});
+      if(!p?.identityBound||p.tabId!==tab.id)
+        return await nativeDiagPublish({ok:false,status:'BLOCKED_PREPARED_IDENTITY'},'LOCAL_GUARD');
       preparedDiagnostic=null;nativePreparedRender();
       if(!confirm('本次工单 '+p.target.displayId+'，问题根因字段 '+p.target.fieldId+
         '\n实际输入 marker：\n'+p.marker+'\n恢复意图：取消后独立核查服务端；改变或未知即停止，不自动清理/覆盖。'+
         '\n策略：'+p.recovery+'\n至多一次输入，Save=0；草稿可能自动同步。确认本次精确 marker？')){
         await chrome.runtime.sendMessage({type:'ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED',nonce:p.nonce});
-        return show({ok:false,status:'OPERATOR_CANCELLED'});
+        return await nativeDiagPublish({ok:false,status:'OPERATOR_CANCELLED'},'CANCEL');
       }
       packet={...packet,nonce:p.nonce,marker:p.marker,recovery:p.recovery,confirmed:true};
     } else if (!confirm("请先在 ONES 页面点击取消，保持同一工单页面。现在只读核查服务器字段，继续？")) {
-      return show({ok:false,status:"OPERATOR_CANCELLED"});
+      return await nativeDiagPublish({ok:false,status:"OPERATOR_CANCELLED"},'CANCEL');
     }
     const result = await chrome.runtime.sendMessage(packet);
-    show(nativeDiagReceipt(result));
-    await nativeDiagRestore();
-  } catch (_) { show({ok:false,status:"BLOCKED_UNCERTAIN"}); }
+    await nativeDiagPublish(result,type==='ONES_NATIVE_DIAGNOSTIC_RUN'?'RUN':'VERIFY');
+  } catch (_) { await nativeDiagPublish({ok:false,status:"BLOCKED_UNCERTAIN"},'UNKNOWN'); }
   finally { nativeDiagBusy=false; $("nativeDiagVerify").disabled=false;nativePreparedRender(); }
 }
 $("nativeDiagRun")?.addEventListener("click", () => nativeDiagAction("ONES_NATIVE_DIAGNOSTIC_RUN"));
@@ -392,7 +444,7 @@ async function identityBindingRestore() {
 $("identityBindingRead")?.addEventListener('click',async()=>{
   if(identityBindingBusy||nativeDiagBusy)return;
   identityBindingBusy=true;$("identityBindingRead").disabled=true;
-  if(preparedDiagnostic)preparedDiagnostic.identityBound=false;
+  if(preparedDiagnostic){preparedDiagnostic.identityBound=false;preparedDiagnostic.identityAttempted=true;}
   nativePreparedRender();
   if($("nativeDiagRun"))$("nativeDiagRun").disabled=true;
   if($("nativeDiagVerify"))$("nativeDiagVerify").disabled=true;
