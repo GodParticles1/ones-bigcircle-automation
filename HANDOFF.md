@@ -1,5 +1,12 @@
 # Handoff
 
+## Stage-1 receipt successor checkpoint — 2026-10-30
+
+- DONE: exact accepted source `919f21710ccbb391b283b712aa723255619aafbc` synchronized in ten Bridge files; package inventory and legacy frozen manifest remain unchanged.
+- CURRENT: independently reviewed release preparation; [exact-source CI 41048048405](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/41048048405) completed SUCCESS at `919f21710ccbb391b283b712aa723255619aafbc` on Linux/python (job `124036919104`) and Windows/windows-relay (job `124036918658`); formal independent source COMMENT [5711588627](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#pullrequestreview-5711588627) records source ACCEPT. This release still requires its own exact-head CI and actual ZIP acceptance before distribution. Old f72 installation/archive/Relay database/token remain untouched.
+- NEXT: after the accepted source and release-diff reviews, create the release commit, obtain its Linux/Windows CI, then verify the actual archive, sidecar and source blobs. BUNDLE sourceHead must identify the final release HEAD, not the upstream source SHA. No old CI or old field job is rerun.
+- BOUNDARY: current-action/history UI and bounded ARM diagnostics do not prove #103 editor semantics. P0 historical identity/BLANK acceptance is preserved; no fresh input authorization follows. Current supported pending check, NEW PREPARE/fresh binding/concrete marker confirmation and independent post-cancel verification still gate any later real trial. Unknown results stop without retry/reset; Writer OFF and Draft/MERGE_HOLD.
+
 ## FIELD_CONFIG successor checkpoint — 2026-10-28
 
 - SOURCE: the five reviewed files from #110 `69f0a18aff2ba96f5cb86311405d148ad931f202` are synchronized; identity 39, popup 23 and native 40 local regressions are inherited. [Exact-source CI 40687131864](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40687131864) completed SUCCESS at `69f0a18aff2ba96f5cb86311405d148ad931f202`; Linux/python and Windows/windows-relay both completed SUCCESS. This is source CI, not the new release CI or package acceptance.

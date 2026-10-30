@@ -59,12 +59,26 @@ function harness(opts={}) {
   if(opts.siblingHost) active={tagName:"TEXTAREA",value:"",selectionStart:0,selectionEnd:0};
   if(opts.badTextarea || opts.typedDraftTextarea) textarea.value="synthetic unsaved draft";
   if(opts.badTextareaSelection) textarea.selectionEnd=1;
-  const root={id:"f",isConnected:true,contains:x=>[root,host,block,anchor,lateBlock,...(opts.textarea?[textarea]:[])].includes(x),
+  const root={id:opts.wrongFieldId?"other-field":"f",isConnected:true,contains:x=>[root,host,block,anchor,lateBlock,...(opts.textarea?[textarea]:[])].includes(x),
     querySelectorAll:q=>q==="textarea.editor-input"?opts.textarea?[textarea,...(opts.twoTextareas?[{...textarea}]:[])]:[]:
       q==='[contenteditable="true"]'?opts.textarea?[]:[host]:
       q.startsWith(".text-block[")?[...(opts.hiddenDraft||opts.extraFocused?[block,hiddenBlock]:[block]),...(lateBlock?[lateBlock]:[])]:[block],
     getBoundingClientRect:()=>rect};
-  const doc={get activeElement(){return active},body:{},documentElement:{},hasFocus:()=>!opts.popupBlur,querySelectorAll:q=>q==="[id]"?[root]:q.startsWith("div.standard-")?opts.noEditor?[]:[root]:[],
+  const extraRoots=()=>Array.from({length:opts.extraEditorCount||0},()=>({...root,id:"other-editor"}));
+  const viewingRoots=()=>{
+    if(!opts.viewingOnly)return [];
+    const rows=[root];
+    if(opts.viewingOverflow) {
+      for(let i=1;i<32;i++)rows.push({...root,id:"other-viewer"});
+      Object.defineProperty(rows,32,{get(){throw Error("SYNTHETIC_VIEWING_SCAN_OVERFLOW");}});
+    }
+    return rows;
+  };
+  const doc={get activeElement(){return active},body:{},documentElement:{},hasFocus:()=>!opts.popupBlur,
+    querySelectorAll:q=>q==="[id]"?[root,...Array.from({length:opts.duplicateIdCount||0},()=>({id:"f",
+      isConnected:true,getBoundingClientRect:()=>({...rect,width:0,height:0})}))]:
+      q==="div.standard-co-editor-editing.task-rich-text-edit"?opts.noEditor||opts.viewingOnly?[]:[root,...extraRoots()]:
+      q==="div.standard-co-editor-viewing.task-rich-text-edit"?viewingRoots():[],
     querySelector:()=>null,elementFromPoint:()=>block,
     createRange:()=>{let n=0;return{selectNodeContents(){},setEnd(_x,v){n=v},toString:()=>"a".repeat(n)}},
     addEventListener:(n,f)=>(events[n] ||= []).push(f),removeEventListener:(n,f)=>events[n]=(events[n]||[]).filter(x=>x!==f)};
@@ -72,6 +86,11 @@ function harness(opts={}) {
   const chrome={tabs:{query:async()=>[{id:1,url:opts.changedHash?href.replace("/team/t/","/team/other/"):href}],get:async()=>({url:opts.badTab?href+"/wrong":opts.changedHash?href.replace("/team/t/","/team/other/"):href,status:"complete"})},
     permissions:{contains:async()=>true},storage:{session:{get:async k=>({[k]:store[k]}),set:async v=>Object.assign(store,v)}},
     scripting:{executeScript:async({func,args})=>{
+      if(func.name==="nedPageControl" && args[0]?.action==="ARM") {
+        if(opts.switchToViewingBeforeArm) opts.viewingOnly=true;
+        if(opts.armLocation) Object.assign(location,opts.armLocation);
+        if(opts.armRequest) Object.assign(args[0],opts.armRequest);
+      }
       if(func.name==="nedPageControl" && args[0]?.action==="BEFORE_INSERT" && opts.rebindBeforeInsert) {
         block.isConnected=false;
         for(const f of observers) f();
@@ -94,6 +113,9 @@ function harness(opts={}) {
       finishing=false;
       if(func.name==="nedPageControl" && args[0]?.action==="AFTER_NATIVE_CLICK" && opts.poisonPhase) {
         result.phases=[{stage:"PRIVATE_RAW_STAGE",activeHostKind:"PRIVATE_RAW_VALUE",focusedBlockCount:1e9,
+          rootResolution:{schema:"ROOT_RESOLUTION_V1",reason:"PRIVATE_ROOT_REASON",visibleEditingRootCount:1e9,
+            visibleExactEditingRootCount:Infinity,targetIdCount:-1,visibleExactViewingRootCount:"PRIVATE_COUNT",
+            viewingScanComplete:"PRIVATE_BOOLEAN",raw:"PRIVATE_ROOT_CONTENT"},
           elapsedMs:Infinity,raw:"SYNTHETIC_PRIVATE_PHASE",events:Array(100).fill({type:"PRIVATE_EVENT"})}];
       }
       return [{result}];
@@ -613,6 +635,73 @@ test("pre-CDP phase rejection removes only its local observer session without cr
   assert.equal((await h.last()).pendingServerVerification,false);
   assert.deepEqual(h.sent,[]);
 });
+
+// Synthetic DOM states model the locator contract, not ONES focus/blur behavior.
+const rootResolutionCases=[
+  ["no editing root",{noEditor:true},"NO_VISIBLE_EDITING_ROOT",0,0,1,0],
+  ["viewing only",{viewingOnly:true},"VIEWING_ONLY",0,0,1,1],
+  ["multiple editing roots",{extraEditorCount:1},"MULTIPLE_VISIBLE_EDITING_ROOTS",2,1,1,0],
+  ["wrong field id",{wrongFieldId:true},"TARGET_EDITING_ROOT_MISMATCH",1,0,0,0],
+  ["hidden duplicate target id",{duplicateIdCount:1},"TARGET_ID_NOT_UNIQUE",1,1,2,0],
+  ["editing changes to viewing before ARM",{switchToViewingBeforeArm:true},"VIEWING_ONLY",0,0,1,1],
+  ["large editing root count",{extraEditorCount:20},"MULTIPLE_VISIBLE_EDITING_ROOTS",16,1,1,0],
+  ["large duplicate id count",{duplicateIdCount:20},"TARGET_ID_NOT_UNIQUE",1,1,16,0]
+];
+for(const [name,options,reason,editing,exact,ids,viewing] of rootResolutionCases) {
+  test("ARM root resolution reports "+name+" without native commands",async()=>{
+    const h=harness(options),r=await h.run(),last=await h.last();
+    assert.equal(r.status,"BLOCKED_EDITOR_NOT_UNIQUE");
+    assert.equal(r.phase,"ARM");
+    const proof=r.phases.at(-1).rootResolution;
+    assert.equal(proof?.schema,"ROOT_RESOLUTION_V1");
+    assert.equal(proof.reason,reason);
+    assert.equal(proof.domInspected,true);
+    assert.equal(proof.visibleEditingRootCount,editing);
+    assert.equal(proof.visibleExactEditingRootCount,exact);
+    assert.equal(proof.targetIdCount,ids);
+    assert.equal(proof.visibleExactViewingRootCount,viewing);
+    assert.equal(proof.viewingScanComplete,true);
+    assert.deepEqual(JSON.parse(JSON.stringify(last.phases)),JSON.parse(JSON.stringify(r.phases)));
+    assert.deepEqual(h.sent,[]);
+    assert.equal(r.insertTextCount,0);assert.equal(r.saveDispatched,false);
+    assert.equal(last.pendingServerVerification,false);
+  });
+}
+for(const [name,options,reason] of [
+  ["href",{armLocation:{href:href+"?synthetic=changed"}},"HREF_MISMATCH"],
+  ["origin",{armLocation:{href:href.replace("synthetic.invalid","other.invalid")}},"ORIGIN_MISMATCH"],
+  ["route",{armRequest:{display:"SYN-OTHER"}},"ROUTE_MISMATCH"]
+]) {
+  test("ARM root resolution reports "+name+" mismatch without DOM authority",async()=>{
+    const h=harness(options),r=await h.run();
+    assert.equal(r.status,"BLOCKED_EDITOR_NOT_UNIQUE");
+    assert.equal(r.phases.at(-1).rootResolution?.reason,reason);
+    assert.equal(r.phases.at(-1).rootResolution.domInspected,false);
+    assert.deepEqual(h.sent,[]);
+    assert.equal(r.insertTextCount,0);assert.equal(r.saveDispatched,false);
+    assert.equal((await h.last()).pendingServerVerification,false);
+  });
+}
+test("ARM root resolution proves bound roots without changing positive input semantics",async()=>{
+  const h=harness({textarea:true,emptySelection:true}),r=await h.run();
+  assert.equal(r.status,"TRACE_EXACT_ONCE");
+  const proof=r.phases[0].rootResolution;
+  assert.equal(proof?.reason,"BOUND");
+  assert.equal(proof.visibleEditingRootCount,1);assert.equal(proof.targetIdCount,1);
+  assert.equal(h.sent.filter(x=>x==="Input.insertText").length,1);
+  assert.equal(r.saveDispatched,false);
+});
+test("ARM root resolution bounds its viewing-only evidence without granting authority",async()=>{
+  const h=harness({viewingOnly:true,viewingOverflow:true}),r=await h.run();
+  assert.equal(r.status,"BLOCKED_EDITOR_NOT_UNIQUE");
+  const proof=r.phases.at(-1).rootResolution;
+  assert.equal(proof.reason,"VIEWING_ONLY");
+  assert.equal(proof.visibleExactViewingRootCount,1);
+  assert.equal(proof.viewingScanComplete,false);
+  assert.deepEqual(h.sent,[]);
+  assert.equal(r.insertTextCount,0);assert.equal(r.saveDispatched,false);
+  assert.equal((await h.last()).pendingServerVerification,false);
+});
 test("phase receipts whitelist malformed metadata and do not trust oversized page payloads",async()=>{
   const h=harness({clickFocusDrift:true,poisonPhase:true}),r=await h.run(),last=await h.last();
   for(const receipt of [r,last]) {
@@ -621,5 +710,13 @@ test("phase receipts whitelist malformed metadata and do not trust oversized pag
     assert.equal(receipt.phases.at(-1).focusedBlockCount,16);
     assert.equal(receipt.phases.at(-1).stage,"UNVERIFIED");
     assert.equal(receipt.phases.at(-1).elapsedMs,0);
+    const root=receipt.phases.at(-1).rootResolution;
+    assert.equal(root.schema,"ROOT_RESOLUTION_V1");
+    assert.equal(root.reason,"UNVERIFIED");
+    assert.equal(root.domInspected,false);
+    assert.equal(root.visibleEditingRootCount,16);
+    assert.equal(root.visibleExactEditingRootCount,0);
+    assert.equal(root.targetIdCount,0);assert.equal(root.visibleExactViewingRootCount,0);
+    assert.equal(root.viewingScanComplete,false);
   }
 });

@@ -20,6 +20,7 @@ function environment(options = {}) {
   const events = [];
   const packets=[],confirmations=[];
   let identityReads=0;
+  let diagnosticLastHandler=null;
   const prepared={ok:true,status:'DIAGNOSTIC_PREPARED',nonce:'synthetic-nonce',marker:'NDP001122aabbcc',
     recovery:'CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE',expiresAt:new Date(Date.now()+60000).toISOString(),
     target:{displayId:'SYN-1',projectUuid:'p',issueTypeUuid:'i',fieldId:'f'}};
@@ -59,8 +60,16 @@ function environment(options = {}) {
       privateBinding:{accountUuid:'user',assigneeUuid:'user',taskUuid:'task',resolvedTaskUuid:'task',
         displayId:'SYN-1',teamUuid:'t',projectUuid:'p',issueTypeUuid:'i',fieldId:'f',fieldType:15}});}
     if(options.stage1&&['ONES_NATIVE_DIAGNOSTIC_RUN','ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED'].includes(message.type))
-      return Promise.resolve({ok:false,status:'SYNTHETIC_STOP',insertTextCount:0,saveDispatched:false});
-    if (message.type === 'ONES_NATIVE_DIAGNOSTIC_LAST') return Promise.resolve(clone(last));
+      return Promise.resolve(message.type==='ONES_NATIVE_DIAGNOSTIC_RUN'&&options.stage1RunResult?
+        clone(options.stage1RunResult):{ok:false,status:'SYNTHETIC_STOP',insertTextCount:0,saveDispatched:false});
+    if(options.stage1&&message.type==='ONES_NATIVE_DIAGNOSTIC_VERIFY'&&options.stage1VerifyResult)
+      return Promise.resolve(clone(options.stage1VerifyResult));
+    if (message.type === 'ONES_NATIVE_DIAGNOSTIC_LAST') {
+      if(diagnosticLastHandler)return diagnosticLastHandler(clone(last));
+      if(options.failLastAfterRun&&packets.some(p=>p.type==='ONES_NATIVE_DIAGNOSTIC_RUN'))
+        return Promise.reject(Error('SYNTHETIC_PRIVATE_LAST_ERROR'));
+      return Promise.resolve(clone(last));
+    }
     if (message.type === 'ONES_IDENTITY_BINDING_LAST') return Promise.resolve(clone(identityLast));
     return new Promise((resolve) => {
       const handled = handler(clone(message), {}, (response) => resolve(clone(response)));
@@ -82,18 +91,23 @@ function environment(options = {}) {
       permissions: { request: async (request) => { events.push('PERMISSION_REQUEST'); return permission(clone(request)); } },
       tabs: { query: async () => options.stage1?[{id:1,url:'https://synthetic.invalid/project/#/team/t/issue/SYN-1'}]:[] }
     };
-    vm.runInNewContext(popupSource, { chrome, URL,document: { getElementById: (id) => elements[id] },
-      confirm:text=>{confirmations.push(text);return options.confirm!==false} }, { filename: 'popup.js' });
+    const context={chrome,URL,document:{getElementById:id=>elements[id]},confirm:text=>{
+      confirmations.push(text);
+      return options.confirmDecisions?options.confirmDecisions.shift()===true:options.confirm!==false;
+    }};
+    vm.runInNewContext(popupSource,context,{filename:'popup.js'});
     return {
       elements,
       click: () => elements.saveConfig.listeners.click(),
       press:id=>elements[id].listeners.click(),
       input: (id) => elements[id].listeners.input(),
-      output: () => JSON.parse(elements.output.textContent)
+      output: () => JSON.parse(elements.output.textContent),
+      restoreDiagnostic:()=>context.nativeDiagRestore()
     };
   }
   return { local, session, events,packets,confirmations,prepared, sendMessage, popup,
-    setLast: (x) => { last=clone(x); },setIdentityLast:(x)=>{identityLast=clone(x)} };
+    setLast: (x) => { last=clone(x); },setLastHandler:fn=>{diagnosticLastHandler=fn;},
+    setIdentityLast:(x)=>{identityLast=clone(x)} };
 }
 
 function fill(p, changes = {}) {
@@ -382,6 +396,36 @@ test('phase focus evidence survives popup reopen through bounded metadata whitel
  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
 });
 
+test('ARM root-resolution reason survives popup reopen without exposing raw DOM or identifiers',async()=>{
+ const env=environment(),secret='SYNTHETIC_PRIVATE_ROOT_DETAILS';
+ const evidence={schema:'ROOT_RESOLUTION_V1',reason:'VIEWING_ONLY',domInspected:true,
+  visibleEditingRootCount:0,visibleExactEditingRootCount:0,targetIdCount:1,
+  visibleExactViewingRootCount:1,viewingScanComplete:true,raw:secret,fieldId:secret};
+ env.setLast({status:'BLOCKED_EDITOR_NOT_UNIQUE',phase:'ARM',insertTextCount:0,
+  saveDispatched:false,pendingServerVerification:false,phases:[{stage:'ARM',rootResolution:evidence}]});
+ for(let i=0;i<2;i++){
+  const p=await ready(env);await flush();
+  const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+  assert.equal(shown.phases[0].rootResolution.reason,'VIEWING_ONLY');
+  assert.equal(shown.phases[0].rootResolution.targetIdCount,1);
+  assert.equal(shown.phases[0].rootResolution.domInspected,true);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ }
+ env.setLast({status:'BLOCKED_EDITOR_NOT_UNIQUE',phase:'ARM',phases:[{stage:'ARM',
+  rootResolution:{schema:'ROOT_RESOLUTION_V1',reason:secret,domInspected:false,
+   visibleEditingRootCount:1e9,visibleExactEditingRootCount:-1,targetIdCount:NaN,
+   visibleExactViewingRootCount:1e9,viewingScanComplete:false,raw:secret}}]});
+ const p=await ready(env);await flush();
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.phases[0].rootResolution.reason,'UNVERIFIED');
+ assert.equal(shown.phases[0].rootResolution.visibleEditingRootCount,16);
+ assert.equal(shown.phases[0].rootResolution.visibleExactEditingRootCount,0);
+ assert.equal(shown.phases[0].rootResolution.targetIdCount,0);
+ assert.equal(shown.phases[0].rootResolution.visibleExactViewingRootCount,16);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
 test('private identity LAST is labeled historical and displayed through a UUID-only whitelist',async()=>{
  const env=environment(),secret='SYNTHETIC_RAW_PRIVATE_IDENTITY_EXTRA';
  env.setIdentityLast({ok:true,status:'IDENTITY_BINDING_READ_VERIFIED',readOnly:true,validBinding:false,historical:true,
@@ -428,6 +472,141 @@ test('Stage1 popup displays the actual prepared marker and confirms that same ma
  assert.equal(run.marker,env.prepared.marker);assert.equal(run.nonce,env.prepared.nonce);assert.equal(run.confirmed,true);
  await p.press('nativeDiagRun');assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
 });
+test('Stage1 current early rejection remains visible instead of presenting an old ARM as the current action',async()=>{
+  // A worker guard can reject before nedRunWithReceipt updates LAST. That old
+  // receipt must remain historical, rather than appear to describe this action.
+  const env=environment({stage1:true,stage1RunResult:{ok:false,status:'BLOCKED_PREPARED_IDENTITY',
+    diagnosticOnly:true,writeGate:'OFF',insertTextCount:0,saveDispatched:false}});
+  env.setLast({ok:false,status:'BLOCKED_EDITOR_NOT_UNIQUE',diagnosticOnly:true,writeGate:'OFF',
+    insertTextCount:0,saveDispatched:false,pendingServerVerification:false,phase:'ARM',
+    phases:[{stage:'ARM',rootConnected:false,blockCount:0}]});
+  const p=await ready(env);await flush();
+  assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).status,'BLOCKED_EDITOR_NOT_UNIQUE');
+  await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+  assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
+  assert.equal(p.output().status,'BLOCKED_PREPARED_IDENTITY');
+  assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).status,'BLOCKED_PREPARED_IDENTITY');
+  const current=JSON.parse(p.elements.nativeDiagOutput.textContent);
+  assert.equal(current.receiptOrigin,'CURRENT_ACTION');
+  assert.match(current.receivedAt,/^\d{4}-\d\d-\d\dT.*Z$/);
+  assert.match(p.elements.nativeDiagStatus.textContent,/本次操作结果/);
+  assert.equal(JSON.parse(p.elements.nativeDiagHistoryOutput.textContent).status,'BLOCKED_EDITOR_NOT_UNIQUE');
+  const reopened=await ready(env);await flush();
+  assert.equal(JSON.parse(reopened.elements.nativeDiagOutput.textContent).receiptOrigin,'HISTORICAL_LAST');
+  assert.match(reopened.elements.nativeDiagStatus.textContent,/历史诊断.*不代表本次操作/);
+  assert.equal(reopened.elements.nativeDiagRun.disabled,true);
+});
+
+test('a current rejection never hides an unresolved historical pending diagnostic',async()=>{
+ const env=environment({stage1:true,stage1RunResult:{ok:false,status:'BLOCKED_PREPARED_IDENTITY',
+  insertTextCount:0,saveDispatched:false}}),p=await ready(env);await flush();
+ await p.press('nativeDiagPrepare');await p.press('identityBindingRead');
+ env.setLast({status:'TRACE_UNCERTAIN',insertTextCount:1,saveDispatched:false,pendingServerVerification:true});
+ await p.press('nativeDiagRun');
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.status,'BLOCKED_PREPARED_IDENTITY');assert.equal(shown.insertTextCount,0);
+ assert.equal(shown.pendingCheck,'PENDING');assert.equal(shown.pendingServerVerification,undefined);
+ assert.match(p.elements.nativeDiagStatus.textContent,/待服务端独立复核/);
+ assert.equal(JSON.parse(p.elements.nativeDiagHistoryOutput.textContent).insertTextCount,1);
+ assert.equal(p.elements.nativeDiagRun.disabled,true);assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+ assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
+});
+
+test('failed LAST read preserves the current result and blocks readiness without inferring pending false',async()=>{
+ const env=environment({stage1:true,failLastAfterRun:true,stage1RunResult:{ok:false,status:'BLOCKED_PREPARED_IDENTITY',
+  insertTextCount:0,saveDispatched:false}}),p=await ready(env);await flush();
+ await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.status,'BLOCKED_PREPARED_IDENTITY');assert.equal(shown.pendingCheck,'UNAVAILABLE');
+ assert.equal(shown.pendingServerVerification,undefined);
+ assert.equal(p.elements.nativeDiagRun.disabled,true);assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes('SYNTHETIC_PRIVATE_LAST_ERROR'),false);
+ assert.match(p.elements.nativeDiagNextAction.textContent,/停止/);
+});
+
+test('unknown action delivery cannot be converted to a retry by another prepare or run click',async()=>{
+ const env=environment({stage1:true,stage1RunResult:{ok:false,status:'BLOCKED_UNCERTAIN'}}),p=await ready(env);await flush();
+ await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.status,'BLOCKED_UNCERTAIN');assert.equal(shown.pendingCheck,'UNKNOWN_RESULT');
+ assert.equal(shown.insertTextCount,undefined);assert.equal(shown.pendingServerVerification,undefined);
+ assert.equal(p.elements.nativeDiagRun.disabled,true);assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+ await p.press('nativeDiagPrepare');await p.press('nativeDiagRun');
+ assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).status,'BLOCKED_UNCERTAIN');
+ assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_PREPARE').length,1);
+ assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
+});
+test('cancelled or rejected VERIFY cannot unlock an unknown RUN with old CLEAR history',async()=>{
+ for(const cancelled of [true,false]){
+  const env=environment({stage1:true,confirmDecisions:[true,!cancelled],
+   stage1RunResult:{ok:false,status:'BLOCKED_UNCERTAIN'},
+   stage1VerifyResult:{ok:false,status:'BLOCKED_NO_PENDING_DIAGNOSTIC'}}),p=await ready(env);await flush();
+  await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+  await p.press('nativeDiagVerify');
+  assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).pendingCheck,'UNKNOWN_RESULT');
+  assert.equal(p.elements.nativeDiagPrepare.disabled,true);assert.equal(p.elements.nativeDiagRun.disabled,true);
+  await p.press('nativeDiagPrepare');await p.press('nativeDiagRun');
+  assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
+  assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_PREPARE').length,1);
+ }
+});
+
+test('late CLEAR LAST cannot replace a newer pending receipt or unlock readiness',async()=>{
+ const env=environment(),p=await ready(env);await flush();
+ let resolveOld,calls=0;
+ env.setLastHandler(()=>++calls===1?new Promise(r=>{resolveOld=r;}):Promise.resolve({
+  status:'TRACE_UNCERTAIN',insertTextCount:1,pendingServerVerification:true,saveDispatched:false}));
+ const old=p.restoreDiagnostic();await flush();await p.restoreDiagnostic();
+ resolveOld({status:'NOT_RUN',insertTextCount:0,pendingServerVerification:false,saveDispatched:false});
+ await old;
+ assert.equal(JSON.parse(p.elements.nativeDiagHistoryOutput.textContent).pendingServerVerification,true);
+ assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).pendingCheck,'PENDING');
+ assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+});
+
+test('unknown unlock requires both direct verified readback and its matching final LAST',async()=>{
+ for(const matching of [false,true]){
+  const env=environment({stage1:true,stage1RunResult:{status:'BLOCKED_UNCERTAIN'},
+   stage1VerifyResult:{ok:false,status:'SERVER_BLANK_OBSERVED',serverVerification:'SERVER_BLANK_OBSERVED'}}),
+   p=await ready(env);await flush();
+  await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+  if(matching)env.setLast({ok:true,status:'SERVER_BLANK_OBSERVED',serverVerification:'SERVER_BLANK_OBSERVED',
+   pendingServerVerification:false,insertTextCount:1,saveDispatched:false});
+  await p.press('nativeDiagVerify');
+  assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).pendingCheck,matching?'CLEAR':'UNKNOWN_RESULT');
+  assert.equal(p.elements.nativeDiagPrepare.disabled,!matching);
+  assert.equal(env.packets.filter(x=>x.type==='ONES_NATIVE_DIAGNOSTIC_RUN').length,1);
+ }
+});
+
+test('missing action status is unknown rather than a zero-input success or clear pending proof',async()=>{
+ const env=environment({stage1:true,stage1RunResult:{}}),p=await ready(env);await flush();
+ await p.press('nativeDiagPrepare');await p.press('identityBindingRead');await p.press('nativeDiagRun');
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.pendingCheck,'UNKNOWN_RESULT');assert.equal(shown.insertTextCount,undefined);
+ assert.equal(shown.pendingServerVerification,undefined);assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+});
+
+test('LAST failure preserves known pending history and never invents a cleared receipt',async()=>{
+ const env=environment();env.setLast({status:'TRACE_UNCERTAIN',insertTextCount:1,
+  pendingServerVerification:true,saveDispatched:false});const p=await ready(env);await flush();
+ env.setLastHandler(()=>Promise.reject(Error('SYNTHETIC_PRIVATE_TRANSPORT')));
+ await p.restoreDiagnostic();
+ assert.equal(JSON.parse(p.elements.nativeDiagHistoryOutput.textContent).pendingServerVerification,true);
+ assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).pendingCheck,'PENDING');
+ assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes('SYNTHETIC_PRIVATE_TRANSPORT'),false);
+});
+
+test('incomplete LAST reply preserves a previously known unresolved diagnostic',async()=>{
+ const env=environment();env.setLast({status:'TRACE_UNCERTAIN',insertTextCount:1,
+  pendingServerVerification:true,saveDispatched:false});const p=await ready(env);await flush();
+ env.setLast({status:'BLOCKED_IN_FLIGHT'});await p.restoreDiagnostic();
+ assert.equal(JSON.parse(p.elements.nativeDiagHistoryOutput.textContent).pendingServerVerification,true);
+ assert.equal(JSON.parse(p.elements.nativeDiagOutput.textContent).pendingCheck,'PENDING');
+ assert.equal(p.elements.nativeDiagPrepare.disabled,true);
+});
+
 test('Stage1 popup cancellation and historical identity do not dispatch RUN',async()=>{
  for(const options of [{stage1:true,confirm:false},{stage1:true,historicalIdentity:true}]){
   const env=environment(options),p=await ready(env);await flush();
