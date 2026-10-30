@@ -179,5 +179,7 @@ assert "Save" not in diagnostic.split("async function nedRun", 1)[1].split("asyn
 assert "relayFetch(" not in diagnostic and "ONES_ROOT_CAUSE_WRITE" not in diagnostic
 assert "root-cause-writer.js" not in diagnostic
 assert "native_editor_diagnostic_test.js" in [p.name for p in (ROOT / "tests").iterdir()]
-import subprocess
+import subprocess, sys
 subprocess.run(["node", "--test", str(ROOT / "tests" / "native_editor_diagnostic_test.js")], check=True)
+subprocess.run([sys.executable, "-m", "py_compile", str(ROOT / "tests" / "local_editor_server.py")], check=True)
+subprocess.run(["node", "--check", str(ROOT / "tests" / "fixtures" / "native_editor_local.js")], check=True)

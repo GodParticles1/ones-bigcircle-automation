@@ -224,10 +224,20 @@ function nativeDiagReceipt(value) {
   const phaseEnum=(v,values)=>values.includes(v)?v:"UNVERIFIED";
   const phaseCount=(v,max=16)=>Number.isInteger(v)&&v>=0?Math.min(v,max):0;
   const phaseOffset=(v)=>Number.isInteger(v)&&v>=0?Math.min(v,256):null;
+  const phaseRoot=(v)=>v?.schema==='ROOT_RESOLUTION_V1'?{
+    schema:'ROOT_RESOLUTION_V1',reason:phaseEnum(v.reason,['BOUND','HREF_MISMATCH','ORIGIN_MISMATCH',
+      'ROUTE_MISMATCH','NO_VISIBLE_EDITING_ROOT','VIEWING_ONLY','MULTIPLE_VISIBLE_EDITING_ROOTS',
+      'TARGET_EDITING_ROOT_MISMATCH','TARGET_ID_NOT_UNIQUE']),domInspected:v.domInspected===true,
+    visibleEditingRootCount:phaseCount(v.visibleEditingRootCount),
+    visibleExactEditingRootCount:phaseCount(v.visibleExactEditingRootCount),
+    targetIdCount:phaseCount(v.targetIdCount),visibleExactViewingRootCount:phaseCount(v.visibleExactViewingRootCount),
+    viewingScanComplete:v.viewingScanComplete===true
+  }:null;
   if (value?.phase || Array.isArray(value?.phases)) {
     out.phase=phaseEnum(value.phase,phaseNames);
     out.phases=Array.isArray(value.phases)?value.phases.slice(0,6).map((p)=>({
-      stage:phaseEnum(p?.stage,phaseNames),elapsedMs:phaseCount(p?.elapsedMs,60000),
+      stage:phaseEnum(p?.stage,phaseNames),...(phaseRoot(p?.rootResolution)?
+        {rootResolution:phaseRoot(p.rootResolution)}:{}),elapsedMs:phaseCount(p?.elapsedMs,60000),
       mutationCount:phaseCount(p?.mutationCount,65535),blockCount:phaseCount(p?.blockCount),
       focusedBlockCount:phaseCount(p?.focusedBlockCount),sameBoundBlock:p?.sameBoundBlock===true,
       rootConnected:p?.rootConnected===true,blockConnected:p?.blockConnected===true,

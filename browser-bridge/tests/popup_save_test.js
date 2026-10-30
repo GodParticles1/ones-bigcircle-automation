@@ -382,6 +382,36 @@ test('phase focus evidence survives popup reopen through bounded metadata whitel
  assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
 });
 
+test('ARM root-resolution reason survives popup reopen without exposing raw DOM or identifiers',async()=>{
+ const env=environment(),secret='SYNTHETIC_PRIVATE_ROOT_DETAILS';
+ const evidence={schema:'ROOT_RESOLUTION_V1',reason:'VIEWING_ONLY',domInspected:true,
+  visibleEditingRootCount:0,visibleExactEditingRootCount:0,targetIdCount:1,
+  visibleExactViewingRootCount:1,viewingScanComplete:true,raw:secret,fieldId:secret};
+ env.setLast({status:'BLOCKED_EDITOR_NOT_UNIQUE',phase:'ARM',insertTextCount:0,
+  saveDispatched:false,pendingServerVerification:false,phases:[{stage:'ARM',rootResolution:evidence}]});
+ for(let i=0;i<2;i++){
+  const p=await ready(env);await flush();
+  const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+  assert.equal(shown.phases[0].rootResolution.reason,'VIEWING_ONLY');
+  assert.equal(shown.phases[0].rootResolution.targetIdCount,1);
+  assert.equal(shown.phases[0].rootResolution.domInspected,true);
+  assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ }
+ env.setLast({status:'BLOCKED_EDITOR_NOT_UNIQUE',phase:'ARM',phases:[{stage:'ARM',
+  rootResolution:{schema:'ROOT_RESOLUTION_V1',reason:secret,domInspected:false,
+   visibleEditingRootCount:1e9,visibleExactEditingRootCount:-1,targetIdCount:NaN,
+   visibleExactViewingRootCount:1e9,viewingScanComplete:false,raw:secret}}]});
+ const p=await ready(env);await flush();
+ const shown=JSON.parse(p.elements.nativeDiagOutput.textContent);
+ assert.equal(shown.phases[0].rootResolution.reason,'UNVERIFIED');
+ assert.equal(shown.phases[0].rootResolution.visibleEditingRootCount,16);
+ assert.equal(shown.phases[0].rootResolution.visibleExactEditingRootCount,0);
+ assert.equal(shown.phases[0].rootResolution.targetIdCount,0);
+ assert.equal(shown.phases[0].rootResolution.visibleExactViewingRootCount,16);
+ assert.equal(p.elements.nativeDiagOutput.textContent.includes(secret),false);
+ assert.equal(env.events.filter(x=>x==='ONES_NATIVE_DIAGNOSTIC_RUN').length,0);
+});
+
 test('private identity LAST is labeled historical and displayed through a UUID-only whitelist',async()=>{
  const env=environment(),secret='SYNTHETIC_RAW_PRIVATE_IDENTITY_EXTRA';
  env.setIdentityLast({ok:true,status:'IDENTITY_BINDING_READ_VERIFIED',readOnly:true,validBinding:false,historical:true,

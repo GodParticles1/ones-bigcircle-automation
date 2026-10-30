@@ -226,12 +226,31 @@ async function nedPageControl(request) {
   const phases = state?.phases || [];
   const withPhase = (result) => stage ? {...result,phase:stage,phases:phases.slice()} : result;
   const fail = (status) => withPhase({ok:false,status});
+  let rootResolution = null;
   const rootNow = () => {
     const all = [...document.querySelectorAll('div.standard-co-editor-editing.task-rich-text-edit')].filter(visible);
     const exact = all.filter((el) => el.id === request.field);
-    return all.length === 1 && exact.length === 1 &&
-      document.querySelectorAll('[id]').length >= 1 &&
-      [...document.querySelectorAll('[id]')].filter((el) => el.id === request.field).length === 1 ? exact[0] : null;
+    const withIds = document.querySelectorAll('[id]');
+    const exactIds = [...withIds].filter((el) => el.id === request.field);
+    const matched = all.length === 1 && exact.length === 1 && withIds.length >= 1 && exactIds.length === 1;
+    if (stage === 'ARM') {
+      // Evidence only: inspect at most 32 viewing candidates, and never use a
+      // viewing node, incomplete scan or capped count to authorize an editor.
+      const viewing = document.querySelectorAll('div.standard-co-editor-viewing.task-rich-text-edit');
+      let visibleExactViewing = 0;
+      for (let i=0;i<Math.min(viewing.length,32);i++) {
+        if (viewing[i].id === request.field && visible(viewing[i])) visibleExactViewing++;
+      }
+      rootResolution = {schema:'ROOT_RESOLUTION_V1',domInspected:true,
+        reason:matched ? 'BOUND' : all.length === 0 ?
+          (visibleExactViewing > 0 ? 'VIEWING_ONLY' : 'NO_VISIBLE_EDITING_ROOT') :
+          all.length !== 1 ? 'MULTIPLE_VISIBLE_EDITING_ROOTS' :
+          exact.length !== 1 ? 'TARGET_EDITING_ROOT_MISMATCH' : 'TARGET_ID_NOT_UNIQUE',
+        visibleEditingRootCount:Math.min(16,all.length),
+        visibleExactEditingRootCount:Math.min(16,exact.length),targetIdCount:Math.min(16,exactIds.length),
+        visibleExactViewingRootCount:Math.min(16,visibleExactViewing),viewingScanComplete:viewing.length<=32};
+    }
+    return matched ? exact[0] : null;
   };
   const current = () => {
     const url = new URL(location.href);
@@ -240,7 +259,14 @@ async function nedPageControl(request) {
         : (!url.hash && url.pathname.startsWith('/team/') ? url.pathname : '');
       const route = routePath.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
     if (location.href !== request.href || url.origin !== request.origin ||
-        !route || route[1] !== request.team || route[2] !== request.display) return null;
+        !route || route[1] !== request.team || route[2] !== request.display) {
+      if (stage === 'ARM') rootResolution = {schema:'ROOT_RESOLUTION_V1',domInspected:false,
+        reason:url.origin !== request.origin ? 'ORIGIN_MISMATCH' :
+          location.href !== request.href ? 'HREF_MISMATCH' : 'ROUTE_MISMATCH',
+        visibleEditingRootCount:0,visibleExactEditingRootCount:0,targetIdCount:0,
+        visibleExactViewingRootCount:0,viewingScanComplete:false};
+      return null;
+    }
     return rootNow();
   };
   // Observe before checking a guard so a rejected phase remains diagnosable.
@@ -257,7 +283,7 @@ async function nedPageControl(request) {
     const nativeHostFocused = !!host && host.isConnected && !!root?.contains(host) &&
       (active === host || bound?.hostKind === 'CONTENTEDITABLE' && host.contains(active));
     const proof = bound?.hostKind === 'TEXTAREA' && nativeHostFocused && native ? native : dom;
-    const observation = {stage,elapsedMs:bounded(Date.now()-(bound?.started || Date.now()),60000),
+    const observation = {stage,...(rootResolution ? {rootResolution} : {}),elapsedMs:bounded(Date.now()-(bound?.started || Date.now()),60000),
       mutationCount:bounded(bound?.changed,65535),blockCount:bounded(blocks.length),
       focusedBlockCount:bounded(focused.length),sameBoundBlock:focused.length===1 && focused[0]===block,
       rootConnected:!!root?.isConnected,blockConnected:!!block?.isConnected && !!root?.contains(block),
@@ -532,13 +558,24 @@ function nedSafePhaseName(value) {
   return ['ARM','INSPECT_1','INSPECT_2','AFTER_NATIVE_CLICK','AFTER_CTRL_A','BEFORE_INSERT'].includes(value)
     ? value : 'UNVERIFIED';
 }
+function nedSafeRootResolution(value) {
+  if (!value || value.schema !== 'ROOT_RESOLUTION_V1') return null;
+  const count=(v)=>Number.isInteger(v)&&v>=0?Math.min(16,v):0;
+  const reason=['BOUND','HREF_MISMATCH','ORIGIN_MISMATCH','ROUTE_MISMATCH','NO_VISIBLE_EDITING_ROOT',
+    'VIEWING_ONLY','MULTIPLE_VISIBLE_EDITING_ROOTS','TARGET_EDITING_ROOT_MISMATCH','TARGET_ID_NOT_UNIQUE'];
+  return {schema:'ROOT_RESOLUTION_V1',reason:reason.includes(value.reason)?value.reason:'UNVERIFIED',
+    domInspected:value.domInspected===true,visibleEditingRootCount:count(value.visibleEditingRootCount),
+    visibleExactEditingRootCount:count(value.visibleExactEditingRootCount),targetIdCount:count(value.targetIdCount),
+    visibleExactViewingRootCount:count(value.visibleExactViewingRootCount),viewingScanComplete:value.viewingScanComplete===true};
+}
 function nedSafePhases(value) {
   if (!Array.isArray(value)) return [];
   const count = (v,max=16) => Number.isInteger(v) && v >= 0 ? Math.min(max,v) : 0;
   const offset = (v) => Number.isInteger(v) && v >= 0 ? Math.min(256,v) : null;
   const choice = (v,allowed) => allowed.includes(v) ? v : 'UNVERIFIED';
   return value.slice(0,6).map((p) => ({
-    stage:nedSafePhaseName(p?.stage),elapsedMs:count(p?.elapsedMs,60000),
+    stage:nedSafePhaseName(p?.stage),...(nedSafeRootResolution(p?.rootResolution)?
+      {rootResolution:nedSafeRootResolution(p.rootResolution)}:{}),elapsedMs:count(p?.elapsedMs,60000),
     mutationCount:count(p?.mutationCount,65535),blockCount:count(p?.blockCount),
     focusedBlockCount:count(p?.focusedBlockCount),sameBoundBlock:p?.sameBoundBlock===true,
     rootConnected:p?.rootConnected===true,blockConnected:p?.blockConnected===true,
