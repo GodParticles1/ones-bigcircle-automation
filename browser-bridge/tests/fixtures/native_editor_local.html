@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="fixture-source-sha256" content="{{SOURCE_SHA256}}">
+  <title>Local native editor regression — synthetic only</title>
+  <style>
+    :root { font: 15px/1.5 system-ui, sans-serif; color: #182536; background: #f1f5f8; }
+    body { max-width: 1040px; margin: 24px auto; padding: 0 20px 40px; }
+    h1 { font-size: 25px; margin-bottom: 8px; }
+    .boundary { padding: 14px 18px; background: #fff1c7; border: 2px solid #916800; font-weight: 700; }
+    .explanation { max-width: 900px; }
+    button { padding: 10px 18px; font: inherit; background: #145cb8; color: white; border: 0; border-radius: 5px; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #summary { padding: 12px 0; font-weight: 650; }
+    #arena { min-height: 245px; margin: 12px 0; padding: 12px; background: white; border: 1px solid #b7c6d6; }
+    .task-rich-text-edit { width: 90%; min-width: 260px; min-height: 190px; margin: 4px; padding: 12px; border: 2px solid #5d8bc0; box-sizing: border-box; }
+    .standard-co-editor-viewing { border-color: #8a96a6; }
+    .text-block { min-height: 26px; width: 100%; box-sizing: border-box; border-bottom: 1px dotted #dbe4ed; }
+    .text-block.focused { border-left: 3px solid #1681d8; }
+    .editor-input { display: block; width: 95%; height: 28px; margin-top: 8px; resize: none; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #15263a; color: #e8f1fa; padding: 16px; border-radius: 6px; }
+    code { font-size: 12px; }
+  </style>
+  <script src="/native-editor-diagnostic.js" defer></script>
+  <script src="/fixture.js" defer></script>
+</head>
+<body>
+  <p class="boundary">LOCAL SYNTHETIC — NOT ONES ACCEPTANCE</p>
+  <h1>Real DOM: editor-root and activation regression</h1>
+  <p class="explanation">This page runs the actual <code>nedPageControl</code> ARM helper against synthetic DOM. It does not run the Writer, the diagnostic RUN pipeline, native text insertion, Save, Relay or any ONES API. A passed matrix proves these local DOM cases only.</p>
+  <p class="explanation">Four empty blocks and one sibling textarea model the observed shape. Hidden nodes, duplicate IDs and an explicitly injected asynchronous switch to viewing mode remain rejected. The injected transition is not evidence of ONES framework behavior.</p>
+  <button id="run-matrix" type="button">Run local DOM matrix</button>
+  <div id="summary" role="status">NOT_RUN — zero text insertion and Save</div>
+  <section id="arena" aria-label="Synthetic editor DOM"></section>
+  <pre id="results" aria-label="Synthetic regression JSON">{"status":"NOT_RUN","scope":"LOCAL_SYNTHETIC_NOT_ONES_ACCEPTANCE","insertTextDispatchCount":0,"saveCount":0,"productionTransport":"NO_PRODUCTION_TRANSPORT"}</pre>
+</body>
+</html>

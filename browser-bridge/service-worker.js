@@ -1,4 +1,4 @@
-importScripts("root-cause-writer.js");
+importScripts("root-cause-writer.js", "native-editor-diagnostic.js");
 const RELAY_CONFIG_KEY = "onesRelayConfig";
 const RELAY_RUNTIME_KEY = "onesRelayRuntime";
 const RELAY_ALARM = "onesRelayPollV02";
@@ -830,7 +830,271 @@ chrome.runtime.onStartup.addListener(() => { ensureRelayAlarm().catch(() => {});
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === RELAY_ALARM) pollRelayOnce("alarm").catch(() => {}); });
 ensureRelayAlarm().catch(() => {});
 
+const IDENTITY_BINDING_SESSION_KEY='onesIdentityBindingReadV1';
+const IDENTITY_BINDING_CONFIG_KEYS=['onesOrigin','teamUuid','projectUuid','issueTypeUuid','rootCauseFieldId','writeEnabled'];
+const IDENTITY_BINDING_STAGES=['DOM_BEFORE','USER_START','TASK_RESOLVE','TASK_INFO','FIELD_SCHEMA','FIELD_CONFIG','USER_END','DOM_AFTER'];
+const IDENTITY_BINDING_STATUSES=new Set(['NOT_VERIFIED','IDENTITY_BINDING_READ_VERIFIED',
+  'BLOCKED_EXTENSION_SOURCE','BLOCKED_INPUT','BLOCKED_IN_FLIGHT','BLOCKED_WRITE_GATE','BLOCKED_CONFIG',
+  'BLOCKED_ORIGIN_PERMISSION','BLOCKED_ACTIVE_TAB','BLOCKED_TAB_DRIFT','BLOCKED_CONFIG_DRIFT',
+  'BLOCKED_DOM_BINDING','BLOCKED_NAVIGATION','BLOCKED_READ_HTTP','BLOCKED_READ_RESPONSE','BLOCKED_READ_TIMEOUT',
+  'BLOCKED_READ_FAILED','BLOCKED_IDENTITY_SCHEMA','BLOCKED_IDENTITY_CHANGED','BLOCKED_TASK_RESOLVE',
+  'BLOCKED_TASK_SCHEMA','BLOCKED_TASK_SCOPE','BLOCKED_OWNER_MISMATCH','BLOCKED_FIELD_SCHEMA',
+  'BLOCKED_FIELD_CONFIG','BLOCKED_SCRIPT_RESULT','BLOCKED_UNCERTAIN']);
+let bridgeSideChannelBusy=false;
+const BRIDGE_PREPARED_KEY='onesNativeDiagnosticPreparedV1';
+const BRIDGE_RECOVERY='CANCEL_AND_VERIFY_NO_AUTOMATIC_RESTORE';
+const BRIDGE_TUPLE_KEYS=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid','displayId',
+  'teamUuid','projectUuid','issueTypeUuid','fieldId','fieldType','fieldTypeUuid','fieldFormUuid','fieldLayoutUuid'];
+const bridgeGateFailure=status=>({ok:false,status,diagnosticOnly:true,writeGate:'OFF',insertTextCount:0,saveDispatched:false});
+async function bridgePreparedRead(){return ibOwn(await chrome.storage.session.get(BRIDGE_PREPARED_KEY),BRIDGE_PREPARED_KEY);}
+async function bridgePreparedSave(value){await chrome.storage.session.set({[BRIDGE_PREPARED_KEY]:value});}
+function bridgeFresh(value){const t=ibTime(value)?Date.parse(value):NaN;return Number.isFinite(t)&&Date.now()-t>=0&&Date.now()-t<=300000;}
+function bridgeSameTuple(a,b){return !!a&&!!b&&BRIDGE_TUPLE_KEYS.every(k=>ibOwn(a,k)===ibOwn(b,k));}
+function bridgePreparedMatches(p,config,target,tabId,phase='PREPARED'){
+  return p&&ibOwn(p,'phase')===phase&&ibId(ibOwn(p,'nonce'))&&/^NDP[0-9a-f]{12}$/.test(ibOwn(p,'marker'))&&
+    ibOwn(p,'recovery')===BRIDGE_RECOVERY&&bridgeFresh(ibOwn(p,'preparedAt'))&&
+    ibOwn(p,'tabId')===tabId&&ibOwn(p,'href')===target.href&&ibSameConfig(ibOwn(p,'config'),config);
+}
+async function bridgePending(){const p=ibOwn(await chrome.storage.session.get('onesNativeDiagnosticV1'),'onesNativeDiagnosticV1');
+  return ibOwn(p,'pending')===true&&ibOwn(p,'verified')!==true;}
+async function bridgePrepare(tabId){
+  if(await bridgePending())return bridgeGateFailure('BLOCKED_PENDING_SERVER_VERIFICATION');
+  const config=await ibConfig(),target=await ibTarget(config,tabId);
+  if(!await chrome.permissions.contains({origins:[config.onesOrigin+'/*']}))return bridgeGateFailure('BLOCKED_ORIGIN_PERMISSION');
+  const bytes=crypto.getRandomValues(new Uint8Array(6)),marker='NDP'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  const p={nonce:crypto.randomUUID(),marker,recovery:BRIDGE_RECOVERY,phase:'PREPARED',tabId,
+    href:target.href,displayId:target.displayId,config,preparedAt:new Date().toISOString()};
+  await bridgePreparedSave(p);
+  return {ok:true,status:'DIAGNOSTIC_PREPARED',nonce:p.nonce,marker,recovery:p.recovery,preparedAt:p.preparedAt,
+    expiresAt:new Date(Date.parse(p.preparedAt)+300000).toISOString(),identityBound:false,
+    privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',target:{displayId:target.displayId,projectUuid:config.projectUuid,
+      issueTypeUuid:config.issueTypeUuid,fieldId:config.rootCauseFieldId},insertTextCount:0,saveDispatched:false};
+}
+async function bridgeCancel(nonce){
+  const p=await bridgePreparedRead();
+  if(!p||ibOwn(p,'nonce')!==nonce||ibOwn(p,'phase')!=='PREPARED')return bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION');
+  await bridgePreparedSave({...p,phase:'CANCELLED'});return bridgeGateFailure('PREPARED_CANCELLED');
+}
+async function bridgeRun(message){
+  const p=await bridgePreparedRead();
+  if(!p)return bridgeGateFailure('BLOCKED_PREPARED_REQUIRED');
+  const keys=Object.keys(message),allowed=['type','tabId','nonce','marker','recovery','confirmed'];
+  if(keys.length!==allowed.length||!keys.every(k=>allowed.includes(k))||ibOwn(message,'confirmed')!==true||
+    ibOwn(message,'nonce')!==ibOwn(p,'nonce')||ibOwn(message,'marker')!==ibOwn(p,'marker')||
+    ibOwn(message,'recovery')!==BRIDGE_RECOVERY){
+    if(ibOwn(p,'phase')==='PREPARED')await bridgePreparedSave({...p,phase:'INVALIDATED'});
+    return bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION');
+  }
+  if(ibOwn(p,'phase')!=='PREPARED')return bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION');
+  // A concrete confirmation is one-shot even when a subsequent guard fails.
+  await bridgePreparedSave({...p,phase:'CONSUMED'});
+  if(await bridgePending())return bridgeGateFailure('BLOCKED_PENDING_SERVER_VERIFICATION');
+  const config=await ibConfig(),tabId=ibOwn(message,'tabId'),target=await ibTarget(config,tabId);
+  if(!bridgePreparedMatches(p,config,target,tabId)||!bridgeFresh(ibOwn(p,'identityObservedAt'))||
+    Date.parse(p.identityObservedAt)<Date.parse(p.preparedAt)||!ibOwn(p,'identity'))
+    return bridgeGateFailure('BLOCKED_PREPARED_IDENTITY');
+  // Independently revalidate identity after consuming this exact confirmation.
+  const fresh=await ibRead(tabId);
+  if(!fresh.ok||!bridgeSameTuple(p.identity,fresh.privateBinding))return bridgeGateFailure('BLOCKED_PREPARED_IDENTITY');
+  let executing=true;
+  const execution={run:p.nonce,marker:p.marker,taskUuid:fresh.privateBinding.taskUuid,href:target.href,
+    guard:async()=>{
+      if(!executing)return false;
+      try{
+        const live=await bridgePreparedRead(),current=await ibConfig(),page=await ibTarget(current,tabId);
+        return bridgePreparedMatches(live,current,page,tabId,'CONSUMED')&&live.nonce===p.nonce&&
+          live.marker===p.marker&&bridgeFresh(live.identityObservedAt)&&
+          bridgeSameTuple(live.identity,p.identity)&&ibSameConfig(config,current)&&page.href===target.href;
+      }catch(_){return false;}
+    }};
+  try{return await globalThis.onesNativeEditorDiagnosticRun(config,tabId,execution);}
+  finally{executing=false;}
+}
+function ibOwn(o,k) {
+  if(!o||typeof o!=='object'||Array.isArray(o))return undefined;
+  const d=Object.getOwnPropertyDescriptor(o,k);
+  return d&&Object.prototype.hasOwnProperty.call(d,'value')?d.value:undefined;
+}
+function ibId(v){return typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);}
+function ibTime(v){return typeof v==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v)&&Number.isFinite(Date.parse(v));}
+function ibDenied(status='NOT_VERIFIED') {
+  return {ok:false,status,readOnly:true,validBinding:false,privacy:'LOCAL_PRIVATE_DO_NOT_SHARE',writeGate:'OFF',requestCount:0,stages:[]};
+}
+function ibReceipt(value) {
+  try {
+    const status=ibOwn(value,'status');
+    if(!IDENTITY_BINDING_STATUSES.has(status))return ibDenied('BLOCKED_SCRIPT_RESULT');
+    const out=ibDenied(status),count=ibOwn(value,'requestCount'),rawStages=ibOwn(value,'stages');
+    out.requestCount=Number.isInteger(count)&&count>=0&&count<=6?count:0;
+    if(Array.isArray(rawStages))out.stages=rawStages.slice(0,8).flatMap(row=>{
+      const stage=ibOwn(row,'stage'),capturedAt=ibOwn(row,'capturedAt');
+      return IDENTITY_BINDING_STAGES.includes(stage)&&ibTime(capturedAt)?[{stage,capturedAt}]:[];
+    });
+    const stage=ibOwn(value,'stage');if(IDENTITY_BINDING_STAGES.includes(stage))out.stage=stage;
+    if(status==='BLOCKED_READ_HTTP'){
+      const code=ibOwn(value,'httpStatus');out.httpStatus=Number.isInteger(code)&&code>=0&&code<=599?code:0;
+    }
+    if(status==='BLOCKED_READ_RESPONSE'&&['TEXT_NOT_STRING','CHAR_LIMIT_EXCEEDED','JSON_PARSE_FAILED','ROOT_NOT_OBJECT'].includes(ibOwn(value,'responseInvariant')))
+      out.responseInvariant=ibOwn(value,'responseInvariant');
+    if(status==='BLOCKED_FIELD_CONFIG'&&['FORM_SCOPE_MISMATCH','FORM_ID_INVALID','FORM_TREE_INVALID','TARGET_NOT_UNIQUE','TARGET_FROZEN'].includes(ibOwn(value,'fieldConfigInvariant')))
+      out.fieldConfigInvariant=ibOwn(value,'fieldConfigInvariant');
+    if(status==='BLOCKED_FIELD_SCHEMA'){
+      const reason=ibOwn(value,'fieldInvariant'),code=ibOwn(value,'fieldTypeCode');
+      if(['FIELDS_ARRAY_MISSING_OR_INVALID','FIELDS_TOO_MANY','TARGET_MATCH_ZERO','TARGET_MATCH_MULTIPLE',
+        'TARGET_NAME_MISMATCH','TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED'].includes(reason))out.fieldInvariant=reason;
+      if(['TARGET_TYPE_NOT_15','TARGET_TYPE_UNSUPPORTED'].includes(reason)&&Number.isInteger(code)&&code>=0&&code<=255)out.fieldTypeCode=code;
+    }
+    if(status!=='IDENTITY_BINDING_READ_VERIFIED')return out;
+    const b=ibOwn(value,'privateBinding'),keys=['accountUuid','assigneeUuid','taskUuid','resolvedTaskUuid',
+      'displayId','teamUuid','projectUuid','issueTypeUuid','fieldId'];
+    const binding=Object.fromEntries(keys.map(k=>[k,ibOwn(b,k)]));
+    const fieldType=ibOwn(b,'fieldType'),metadataKeys=['fieldTypeUuid','fieldFormUuid','fieldLayoutUuid'];
+    const metadata=Object.fromEntries(metadataKeys.map(k=>[k,ibOwn(b,k)]));
+    const richtext=fieldType==='richtext'&&Object.values(metadata).every(ibId);
+    const legacy=fieldType===15&&metadataKeys.every(k=>!Object.getOwnPropertyDescriptor(b,k));
+    if(ibOwn(value,'ok')!==true||ibOwn(value,'validBinding')!==true||ibOwn(value,'readOnly')!==true||
+      out.requestCount!==6||out.stages.length!==8||
+      !out.stages.every((s,i)=>s.stage===IDENTITY_BINDING_STAGES[i])||
+      !Object.values(binding).every(ibId)||binding.accountUuid!==binding.assigneeUuid||
+      binding.taskUuid!==binding.resolvedTaskUuid||(!legacy&&!richtext))return ibDenied('BLOCKED_SCRIPT_RESULT');
+    return {...out,ok:true,validBinding:true,privateBinding:{...binding,fieldType,...(richtext?metadata:{})}};
+  }catch(_){return ibDenied('BLOCKED_SCRIPT_RESULT');}
+}
+async function ibConfig() {
+  const data=await chrome.storage.local.get(RELAY_CONFIG_KEY),raw=ibOwn(data,RELAY_CONFIG_KEY);
+  const out=Object.fromEntries(IDENTITY_BINDING_CONFIG_KEYS.map(k=>[k,ibOwn(raw,k)]));
+  if(out.writeEnabled!==false)throw 'BLOCKED_WRITE_GATE';
+  if(!['teamUuid','projectUuid','issueTypeUuid','rootCauseFieldId'].every(k=>ibId(out[k]))||
+    typeof out.onesOrigin!=='string'||normalizeOnesOrigin(out.onesOrigin)!==out.onesOrigin)throw 'BLOCKED_CONFIG';
+  return out;
+}
+function ibSameConfig(a,b){return !!a&&!!b&&IDENTITY_BINDING_CONFIG_KEYS.every(k=>ibOwn(a,k)===ibOwn(b,k));}
+async function ibTarget(config,tabId) {
+  const active=await chrome.tabs.query({active:true,currentWindow:true});
+  if(active.length!==1||!Number.isInteger(tabId)||active[0]?.id!==tabId)throw 'BLOCKED_ACTIVE_TAB';
+  const tab=await chrome.tabs.get(tabId);
+  if(tab?.status!=='complete'||tab.url!==active[0].url)throw 'BLOCKED_ACTIVE_TAB';
+  const u=new URL(tab.url),route=u.pathname==='/project/'&&u.hash.startsWith('#/team/')?u.hash.slice(1):
+    !u.hash&&u.pathname.startsWith('/team/')?u.pathname:'';
+  const m=route.match(/^\/team\/([A-Za-z0-9_-]{1,128})\/(?:[^/?#]+\/)*issue\/([A-Za-z0-9_-]{1,128})\/?$/);
+  if(u.origin!==config.onesOrigin||u.search||!m||m[1]!==config.teamUuid)throw 'BLOCKED_ACTIVE_TAB';
+  return {href:u.href,displayId:m[2]};
+}
+async function ibSave(config,receipt) {
+  await chrome.storage.session.set({[IDENTITY_BINDING_SESSION_KEY]:{
+    observedAt:new Date().toISOString(),config,receipt:ibReceipt(receipt)}});
+}
+async function ibRead(tabId) {
+  let snapshot=null,result=ibDenied();
+  try {
+    // Revoke prepared proof before any cache/config/tab operation can fail.
+    const prepared=await bridgePreparedRead();
+    if(ibOwn(prepared,'phase')==='PREPARED')
+      await bridgePreparedSave({...prepared,identity:null,identityObservedAt:null});
+    // Invalidate an older success before any new read, without touching diagnostic pending.
+    await ibSave(null,result);
+    snapshot=await ibConfig();
+    const target=await ibTarget(snapshot,tabId);
+    const bindPrepared=bridgePreparedMatches(prepared,snapshot,target,tabId);
+    if(!await chrome.permissions.contains({origins:[snapshot.onesOrigin+'/*']}))throw 'BLOCKED_ORIGIN_PERMISSION';
+    const executions=await chrome.scripting.executeScript({target:{tabId},world:'MAIN',
+      func:globalThis.onesIdentityBindingReadPage,args:[{...snapshot,...target}]});
+    if(executions.length!==1)throw 'BLOCKED_SCRIPT_RESULT';
+    result=ibReceipt(ibOwn(executions[0],'result'));
+    let after;
+    try{after=await ibConfig();}catch(_){throw 'BLOCKED_CONFIG_DRIFT';}
+    if(!ibSameConfig(snapshot,after))throw 'BLOCKED_CONFIG_DRIFT';
+    let afterTarget;
+    try{afterTarget=await ibTarget(after,tabId);}catch(_){throw 'BLOCKED_TAB_DRIFT';}
+    if(afterTarget.href!==target.href)throw 'BLOCKED_TAB_DRIFT';
+    if(result.ok){
+      const b=result.privateBinding;
+      if(b.teamUuid!==snapshot.teamUuid||b.projectUuid!==snapshot.projectUuid||b.issueTypeUuid!==snapshot.issueTypeUuid||
+        b.fieldId!==snapshot.rootCauseFieldId||b.displayId!==target.displayId)throw 'BLOCKED_SCRIPT_RESULT';
+      if(bindPrepared){
+        const live=await bridgePreparedRead();
+        if(!bridgePreparedMatches(live,after,afterTarget,tabId)||live.nonce!==prepared.nonce)throw 'BLOCKED_SCRIPT_RESULT';
+        await bridgePreparedSave({...live,identity:{...b},identityObservedAt:new Date().toISOString()});
+        result={...result,preparedNonce:live.nonce};
+      }
+    }
+  }catch(status){result=ibDenied(typeof status==='string'&&IDENTITY_BINDING_STATUSES.has(status)?status:'BLOCKED_UNCERTAIN');}
+  try{await ibSave(snapshot,result);}catch(_){return ibDenied('BLOCKED_UNCERTAIN');}
+  return result;
+}
+async function ibLast() {
+  const unavailable=()=>({...ibDenied(),historical:true});
+  try {
+    if(bridgeSideChannelBusy)return unavailable();
+    const data=await chrome.storage.session.get(IDENTITY_BINDING_SESSION_KEY),saved=ibOwn(data,IDENTITY_BINDING_SESSION_KEY);
+    if(!saved)return unavailable();
+    const observedAt=ibOwn(saved,'observedAt'),age=ibTime(observedAt)?Date.now()-Date.parse(observedAt):-1;
+    const receipt=ibReceipt(ibOwn(saved,'receipt'));
+    let config;try{config=await ibConfig();}catch(_){config=null;}
+    if(age<0||age>300000||!ibSameConfig(config,ibOwn(saved,'config'))){
+      await ibSave(null,ibDenied());return unavailable();
+    }
+    return {...receipt,validBinding:false,historical:true,observedAt};
+  }catch(_){return unavailable();}
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if(['ONES_NATIVE_DIAGNOSTIC_PREPARE','ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED','ONES_NATIVE_DIAGNOSTIC_RUN'].includes(message?.type)){
+    (async()=>{
+      if(ibOwn(sender,'id')!==chrome.runtime.id||ibOwn(sender,'url')!==chrome.runtime.getURL('popup.html'))
+        return sendResponse(bridgeGateFailure('BLOCKED_PREPARED_SOURCE'));
+      if(bridgeSideChannelBusy)return sendResponse(bridgeGateFailure('BLOCKED_IN_FLIGHT'));
+      bridgeSideChannelBusy=true;
+      try{
+        if(message.type==='ONES_NATIVE_DIAGNOSTIC_RUN')return sendResponse(await bridgeRun(message));
+        const cancel=message.type==='ONES_NATIVE_DIAGNOSTIC_CANCEL_PREPARED',keys=Object.keys(message);
+        if(keys.length!==2||!keys.includes('type')||!keys.includes(cancel?'nonce':'tabId'))
+          return sendResponse(bridgeGateFailure('BLOCKED_PREPARED_CONFIRMATION'));
+        sendResponse(cancel?await bridgeCancel(ibOwn(message,'nonce')):await bridgePrepare(ibOwn(message,'tabId')));
+      }catch(_){sendResponse(bridgeGateFailure('BLOCKED_PREPARED_UNCERTAIN'));}
+      finally{bridgeSideChannelBusy=false;}
+    })();return true;
+  }
+  if(message?.type==='ONES_IDENTITY_BINDING_READ'||message?.type==='ONES_IDENTITY_BINDING_LAST') {
+    (async()=>{
+      try {
+        if(ibOwn(sender,'id')!==chrome.runtime.id||ibOwn(sender,'url')!==chrome.runtime.getURL('popup.html'))
+          return sendResponse(ibDenied('BLOCKED_EXTENSION_SOURCE'));
+        const last=message.type==='ONES_IDENTITY_BINDING_LAST',keys=Object.keys(message);
+        if(keys.length!==(last?1:2)||!keys.includes('type')||(!last&&!keys.includes('tabId')))
+          return sendResponse(ibDenied('BLOCKED_INPUT'));
+        if(last)return sendResponse(await ibLast());
+        if(bridgeSideChannelBusy)return sendResponse(ibDenied('BLOCKED_IN_FLIGHT'));
+        bridgeSideChannelBusy=true;
+        try{sendResponse(await ibRead(ibOwn(message,'tabId')));}
+        finally{bridgeSideChannelBusy=false;}
+      }catch(_){sendResponse(ibDenied('BLOCKED_UNCERTAIN'));}
+    })();
+    return true;
+  }
+  if (message?.type === "ONES_NATIVE_DIAGNOSTIC_VERIFY" || message?.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
+    (async () => {
+      if(bridgeSideChannelBusy){sendResponse({ok:false,status:'BLOCKED_IN_FLIGHT',diagnosticOnly:true,saveDispatched:false});return;}
+      bridgeSideChannelBusy=true;
+      try {
+      const config = await getRelayConfig();
+      if (message.type === "ONES_NATIVE_DIAGNOSTIC_LAST") {
+        sendResponse(await globalThis.onesNativeEditorDiagnosticLast());
+        return;
+      }
+      if (config.writeEnabled !== false) {
+        sendResponse({ok:false,status:"BLOCKED_WRITE_GATE",diagnosticOnly:true,saveDispatched:false});
+        return;
+      }
+      const active = await chrome.tabs.query({active:true,currentWindow:true});
+      if (active.length !== 1 || !Number.isInteger(active[0]?.id) || active[0].id !== message.tabId) {
+        sendResponse({ok:false,status:"BLOCKED_ACTIVE_TAB",diagnosticOnly:true,saveDispatched:false});
+        return;
+      }
+      sendResponse(await globalThis.onesNativeEditorDiagnosticVerify(config,message.tabId));
+      } finally {bridgeSideChannelBusy=false;}
+    })().catch(() => sendResponse({ok:false,status:"BLOCKED_UNCERTAIN",diagnosticOnly:true,saveDispatched:false}));
+    return true;
+  }
   if (message?.type === "ONES_RELAY_GET_CONFIG") {
     (async () => {
       const config = await getRelayConfig();

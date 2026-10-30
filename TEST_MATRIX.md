@@ -135,5 +135,3 @@ Publish only scrubbed enums, counters, timing and public source/package identiti
 | browser bridge | `node --check browser-bridge/service-worker.js && node --check browser-bridge/popup.js && python browser-bridge/tests/static_test.py` | PASS |
 | public safety | `python scripts/repo_guard.py .` | PASS |
 | Python syntax | `python -m compileall reconciliation local-relay` | PASS |
-
-

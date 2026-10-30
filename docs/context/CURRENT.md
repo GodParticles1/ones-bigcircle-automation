@@ -1,5 +1,38 @@
 # Current Context
 
+## Stage-1 receipt and root-diagnostic successor — 2026-10-30
+
+Original #112 / PR #113 now prepares a distinct diagnostic candidate from independently reviewed #110 source `919f21710ccbb391b283b712aa723255619aafbc` (parent `1a8f76cde0b90a77a4631a94796a2a163f67d0ee`). Ten Bridge implementation/docs/test blobs are synchronized exactly from Git objects, including the local real-DOM fixtures required by the source static checks. [exact-source CI 41048048405](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/41048048405) completed SUCCESS at `919f21710ccbb391b283b712aa723255619aafbc` on Linux/python (job `124036919104`) and Windows/windows-relay (job `124036918658`); formal independent source COMMENT [5711588627](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#pullrequestreview-5711588627) records source ACCEPT. This is upstream-source acceptance; the new release still requires its own exact-head Linux/Windows CI and actual ZIP acceptance. No new installation or runtime acceptance is claimed. Preserve the old f72 archive and installed extension unchanged.
+
+The source fixes an actual popup presentation defect: the current action result remains distinct from historical LAST, with finite receipt-origin/arrival metadata. Generation ordering prevents an older clear response from replacing a newer pending observation; failed/incomplete LAST and uncertain delivery retain known holds. Read-only action feedback does not imply native input. The ARM helper also reports bounded `ROOT_RESOLUTION_V1` reasons/counts while preserving the original route, uniqueness, focus, selection and dirty-draft rejections. No automatic editor activation, selection repair, hidden retry or production Writer enablement is added.
+
+The 2026-10-28 P0 identity plus two authoritative BLANK reads remains accepted historical evidence ([runtime receipt 6473154352](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#issuecomment-6473154352)); it is not a fresh execution proof. Later operator Stage-1 receipts stopped at ARM with native input=0 and Save=0. Supported mouse activation and bounded read-only observations showed a unique editing root, including a 35-second/65-sample observation retaining editing mode, but actual popup interaction during that observation was not independently established. No cause for the ONES mode transition or #103 duplicate/interleaved input mechanism is proved.
+
+The existing local synthetic browser matrix and VM regressions are development evidence only. New package use still requires independent release diff/CI/actual-ZIP acceptance, current pending-safe state, a new prepared marker, fresh nonce-bound identity and concrete one-attempt consent. RUN retains its own two definite same-field BLANK reads and >=750 ms order, all native guards, at most one insert and Save=0. Cancel requires independent authoritative verification; changed/unknown stops without automatic restore or lifecycle reset. Keep formal Writer OFF, #103 HOLD and both diagnostic PRs Draft/MERGE_HOLD.
+
+This entry supersedes only changed current source/release/runtime statements below; dated checkpoints retain their original scope.
+
+## FIELD_CONFIG successor — 2026-10-28
+
+The original #112 preparation synchronizes five reviewed files from #110 source `69f0a18aff2ba96f5cb86311405d148ad931f202`; local identity 39/popup 23/native 40 evidence is inherited. [Exact-source CI 40687131864](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40687131864) completed SUCCESS at `69f0a18aff2ba96f5cb86311405d148ad931f202`; Linux/python and Windows/windows-relay both completed SUCCESS. This does not establish the new release's CI, ZIP or installation acceptance. Richtext request 5 now uses the proved same-task detail form, requiring complete bounded own-children traversal, one unfrozen target and fresh form/layout UUID binding. Legacy integer-15 handling remains separate; no fallback, capability, Writer or authentication expansion is included.
+
+The current P0 is installation of a separately accepted new candidate and one read-only identity action, native=0/Save=0. No PREPARE/RUN is authorized by that P0. Full binding and authoritative field baseline remain unproven; this new package/install/runtime are NOT_RUN. Preserve prior candidate bytes, current pending/lifecycle guards and production WRITE_GATE OFF. This checkpoint supersedes only the older richtext catalog-only/source/runtime statements below.
+
+
+## Metadata successor — 2026-10-28
+
+The #112 preparation now synchronizes six changed blobs from independently accepted #110 source `f92739b17c6db1b3039d8b83cf50d3a5716982d2` (89/89 local regressions). [Exact-source CI 40651789808](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40651789808) completed SUCCESS at `f92739b17c6db1b3039d8b83cf50d3a5716982d2`, with both Linux/python and Windows/windows-relay completed SUCCESS. This does not establish the successor release's CI or package acceptance. Legacy integer 15 and the observed complete richtext object remain distinct contracts; richtext is not coerced to 15, and its private type UUID stays in the fresh prepared/execution binding.
+
+The operator's one identity attempt reached request 4 / FIELD_SCHEMA, with native=0, Save=0 and pending=false in the local receipt. Complete binding and authoritative field baseline remain NOT_RUN. This successor has no new package/runtime acceptance; preserve f60 and Stage-0 bytes, pending lifecycle guards and production WRITE_GATE OFF. This metadata checkpoint supersedes the older type-only/connectivity statements below within this limited scope.
+
+
+## Diagnostic release checkpoint — 2026-10-28
+
+The original #112 / PR #113 release preparation now synchronizes the eight reviewed diagnostic/UI/test files from #110 source `85449e4c96f85b7ed09626b180da1f51a0864223`. [Independent source review 5665434991](https://github.com/GodParticles1/ones-bigcircle-automation/pull/111#pullrequestreview-5665434991) accepted the source; [CI 40483588375](https://github.com/GodParticles1/ones-bigcircle-automation/actions/runs/40483588375) completed SUCCESS on Linux and Windows. The correction binds prepared nonce/marker/recovery consent to fresh identity and one-shot RUN, with >=750 ms measured from the first successful authoritative BLANK completion to the second dispatch. It is a diagnostic gate correction, not #103 native-editor mechanism proof.
+
+Preparation retains accepted Stage-0 release `1ab2c06fe01cdd02f0d13ac380a07bb1aa94f86d` and incorporates the complete accepted-main `b857d2d3a84d99117db14722b65b26c2f887d68a` context below. The old Stage-0 package remains unchanged; the new final release HEAD and ZIP require their own review/CI/package acceptance. BUNDLE v1 `sourceHead` remains the exact packaged release commit, manifest remains 0.5.17, and WRITE_GATE stays OFF. The latest recorded @Chrome read reached an `ERR_CONNECTION_CLOSED` target page with native input=0; genuine runtime prerequisites and Stage-1 remain HOLD. Follow the new `HANDOFF.md` checkpoint for the next action. Older source/release/runtime statements below retain their dated scope.
+
+
 ## Current continuation — 2026-10-25
 
 The active integration decision is [Leader Control #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524). The current Leader owns priorities, independent review, integration and release decisions under `docs/governance/LEAD_RESPONSIBILITY.md`; local Pro Codex owns the bounded native-editor implementation and Windows runtime execution lane, with Dot providing coordination.
@@ -476,4 +509,3 @@ Exact next product action:
 one fresh eligible unique task-level SET_CANDIDATE -> one bounded write acceptance -> collect both #85 rendered-left and #86 convergence evidence without rewriting the already-used YF-12439 target. Then decide #85/#86 closure independently. After that, freeze and activate #97.
 
 Manual pre-opening of a ticket is acceptance scaffolding only and is not the intended production model.
-
