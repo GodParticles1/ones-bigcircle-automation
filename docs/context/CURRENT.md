@@ -1,5 +1,17 @@
 # Current Context
 
+## Exact metadata-contract correction — 2026-10-28
+
+The original #112 release `f60f989faf678613bca1358fc22573a1a421a480` passed exact Linux/Windows CI `40639831210` and independent actual-artifact verification. The operator approved candidate installation/read-only verification and reported a fresh request-4 `TARGET_TYPE_NOT_15` result. A separate permitted read of that same existing fields endpoint proved the exact configured target uses a richtext type object, not the legacy numeric metadata contract. The local pending receipt reported false; server field state remains NOT_VERIFIED.
+
+The original #110 source lane now corrects only that proven representation mismatch, preserving legacy15 and explicit richtext/type-UUID semantics through fresh binding. Source review, exact new CI and a distinct #112 archive still gate the corrected candidate; do not hot-patch the already verified archive or repeat its CI. No full current identity/field-config binding, authoritative BLANK pair or native editor mechanism is accepted. #103 Writer stays OFF/BLOCKED; Save=0. Dated checkpoints below retain their original scope.
+
+## Source checkpoint — 2026-10-27
+
+The original #110 source owner delivered reviewed Stage-1 tooling delta `e47d23f491018d078ba6f907905fa6aa18d58959` for concrete one-shot marker/recovery consent, fresh execution identity and measured >=750 ms definite-BLANK ordering. Local Native 40/40, identity 22/22, popup 21/21 and Writer 125/125 passed with independent source ACCEPT. Exact-head CI and a distinct #112 archive still gate the next candidate. This source branch inherits accepted main's plan/priority entries; product/test blobs remain those reviewed bytes.
+
+Current page execution is not accepted: native Computer Use stopped on URL enforcement; the supported Chrome-extension read reached a connection-error page, not loaded ONES business content. Pending remains unmodified, and metadata/Field/input/Save are zero. FIELD_SCHEMA's deployed mismatch is unresolved; only bounded failure reporting was added. The existing Stage-0 `1ab2c06` remains read-only. Issue #1 remains the single control lane; #103 Writer stays OFF/BLOCKED and 0.5.18 remains unimplemented.
+
 ## Current continuation — 2026-10-25
 
 The active integration decision is [Leader Control #1](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524). The current Leader owns priorities, independent review, integration and release decisions under `docs/governance/LEAD_RESPONSIBILITY.md`; local Pro Codex owns the bounded native-editor implementation and Windows runtime execution lane, with Dot providing coordination.
@@ -476,4 +488,3 @@ Exact next product action:
 one fresh eligible unique task-level SET_CANDIDATE -> one bounded write acceptance -> collect both #85 rendered-left and #86 convergence evidence without rewriting the already-used YF-12439 target. Then decide #85/#86 closure independently. After that, freeze and activate #97.
 
 Manual pre-opening of a ticket is acceptance scaffolding only and is not the intended production model.
-

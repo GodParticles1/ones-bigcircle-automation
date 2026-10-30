@@ -1,5 +1,19 @@
 # Handoff
 
+## 2026-10-28 exact fields-metadata continuation
+
+Candidate release `f60f989faf678613bca1358fc22573a1a421a480` and actual artifact `12794654097` are independently accepted within their diagnostic scope; CI `40639831210` passed both platforms. The operator approved installation/read-only verification, reported current-session pending=false and a fresh `FIELD_SCHEMA / TARGET_TYPE_NOT_15` at request4. The same already-supported fields endpoint then yielded decisive permitted runtime metadata: exact field UUID/name matched; its type is a richtext object with valid type UUID and the observed named/Boolean properties. No field content, credentials, new API family or native input was used.
+
+Continue only the original #110 source correction: recognize that exact object contract separately from legacy integer15, carry its type UUID through fresh binding and reject type drift. Add faithful RED/GREEN and independent review, exact source CI, then sync the reviewed delta once through original #112. Preserve the prior package and installation; no repeated old CI/Relay/Ping or speculative fallback. FIELD_CONFIG, ending-user/DOM stability and authoritative field reads remain separate unmet gates. No native input without a new accepted exact candidate and concrete per-attempt consent; Save=0, #103 Writer OFF. Do not repeat the old failed READ while source is unchanged.
+
+## 2026-10-27 bounded Stage-1 source checkpoint
+
+The reviewed source delta is `e47d23f491018d078ba6f907905fa6aa18d58959`: worker-owned concrete nonce/marker/recovery confirmation, fresh execution-time identity, one-shot failure revocation and >=750 ms from successful first BLANK completion. Independent source review ACCEPT followed two RETURN corrections. Native 40/40, identity 22/22, popup 21/21, Writer 125/125 and static/draft/syntax checks passed; actual old-path timing RED was 466.0664 ms and corrected host-clock timing exceeded 750 ms. These are source proofs, not ONES editor semantics.
+
+This branch now inherits accepted main and its current plan/priority documents without changing the reviewed product/test blobs. Resolve the documentation conflict, verify exact-head CI, then use Issue #1's single current review/decision before the existing #112 owner synchronizes a distinct candidate. Preserve accepted Stage-0 `1ab2c06`; never rebuild/relabel it or copy source CI over release package checks.
+
+The original native Windows capability stopped on browser-URL policy and released control. The separately supported Chrome-extension read path bound the requested tab, but its actual page was `ERR_CONNECTION_CLOSED`, with no visible business field. No metadata/Field/input/Save followed. Do not repeat native calls or refresh/clear unknown pending. The exact live FIELD_SCHEMA invariant remains unobserved; this delta only reports a bounded failed guard and does not loosen type 15. Native input still requires a new accepted package, successful fresh binding/BLANK pair and concrete per-attempt consent. #103/production Writer stays OFF/BLOCKED; 0.5.18 is not implemented or released.
+
 ## Immediate continuation — 2026-10-25
 
 Start from `docs/context/CURRENT.md`, the [current Leader decision](https://github.com/GodParticles1/ones-bigcircle-automation/issues/1#issuecomment-6393734524), PR #111 and dependent PR #113. PR #109 is already merged; no installer rewrite or repeated old review is needed.
@@ -413,4 +427,3 @@ Runtime page-state lesson:
 - Normal visible detail can contain many repeated root-cause strings in activity/history. Canonical detail-form label dedupe yields exactly one accepted label/wrapper/viewer.
 
 New Leader must not start by redesigning architecture or redispatching stale #85/#86 branches. Refresh live state, then continue from the exact order above.
-

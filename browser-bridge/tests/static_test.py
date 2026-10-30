@@ -166,3 +166,20 @@ assert alignment.index('beforeAlign === "left" || beforeAlign === "start"') < al
 assert 'after === desired' in alignment
 assert 'afterAlign === "left" || afterAlign === "start"' in alignment
 print("BROWSER_BRIDGE_PUBLIC_V0517_DRAFT_CONVERGENCE_PASS")
+
+# Issue #110: separate diagnostic entry, one CDP insertion, zero Save, no Relay capabilities.
+diagnostic = (ROOT / "native-editor-diagnostic.js").read_text(encoding="utf-8")
+assert 'importScripts("root-cause-writer.js", "native-editor-diagnostic.js")' in worker
+assert 'ONES_NATIVE_DIAGNOSTIC_RUN' in worker
+assert 'ONES_NATIVE_DIAGNOSTIC_VERIFY' in worker
+assert 'nativeDiagRun' in (ROOT / "popup.html").read_text(encoding="utf-8")
+assert diagnostic.count("Input.insertText") == 1
+assert "Input.dispatchMouseEvent" in diagnostic and "Input.insertText" in diagnostic
+assert "Save" not in diagnostic.split("async function nedRun", 1)[1].split("async function nedVerify", 1)[0].replace("nedSaveState", "").replace("noSaveDispatched", "")
+assert "relayFetch(" not in diagnostic and "ONES_ROOT_CAUSE_WRITE" not in diagnostic
+assert "root-cause-writer.js" not in diagnostic
+assert "native_editor_diagnostic_test.js" in [p.name for p in (ROOT / "tests").iterdir()]
+import subprocess, sys
+subprocess.run(["node", "--test", str(ROOT / "tests" / "native_editor_diagnostic_test.js")], check=True)
+subprocess.run([sys.executable, "-m", "py_compile", str(ROOT / "tests" / "local_editor_server.py")], check=True)
+subprocess.run(["node", "--check", str(ROOT / "tests" / "fixtures" / "native_editor_local.js")], check=True)

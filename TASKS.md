@@ -286,4 +286,3 @@ Replace the developer-console layout with a compact product UI: connection/confi
 - automatic ONES create/import;
 - owner/status/project/priority/delete automation;
 - any production write beyond separately accepted bounded field-sync contracts.
-
