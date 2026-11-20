@@ -1,8 +1,20 @@
+<#
+.SYNOPSIS
+Runs the configured local read-only alignment.
+.PARAMETER ObserveAssignee
+Optional exact ONES assignee UUID. Passes the observation request to periodic alignment.
+Omit it for normal full alignment. Requires the reconciliation sources from the same candidate.
+.EXAMPLE
+.\run-once.ps1
+.EXAMPLE
+.\run-once.ps1 -ObserveAssignee user-a
+#>
 param(
     [string]$CaseFeedDir,
     [string]$RelayDir,
     [string]$ReconciliationDir,
-    [string]$RuntimeDir
+    [string]$RuntimeDir,
+    [ValidateNotNullOrEmpty()][string]$ObserveAssignee
 )
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
@@ -27,9 +39,13 @@ foreach ($pair in @(
 }
 
 $Periodic = Join-Path $Root "periodic-alignment\run-once.ps1"
+$observationArgs = @()
+if ($PSBoundParameters.ContainsKey("ObserveAssignee")) {
+    $observationArgs = @("-ObserveAssignee", $ObserveAssignee)
+}
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Periodic `
   -CaseFeedDir $script:CaseFeedDir `
   -RelayDir $script:RelayDir `
   -ReconciliationDir $script:ReconciliationDir `
-  -RuntimeDir $script:RuntimeDir
+  -RuntimeDir $script:RuntimeDir @observationArgs
 exit $LASTEXITCODE

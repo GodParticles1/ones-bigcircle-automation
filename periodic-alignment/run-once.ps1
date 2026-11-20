@@ -1,3 +1,12 @@
+<#
+.SYNOPSIS
+Runs one local read-only alignment scan.
+.PARAMETER ObserveAssignee
+Optional exact ONES assignee UUID. Collects a scoped UUID observation instead of reconciliation.
+Omit it for the normal full alignment. Keep the same RuntimeDir for successive observations.
+.EXAMPLE
+.\run-once.ps1 -CaseFeedDir C:\case-feeds -RelayDir C:\relay -ReconciliationDir C:\candidate\reconciliation -RuntimeDir C:\runtime -ObserveAssignee user-a
+#>
 param(
     [Parameter(Mandatory=$true)][string]$CaseFeedDir,
     [Parameter(Mandatory=$true)][string]$RelayDir,
@@ -66,6 +75,16 @@ function Get-RelayHeaders {
     return @{ "X-Relay-Token" = $token }
 }
 
+function Test-ReconciliationComponent([string]$File, [string]$Option) {
+    if (-not (Test-Path -LiteralPath $File -PathType Leaf)) { return $false }
+    try {
+        $helpText = & python -B $File --help 2>&1
+        return $LASTEXITCODE -eq 0 -and (($helpText -join "`n").Contains($Option))
+    } catch {
+        return $false
+    }
+}
+
 $observationLock = $null
 try {
     if ($PSBoundParameters.ContainsKey("ObserveAssignee")) {
@@ -81,6 +100,19 @@ try {
         Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_WAIT_BIGCIRCLE" -Fields @{
             reason = "NO_VALID_CASE_FEED"
         }
+    }
+
+    # A previously installed reconciliation directory may not support this candidate's CLI.
+    # Detect that before reading from the relay or publishing any inventory.
+    $component = if ($null -ne $observationLock) { "observe_inventory.py" } else { "reconcile.py" }
+    $option = if ($null -ne $observationLock) { "--state-dir" } else { "--validate-only" }
+    $componentPath = Join-Path $ReconciliationDir $component
+    if (-not (Test-ReconciliationComponent $componentPath $option)) {
+        Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_BLOCKED" -Fields @{
+            reason = "RECONCILIATION_COMPONENT_MISMATCH"
+            requiredFile = $component
+            requiredOption = $option
+        } -ExitCode 2
     }
 
     $caseSha = (Get-FileHash -LiteralPath $caseFeed.FullName -Algorithm SHA256).Hash.ToLowerInvariant()

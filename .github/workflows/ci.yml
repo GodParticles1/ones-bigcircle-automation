@@ -92,6 +92,7 @@ jobs:
       - shell: powershell
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
       - run: python periodic-alignment/tests/test_archive.py
+      - run: python periodic-alignment/tests/test_launch.py
       - shell: powershell
         run: |
           [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.7.ps1 -Raw))

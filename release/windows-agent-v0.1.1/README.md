@@ -24,3 +24,21 @@ Install:
 4. Run run-once.ps1
 
 The existing Local Relay token/relay.db and Browser Bridge configuration are not moved or changed by this package.
+
+## Local candidate: optional read-only UUID observation
+
+This is a source-candidate instruction. The existing released v0.1.1 package is subject to its own accepted version and pairing; do not replace it with an unreviewed build carrying the same version label.
+
+The candidate launcher and periodic script must be paired with `reconciliation/run-stage.ps1`, `reconciliation/pipeline.py`, `reconciliation/reconcile.py`, and `reconciliation/observe_inventory.py` from the same candidate checkout. The Windows-local-agent package builder includes the launcher and periodic script; its reconciliation directory remains an external configured dependency. In an approved candidate deployment, set `ReconciliationDir` in the existing local `config.ps1` to that candidate directory, or supply it per run. Keep the configured case-feed, relay and runtime directories. Examples using placeholders:
+
+```powershell
+Get-Help .\run-once.ps1 -Examples
+.\run-once.ps1 -ReconciliationDir 'C:\candidate\reconciliation'
+.\run-once.ps1 -ReconciliationDir 'C:\candidate\reconciliation' -ObserveAssignee '<assignee-uuid>'
+```
+
+The default command retains the full-alignment success states `RECONCILIATION_VERIFIED` and `RECONCILIATION_NOOP_VERIFIED`. The explicit opt-in returns `READONLY_UUID_OBSERVATION`, `baseline` and `newTaskUuids`, with local history in `uuid-observation.json` under the configured runtime directory. First use or a scope change establishes a baseline; reuse the directory for subsequent scans of the same installation. The observation is local and has no ONES mutation or notification capability. The scheduler and provider-neutral agent retain their existing full-alignment workflow.
+
+For `PERIODIC_ALIGNMENT_WAIT_ONES`, restore the supported read-only Relay/Bridge session and rerun the same command when the inventory is complete. For `PERIODIC_ALIGNMENT_BLOCKED` with `RECONCILIATION_COMPONENT_MISMATCH`, inspect `requiredFile` and `requiredOption` and point `ReconciliationDir` at the matching candidate source directory before retrying. For a busy observation, wait for the other local scan to finish; keep the history and lock file. Failed reads do not advance the observation or reconciliation history. Do not delete the history to clear an error.
+
+The source-level synthetic launch comparison is documented in `periodic-alignment/README.md`. Distribution requires an independently reviewed candidate, exact-head CI and a separately accepted package; these instructions do not promote the existing release.
