@@ -38,6 +38,30 @@ foreach ($pair in @(
     if ([string]::IsNullOrWhiteSpace([string]$pair.Value)) { throw ($pair.Name + "_MISSING") }
 }
 
+$buildPath = Join-Path $Root "BUILD.json"
+if (Test-Path -LiteralPath $buildPath) {
+    $build = Get-Content -LiteralPath $buildPath -Raw | ConvertFrom-Json
+    $required = @("run-stage.ps1","pipeline.py","reconcile.py","observe_inventory.py")
+    $head = [string]$build.packageCandidateSha
+    if ($build.releaseStatus -ne "CANDIDATE" -or $head -notmatch '^[a-f0-9]{40}$' -or
+        $build.candidateName -ne ("ones-bigcircle-windows-agent-CANDIDATE-c" + $head.Substring(0,12)) -or
+        $build.onesMutation -isnot [bool] -or $build.onesMutation -or
+        @($build.pairedReconciliation).Count -ne $required.Count) {
+        throw "PACKAGE_IDENTITY_MISMATCH"
+    }
+    foreach ($file in $required) {
+        $entry = @($build.pairedReconciliation | Where-Object { $_.file -ceq $file })
+        if ($entry.Count -ne 1 -or $entry[0].sha256 -notmatch '^[a-f0-9]{64}$') { throw "PACKAGE_IDENTITY_MISMATCH" }
+        $path = Join-Path $script:ReconciliationDir $file
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $entry[0].sha256) {
+            @{status="PERIODIC_ALIGNMENT_BLOCKED"; reason="RECONCILIATION_PAIR_MISMATCH";
+              requiredFile=$file; packageCandidateSha=$head} | ConvertTo-Json -Compress
+            exit 2
+        }
+    }
+}
+
 $Periodic = Join-Path $Root "periodic-alignment\run-once.ps1"
 $observationArgs = @()
 if ($PSBoundParameters.ContainsKey("ObserveAssignee")) {

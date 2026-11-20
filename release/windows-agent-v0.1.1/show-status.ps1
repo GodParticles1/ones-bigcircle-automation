@@ -2,6 +2,13 @@ param()
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 $Config = Join-Path $Root "config.ps1"
+$buildPath = Join-Path $Root "BUILD.json"
+if (Test-Path -LiteralPath $buildPath -PathType Leaf) {
+    $build = Get-Content -LiteralPath $buildPath -Raw | ConvertFrom-Json
+    Write-Host ("PACKAGE_STATUS=" + $build.releaseStatus)
+    Write-Host ("PACKAGE_NAME=" + $build.candidateName)
+    Write-Host ("PACKAGE_SOURCE_HEAD=" + $build.packageCandidateSha)
+}
 if (-not (Test-Path -LiteralPath $Config -PathType Leaf)) {
     Write-Host "CONFIG=missing"
     exit 2
