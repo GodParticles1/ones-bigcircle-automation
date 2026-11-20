@@ -210,6 +210,7 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+    $RuntimeDir = (Resolve-Path -LiteralPath $RuntimeDir).ProviderPath
     $inventoryDir = Join-Path $RuntimeDir "inventory"
     $stateDir = Join-Path $RuntimeDir "reconciliation-state"
     $outputDir = Join-Path $RuntimeDir "reconciliation-output"
@@ -218,8 +219,27 @@ try {
     New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
     $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ")
-    $inventoryPath = Join-Path $inventoryDir ("ones-inventory-" + $stamp + ".json")
-    $inventory | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $inventoryPath -Encoding UTF8
+    $captureId = [Guid]::NewGuid().ToString("N")
+    $inventoryPath = Join-Path $inventoryDir ("ones-inventory-" + $stamp + "-" + $captureId + ".json")
+    $candidatePath = Join-Path $RuntimeDir ($captureId + ".pending")
+    try {
+        $inventory | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $candidatePath -Encoding UTF8
+        $validator = Join-Path $ReconciliationDir "reconcile.py"
+        if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
+            throw "Inventory validator unavailable"
+        }
+        & python -B $validator --inventory $candidatePath --validate-only
+        if ($LASTEXITCODE -ne 0) {
+            Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_WAIT_ONES" -Fields @{
+                reason = "INVENTORY_NOT_VERIFIED"
+                relayJobId = $jobId
+                caseFeedSha256 = $caseSha
+            }
+        }
+        [IO.File]::Move($candidatePath, $inventoryPath)
+    } finally {
+        [IO.File]::Delete($candidatePath)
+    }
     $inventorySha = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
     $runStage = Join-Path $ReconciliationDir "run-stage.ps1"

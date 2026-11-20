@@ -9,7 +9,7 @@ Each invocation:
 1. recursively selects the newest valid CASE_FEED_V1 JSON from a configured directory, so month subdirectories and numbered duplicate filenames do not need special handling;
 2. verifies a live Local Relay and a fresh read-only Browser Bridge executor;
 3. enqueues one ONES_INVENTORY_READ job;
-4. waits for INVENTORY_VERIFIED and checks completeness counts;
+4. waits for INVENTORY_VERIFIED, then validates the candidate file with the reconciliation inventory gate before archiving it;
 5. persists that exact inventory snapshot locally;
 6. invokes the existing reconciliation/run-stage.ps1;
 7. returns the existing RECONCILIATION_VERIFIED or, when the exact input bytes repeat, RECONCILIATION_NOOP_VERIFIED status.

@@ -22,6 +22,7 @@ jobs:
       - run: python -m compileall reconciliation local-relay root-cause root-cause-sync transport-envelope transport-spool windows-agent bigcircle-control filesystem-exchange runtime-acceptance remote-transport cloudflare-remote-gateway/deploy
       - run: python reconciliation/tests/test_reconciliation.py
       - run: python reconciliation/tests/test_pipeline.py
+      - run: python reconciliation/tests/test_readonly_inventory.py
       - run: node browser-bridge/tests/draft_persistence_test.js
       - run: node --test browser-bridge/tests/popup_save_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
@@ -90,6 +91,7 @@ jobs:
       - run: python runtime-acceptance/gate_d2_windows_acceptance.py
       - shell: powershell
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
+      - run: python periodic-alignment/tests/test_archive.py
       - shell: powershell
         run: |
           [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.7.ps1 -Raw))
