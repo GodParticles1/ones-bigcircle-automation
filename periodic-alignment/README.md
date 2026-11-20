@@ -29,4 +29,19 @@ The approximately-2-hour cadence is an operational policy to be installed only a
 
 Runtime paths and private environment identifiers are parameters and must never be committed to the public repository.
 
-A fresh ONES inventory normally contains a new capture timestamp/job provenance, so a later 2-hour capture is expected to produce a new exact input hash and may legitimately return RECONCILIATION_VERIFIED even when the business ticket set is unchanged. This wrapper does not add a semantic-diff layer.
+A fresh ONES inventory normally contains a new capture timestamp/job provenance, so a later 2-hour capture is expected to produce a new exact input hash and may legitimately return RECONCILIATION_VERIFIED even when the business ticket set is unchanged. The default alignment path compares exact inputs.
+
+## Scoped UUID observation
+
+Add `-ObserveAssignee <assignee-uuid>` to the same run-once command to collect an observation. Reuse the same runtime directory for consecutive scans of this ONES installation. The first complete scan of a scope establishes its baseline. Later scans return `newTaskUuids` and store the cumulative history and latest successful report together in `uuid-observation.json`. An incomplete read leaves that file and the full reconciliation outputs intact. The observation lock serializes scans before the read job is enqueued.
+
+### Repeat the synthetic Windows acceptance
+
+From the topic checkout, use the same fixture directory on subsequent runs. The check also accepts an empty directory on first use.
+
+```powershell
+$env:QT_ONES_SYNTHETIC_DIR = Join-Path (Resolve-Path ..) 'qt-synthetic-runtime'
+python -B periodic-alignment/tests/test_archive.py -v
+```
+
+The check runs the periodic PowerShell entry, the Browser Bridge's pagination function and the Python observer. An in-process mock supplies the relay responses, and the JavaScript fixture supplies the ONES pages. It checks a three-page scan, an HTTP 503 on the next scan's second page, byte-identical runtime files after failure, recovery and exact replay. The short JSON receipt printed at the end contains the observed UUID deltas. The fixture retains its synthetic feed, observation and full reconciliation files for inspection.

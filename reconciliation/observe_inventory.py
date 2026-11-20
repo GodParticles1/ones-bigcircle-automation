@@ -2,6 +2,9 @@
 import argparse
 import json
 import sys
+from pathlib import Path
+
+from pipeline import atomic_write_json
 
 from reconcile import load_json, validate_inventory
 
@@ -64,13 +67,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory", required=True)
     parser.add_argument("--assignee", required=True, help="Exact assignee UUID")
-    parser.add_argument("--previous", help="Most recent successful observation from this ONES installation")
+    history = parser.add_mutually_exclusive_group()
+    history.add_argument("--state-dir", type=Path, help="Periodic runner history directory (caller serializes scans)")
+    history.add_argument("--previous", help="Most recent successful observation from this ONES installation")
     args = parser.parse_args()
     try:
-        previous = load_json(args.previous) if args.previous else None
-        if args.previous and previous is None:
+        state = args.state_dir / "uuid-observation.json" if args.state_dir else None
+        prior = state if state and state.exists() else args.previous
+        previous = load_json(prior) if prior else None
+        if prior and previous is None:
             raise ValueError("invalid previous observation")
         result = observe(load_json(args.inventory), args.assignee, previous)
+        if state:
+            atomic_write_json(state, result)
     except (OSError, ValueError, TypeError, AttributeError) as error:
         print(f"Observation blocked: {error}", file=sys.stderr)
         return 2

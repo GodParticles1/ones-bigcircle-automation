@@ -5,7 +5,8 @@ param(
     [string]$RuntimeDir = (Join-Path $PSScriptRoot "runtime"),
     [int]$InventoryTimeoutSeconds = 180,
     [int]$ExecutorFreshSeconds = 150,
-    [int]$PollIntervalSeconds = 2
+    [int]$PollIntervalSeconds = 2,
+    [ValidateNotNullOrEmpty()][string]$ObserveAssignee
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,7 +66,16 @@ function Get-RelayHeaders {
     return @{ "X-Relay-Token" = $token }
 }
 
+$observationLock = $null
 try {
+    if ($PSBoundParameters.ContainsKey("ObserveAssignee")) {
+        if ([string]::IsNullOrWhiteSpace($ObserveAssignee)) { throw "Empty observation assignee" }
+        New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+        $RuntimeDir = (Resolve-Path -LiteralPath $RuntimeDir).ProviderPath
+        $lockPath = Join-Path $RuntimeDir "uuid-observation.lock"
+        # Serialize the read and publication together so an older scan cannot replace a newer baseline.
+        $observationLock = [IO.File]::Open($lockPath, "OpenOrCreate", "ReadWrite", "None")
+    }
     $caseFeed = Get-ValidCaseFeed -Directory $CaseFeedDir
     if ($null -eq $caseFeed) {
         Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_WAIT_BIGCIRCLE" -Fields @{
@@ -224,6 +234,18 @@ try {
     $candidatePath = Join-Path $RuntimeDir ($captureId + ".pending")
     try {
         $inventory | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $candidatePath -Encoding UTF8
+        if ($null -ne $observationLock) {
+            $observer = Join-Path $ReconciliationDir "observe_inventory.py"
+            $json = & python -B $observer --inventory $candidatePath --assignee $ObserveAssignee --state-dir $RuntimeDir
+            if ($LASTEXITCODE -ne 0) { throw "Scoped observation failed" }
+            $result = $json | ConvertFrom-Json
+            Write-ResultAndExit -Status "READONLY_UUID_OBSERVATION" -Fields @{
+                baseline = $result.baseline
+                newTaskUuids = $result.newTaskUuids
+                pageCount = $inventory.pageCount
+                observationFile = (Join-Path $RuntimeDir "uuid-observation.json")
+            }
+        }
         $validator = Join-Path $ReconciliationDir "reconcile.py"
         if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
             throw "Inventory validator unavailable"
@@ -309,4 +331,6 @@ try {
         reason = "UNHANDLED_ERROR"
         detail = $_.Exception.Message
     } -ExitCode 2
+} finally {
+    if ($null -ne $observationLock) { $observationLock.Dispose() }
 }
