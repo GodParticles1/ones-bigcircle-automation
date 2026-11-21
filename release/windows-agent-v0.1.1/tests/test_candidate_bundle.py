@@ -144,6 +144,16 @@ def main():
         assert code == 2 and blocked["reason"] == "RECONCILIATION_PAIR_MISMATCH"
         assert blocked["requiredFile"] == "observe_inventory.py" and blocked["packageCandidateSha"] == head
         assert full_files() == before and observation.read_bytes() == prior
+        manifest = stage / "BUILD.json"
+        held = run_dir / "held-BUILD.json"
+        manifest.rename(held)
+        try:
+            for assignee in (None, "bundle-user"):
+                code, blocked = launch_run("missing-manifest", REPO / "reconciliation", assignee)
+                assert code == 2 and blocked["reason"] == "PACKAGE_MANIFEST_MISSING"
+                assert full_files() == before and observation.read_bytes() == prior
+        finally:
+            held.rename(manifest)
 
     assert sha(archive.read_bytes()) == digest
     print(json.dumps({"sourceHead": head, "name": name, "sha256": digest, "zipFiles": len(expected),

@@ -54,4 +54,4 @@ Run only the startup and component-pairing comparison, using the same fixture:
 python -B periodic-alignment/tests/test_launch.py -v
 ```
 
-This check exercises the configured local-agent launcher, with the original periodic script dispatched in-process to the existing synthetic relay. It verifies default and opt-in isolation and the pre-read block for mismatched components.
+This check exercises the package launcher with a missing manifest and the explicit source periodic entry, dispatched in-process to the existing synthetic relay. It verifies default and opt-in isolation and the pre-read block for mismatched components. The actual candidate bundle test verifies both package modes with and without the manifest.

@@ -25,7 +25,7 @@ No production names or case exports belong in this repository.
 
 ## Scoped read-only observations
 
-From the reconciliation directory, run the following against a saved Browser Bridge inventory with complete page receipts. The command filters by exact assignee UUID and prints JSON locally.
+From the reconciliation directory, run the following against a saved Browser Bridge inventory with its native query mode, complete page receipts and successful HTTP evidence. The command filters by exact assignee UUID and prints JSON locally.
 
 ```powershell
 python observe_inventory.py --inventory first.json --assignee user-a

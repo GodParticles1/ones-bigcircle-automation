@@ -93,6 +93,14 @@ class StartupContract(unittest.TestCase):
                         and p.name not in ("uuid-observation.json", "uuid-observation.lock")}
 
             old_observation = observation.read_bytes() if observation.exists() else None
+            before_missing = full_files()
+            code, missing = run()
+            self.assertEqual(code, 2)
+            self.assertEqual(missing["reason"], "PACKAGE_MANIFEST_MISSING")
+            self.assertEqual(full_files(), before_missing)
+            self.assertEqual(observation.read_bytes() if observation.exists() else None, old_observation)
+            # Source runs use the explicit original periodic entry, not the package launcher.
+            mock.write_text(MOCK, encoding="utf-8-sig")
             code, default = run()
             self.assertEqual(code, 0)
             self.assertIn(default["status"], ("RECONCILIATION_VERIFIED", "RECONCILIATION_NOOP_VERIFIED"))

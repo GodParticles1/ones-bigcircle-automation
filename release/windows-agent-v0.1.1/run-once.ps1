@@ -39,7 +39,11 @@ foreach ($pair in @(
 }
 
 $buildPath = Join-Path $Root "BUILD.json"
-if (Test-Path -LiteralPath $buildPath) {
+if (-not (Test-Path -LiteralPath $buildPath -PathType Leaf)) {
+    @{status="PERIODIC_ALIGNMENT_BLOCKED"; reason="PACKAGE_MANIFEST_MISSING";
+      requiredFile="BUILD.json"} | ConvertTo-Json -Compress
+    exit 2
+} else {
     $build = Get-Content -LiteralPath $buildPath -Raw | ConvertFrom-Json
     $required = @("run-stage.ps1","pipeline.py","reconcile.py","observe_inventory.py")
     $head = [string]$build.packageCandidateSha

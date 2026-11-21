@@ -25,6 +25,10 @@ def snapshot(*uuids):
         doc["pages"].append(dict(pageNumber=1, startPos=0, endPos=0, pageCount=0,
                                  totalCount=0, hasNextPage=False, cursorIn=None, endCursor=None))
     doc["pageCount"] = len(doc["pages"])
+    doc.update(queryMode="page_native_cursor_pagination_limit_10000_50", pageSize=50,
+               httpStatuses=[200] * len(doc["pages"]))
+    for page in doc["pages"]:
+        page["httpStatus"] = 200
     return doc
 
 
@@ -163,6 +167,31 @@ class ReadOnlyInventory(unittest.TestCase):
         for bad in (partial, gap, snapshot("b", "b")):
             self.observe(bad, base, ok=False)
         self.assertEqual(self.observe(snapshot("a", "b"), base)["newTaskUuids"], ["b"])
+
+    def test_observation_requires_native_receipts_before_persistent_update(self):
+        native = snapshot("a")
+        native.update(queryMode="page_native_cursor_pagination_limit_10000_50", pageSize=50, httpStatuses=[200])
+        native["pages"][0]["httpStatus"] = 200
+        legacy = deepcopy(native)
+        for field in ("queryMode", "httpStatuses", "pageSize"):
+            del legacy[field]
+        del legacy["pages"][0]["httpStatus"]
+        self.assertEqual(self.align(legacy)["status"], "RECONCILIATION_VERIFIED")
+        write_json(self.inventory, native)
+        command = [sys.executable, "-B", str(ROOT / "observe_inventory.py"), "--inventory", str(self.inventory),
+                   "--assignee", "user-a", "--state-dir", str(self.state)]
+        self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+        before = self.saved()
+        for field in ("queryMode", "httpStatuses", "pageSize", "httpStatus"):
+            bad = deepcopy(native)
+            bad["tickets"][0]["onesTaskUuid"] = "untrusted"
+            if field == "httpStatus":
+                del bad["pages"][0][field]
+            else:
+                del bad[field]
+            write_json(self.inventory, bad)
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 2, field)
+            self.assertEqual(self.saved(), before)
 
 
 if __name__ == "__main__":

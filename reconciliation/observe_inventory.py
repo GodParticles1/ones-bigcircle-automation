@@ -18,7 +18,9 @@ def observe(inventory, assignee, previous=None):
     if errors:
         raise ValueError("inventory gate failed: " + "; ".join(errors))
     if (inventory.get("schemaVersion") != "ones.external-ticket-inventory/v1alpha1"
-            or inventory.get("readOnly") is not True or not inventory.get("pages")):
+            or inventory.get("readOnly") is not True
+            or inventory.get("queryMode") != "page_native_cursor_pagination_limit_10000_50"
+            or not inventory.get("pages")):
         raise ValueError("expected read-only inventory with native page receipts")
     declared = inventory.get("scope")
     if not isinstance(declared, dict):
