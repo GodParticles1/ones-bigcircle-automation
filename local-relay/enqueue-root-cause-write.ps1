@@ -5,7 +5,8 @@ param(
   [Parameter(Mandatory=$true)][string]$DisplayId,
   [string]$PreviousBlockedJobId = "",
   [string]$RelayUrl = "http://127.0.0.1:18731",
-  [string]$TokenFile = (Join-Path $PSScriptRoot "data\relay-token.txt")
+  [string]$TokenFile = (Join-Path $PSScriptRoot "data\relay-token.txt"),
+  [string]$ResumeJobId
 )
 $ErrorActionPreference = "Stop"
 
@@ -55,29 +56,63 @@ $payload = [ordered]@{
   desiredSha256 = $desiredHash
 }
 $idempotencyKey = "root-cause-write-utf8v3-" + $actualPlanSha.Substring(0,12) + "-" + $TaskUuid + "-" + $target.fieldId + "-" + $desiredHash.Substring(0,16)
-if (-not [string]::IsNullOrWhiteSpace($PreviousBlockedJobId)) {
+function Test-ExactWritePayload($observed) {
+  if ($observed -isnot [PSCustomObject]) { return $false }
+  $names = @($observed.PSObject.Properties.Name)
+  if ($names.Count -ne $payload.Count) { return $false }
+  foreach ($field in $payload.Keys) {
+    if ($names -cnotcontains $field) { return $false }
+    $value = $observed.PSObject.Properties[$field].Value
+    if ($value -isnot [string] -or -not [string]::Equals($value, $payload[$field], [StringComparison]::Ordinal)) {
+      return $false
+    }
+  }
+  return $true
+}
+
+$hasParent = -not [string]::IsNullOrWhiteSpace($PreviousBlockedJobId)
+if ($hasParent) {
   if ($PreviousBlockedJobId -notmatch '^[A-Za-z0-9-]{1,128}$') { throw "PREVIOUS_BLOCKED_JOB_ID_INVALID" }
+  $idempotencyKey += "-after-" + $PreviousBlockedJobId
+}
+if ($PSBoundParameters.ContainsKey("ResumeJobId")) {
+  if ($ResumeJobId -notmatch '\A[A-Za-z0-9-]{1,128}\z') { throw "RESUME_JOB_ID_INVALID" }
+  try {
+    $receipt = Invoke-RestMethod -Method Get -Uri "$RelayUrl/v1/jobs/$ResumeJobId" -Headers $headers -TimeoutSec 5 -MaximumRedirection 0
+  } catch {
+    if ($null -ne $_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+      throw "RESUME_RECEIPT_NOT_FOUND"
+    }
+    throw "RESUME_RECEIPT_UNAVAILABLE"
+  }
+  $job = $receipt.job
+  if ($receipt.ok -isnot [bool] -or -not $receipt.ok -or $null -eq $job -or $job.jobId -cne $ResumeJobId -or
+      $job.jobType -cne "ONES_ROOT_CAUSE_WRITE" -or $job.idempotencyKey -cne $idempotencyKey -or
+      -not (Test-ExactWritePayload $job.payload) -or $job.state -isnot [string] -or
+      $job.state -cnotmatch '\A[A-Z][A-Z_]{0,63}\z') {
+    throw "RESUME_RECEIPT_MISMATCH"
+  }
+  $action = switch -CaseSensitive ($job.state) {
+    "PENDING" { "WAIT_EXISTING_JOB" }
+    "CLAIMED" { "WAIT_EXISTING_JOB" }
+    "WRITE_VERIFIED" { "CHECK_INDEPENDENT_READBACK_AND_RESTORE" }
+    default { "READ_ONLY_RECONCILIATION" }
+  }
+  [ordered]@{ jobId=$ResumeJobId; state=$job.state; action=$action; newSubmissions=0 } | ConvertTo-Json -Compress
+  return
+}
+if ($hasParent) {
   $parentResponse = Invoke-RestMethod -Method Get -Uri "$RelayUrl/v1/jobs/$PreviousBlockedJobId" -Headers $headers
   $parent = $parentResponse.job
   if ($null -eq $parent) { throw "PREVIOUS_BLOCKED_JOB_NOT_FOUND" }
   if ([string]$parent.jobType -ne "ONES_ROOT_CAUSE_WRITE") { throw "PREVIOUS_JOB_TYPE_INVALID" }
   if ([string]$parent.state -ne "WRITE_BLOCKED") { throw "PREVIOUS_JOB_STATE_INVALID" }
   # JSON member order is irrelevant. The canonical nine string fields are not.
-  if ($parent.payload -isnot [PSCustomObject]) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
-  $parentFields = @($parent.payload.PSObject.Properties.Name)
-  if ($parentFields.Count -ne $payload.Count) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
-  foreach ($field in $payload.Keys) {
-    if ($parentFields -cnotcontains $field) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
-    $parentValue = $parent.payload.PSObject.Properties[$field].Value
-    if ($parentValue -isnot [string] -or -not [string]::Equals($parentValue, $payload[$field], [StringComparison]::Ordinal)) {
-      throw "PREVIOUS_JOB_PAYLOAD_MISMATCH"
-    }
-  }
+  if (-not (Test-ExactWritePayload $parent.payload)) { throw "PREVIOUS_JOB_PAYLOAD_MISMATCH" }
   if ($null -eq $parent.result -or $parent.result.writeAttempted -ne $false) { throw "PREVIOUS_JOB_WRITE_ATTEMPTED" }
   if ($parent.result.saveDispatched -eq $true) { throw "PREVIOUS_JOB_SAVE_DISPATCHED" }
   $allowed = @("ROOT_CAUSE_LABEL_NOT_UNIQUE", "DRAFT_DOM_MISMATCH")
   if ($allowed -notcontains [string]$parent.result.blockedBy) { throw "PREVIOUS_JOB_BLOCKER_NOT_ALLOWED" }
-  $idempotencyKey += "-after-" + $PreviousBlockedJobId
 }
 $body = @{
 

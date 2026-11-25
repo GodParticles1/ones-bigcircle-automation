@@ -66,6 +66,9 @@ jobs:
       - run: node browser-bridge/tests/draft_persistence_test.js
       - run: node --test browser-bridge/tests/popup_save_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
+      - name: Read-only write receipt recovery (Windows PowerShell)
+        shell: cmd
+        run: python -B local-relay/tests/test_resume_write_receipt.py -v
       - run: python local-relay/tests/test_relay.py
       - shell: powershell
         run: |
