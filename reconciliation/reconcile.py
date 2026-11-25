@@ -177,6 +177,50 @@ def normalize_case(raw, index):
     }
 
 
+def pages_cover_inventory(inv, ticket_count):
+    pages = inv.get("pages")
+    if not isinstance(pages, list) or not pages or type(inv.get("pageCount")) is not int or inv["pageCount"] != len(pages):
+        return False
+    native = "queryMode" in inv
+    if native and inv["queryMode"] != "page_native_cursor_pagination_limit_10000_50":
+        return False
+    if "pageSize" in inv or native:
+        if type(inv.get("pageSize")) is not int or inv["pageSize"] != 50:
+            return False
+    statuses = inv.get("httpStatuses")
+    if native or "httpStatuses" in inv:
+        if not isinstance(statuses, list) or len(statuses) != len(pages):
+            return False
+    position = 0
+    cursor = None
+    seen_cursors = set()
+    for number, page in enumerate(pages, 1):
+        numeric = ("pageNumber", "pageCount", "startPos", "endPos", "totalCount")
+        if not isinstance(page, dict) or any(type(page.get(key)) is not int for key in numeric):
+            return False
+        count = page["pageCount"]
+        if "pageSize" in inv and count > inv["pageSize"]:
+            return False
+        if native or "httpStatus" in page or statuses is not None:
+            status = page.get("httpStatus")
+            if type(status) is not int or not 200 <= status < 300:
+                return False
+            if statuses is not None and (type(statuses[number - 1]) is not int or statuses[number - 1] != status):
+                return False
+        more = number < len(pages)
+        if (page["pageNumber"] != number or page["totalCount"] != ticket_count
+                or page["startPos"] != position or count < 0 or page["endPos"] != position + count
+                or page.get("hasNextPage") is not more or page.get("cursorIn") != cursor):
+            return False
+        position += count
+        if more:
+            cursor = page.get("endCursor")
+            if not count or not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                return False
+            seen_cursors.add(cursor)
+    return position == ticket_count
+
+
 def validate_inventory(inv):
     errors = []
     tickets = inv.get("tickets")
@@ -188,20 +232,42 @@ def validate_inventory(inv):
         "serverTotalCount": inv.get("serverTotalCount"),
         "visiblePageTotal": inv.get("visiblePageTotal"),
     }
+    if "readOnly" in inv and inv["readOnly"] is not True:
+        errors.append("readOnly must be true when provided")
     if inv.get("status") != "INVENTORY_VERIFIED":
         errors.append("status must be INVENTORY_VERIFIED")
     if inv.get("inventoryComplete") is not True:
         errors.append("inventoryComplete must be true")
     if inv.get("reconciliationAllowed") is not True:
         errors.append("reconciliationAllowed must be true")
-    if any(not isinstance(v, int) for v in counts.values()):
+    if any(type(v) is not int for v in counts.values()):
         errors.append("ticketCount/serverTotalCount/visiblePageTotal must be integers")
     elif len(set(counts.values())) != 1 or counts["ticketCount"] != len(tickets):
         errors.append("ticketCount/serverTotalCount/visiblePageTotal/len(tickets) must match exactly")
 
     normalized = []
     unkeyed = 0
-    for i, t in enumerate(tickets):
+    has_receipt = any(name in inv for name in ("queryMode", "pageSize", "httpStatuses", "pages", "pageCount"))
+    if has_receipt and not pages_cover_inventory(inv, len(tickets)):
+        errors.append("page receipts do not cover inventory")
+    seen_uuids = set()
+    scope = inv.get("scope")
+    expected_project = scope.get("projectUuid") if isinstance(scope, dict) else None
+    for t in tickets:
+        if not isinstance(t, dict):
+            errors.append("invalid ticket")
+            continue
+        project = t.get("project")
+        if expected_project and isinstance(project, dict) and project.get("uuid") != expected_project:
+            errors.append("ticket project disagrees with inventory scope")
+        uuid = t.get("onesTaskUuid")
+        if uuid is not None or has_receipt:
+            if not isinstance(uuid, str) or not uuid.strip() or uuid != uuid.strip():
+                errors.append("invalid task UUID")
+            elif uuid in seen_uuids:
+                errors.append("duplicate task UUID")
+            else:
+                seen_uuids.add(uuid)
         key = normalize_source_key(t.get("sourceTicketKey") or t.get("sourceTicketNo"))
         if not key:
             key = extract_source_key(t.get("title"))
@@ -490,12 +556,20 @@ def reconcile(inventory, cases_doc, configured_people=None):
 def main():
     ap = argparse.ArgumentParser(description="Exact sourceTicketKey reconciliation between verified ONES inventory and Big-circle cases")
     ap.add_argument("--inventory", required=True)
-    ap.add_argument("--cases", required=True)
+    ap.add_argument("--cases")
     ap.add_argument("--people", help="Comma-separated configured people; overrides cases document people[]")
-    ap.add_argument("--output", required=True)
+    ap.add_argument("--output")
+    ap.add_argument("--validate-only", action="store_true", help="Check the inventory before archiving it")
     args = ap.parse_args()
+    if args.validate_only and (args.cases or args.output or args.people):
+        ap.error("--validate-only takes only --inventory")
+    if not args.validate_only and not (args.cases and args.output):
+        ap.error("--cases and --output are required for reconciliation")
     try:
         inventory = load_json(args.inventory)
+        if args.validate_only:
+            errors, _, _ = validate_inventory(inventory)
+            return 2 if errors else 0
         cases_doc = load_json(args.cases)
         report = reconcile(inventory, cases_doc, args.people)
     except Exception as e:

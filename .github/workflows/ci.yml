@@ -22,6 +22,7 @@ jobs:
       - run: python -m compileall reconciliation local-relay root-cause root-cause-sync transport-envelope transport-spool windows-agent bigcircle-control filesystem-exchange runtime-acceptance remote-transport cloudflare-remote-gateway/deploy
       - run: python reconciliation/tests/test_reconciliation.py
       - run: python reconciliation/tests/test_pipeline.py
+      - run: python reconciliation/tests/test_readonly_inventory.py
       - run: node browser-bridge/tests/draft_persistence_test.js
       - run: node --test browser-bridge/tests/popup_save_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
@@ -65,6 +66,9 @@ jobs:
       - run: node browser-bridge/tests/draft_persistence_test.js
       - run: node --test browser-bridge/tests/popup_save_test.js
       - run: node browser-bridge/tests/root_cause_writer_test.js
+      - name: Read-only write receipt recovery (Windows PowerShell)
+        shell: cmd
+        run: python -B local-relay/tests/test_resume_write_receipt.py -v
       - run: python local-relay/tests/test_relay.py
       - shell: powershell
         run: |
@@ -90,6 +94,8 @@ jobs:
       - run: python runtime-acceptance/gate_d2_windows_acceptance.py
       - shell: powershell
         run: '[void][scriptblock]::Create((Get-Content periodic-alignment/run-once.ps1 -Raw))'
+      - run: python periodic-alignment/tests/test_archive.py
+      - run: python periodic-alignment/tests/test_launch.py
       - shell: powershell
         run: |
           [void][scriptblock]::Create((Get-Content release/root-cause-write-runtime/upgrade-from-v0.3.7.ps1 -Raw))
@@ -133,29 +139,35 @@ jobs:
             dist-root-cause-planner-v020/ones-root-cause-planner-runtime-v0.2.0.zip
             dist-root-cause-planner-v020/ones-root-cause-planner-runtime-v0.2.0.zip.sha256
           if-no-files-found: error
-      - shell: powershell
+      - id: build_windows_candidate
+        shell: powershell
         run: |
           [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.1/setup.ps1 -Raw))
           [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.1/run-once.ps1 -Raw))
           [void][scriptblock]::Create((Get-Content release/windows-agent-v0.1.1/show-status.ps1 -Raw))
           ./scripts/build-windows-local-agent-package.ps1
-          $zip = Get-ChildItem dist/ones-bigcircle-windows-agent-v0.1.1.zip
+          $head = (git rev-parse HEAD).Trim()
+          $name = 'ones-bigcircle-windows-agent-CANDIDATE-c' + $head.Substring(0,12)
+          $zip = Get-Item -LiteralPath "dist/$name.zip"
           if (-not $zip) { throw "PACKAGE_ZIP_MISSING" }
           $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
           try { $entries = @($archive.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) } finally { $archive.Dispose() }
           $entries | ForEach-Object { Write-Host ("ZIP_ENTRY=" + $_) }
           foreach ($required in @(
-            "ones-bigcircle-windows-agent-v0.1.1/periodic-alignment/run-once.ps1",
-            "ones-bigcircle-windows-agent-v0.1.1/run-once.ps1",
-            "ones-bigcircle-windows-agent-v0.1.1/config.example.ps1",
-            "ones-bigcircle-windows-agent-v0.1.1/BUILD.json"
+            "$name/periodic-alignment/run-once.ps1",
+            "$name/run-once.ps1",
+            "$name/config.example.ps1",
+            "$name/BUILD.json"
           )) {
             if ($entries -notcontains $required) { throw ("PACKAGE_ENTRY_MISSING: " + $required) }
           }
+          python -B release/windows-agent-v0.1.1/tests/test_candidate_bundle.py --zip $zip.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'CANDIDATE_BUNDLE_TEST_FAILED' }
+          "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - uses: actions/upload-artifact@v4
         with:
-          name: ones-bigcircle-windows-agent-v0.1.1
+          name: ${{ steps.build_windows_candidate.outputs.name }}
           path: |
-            dist/ones-bigcircle-windows-agent-v0.1.1.zip
-            dist/ones-bigcircle-windows-agent-v0.1.1.zip.sha256
+            dist/${{ steps.build_windows_candidate.outputs.name }}.zip
+            dist/${{ steps.build_windows_candidate.outputs.name }}.zip.sha256
           if-no-files-found: error

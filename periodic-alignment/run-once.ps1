@@ -1,3 +1,12 @@
+<#
+.SYNOPSIS
+Runs one local read-only alignment scan.
+.PARAMETER ObserveAssignee
+Optional exact ONES assignee UUID. Collects a scoped UUID observation instead of reconciliation.
+Omit it for the normal full alignment. Keep the same RuntimeDir for successive observations.
+.EXAMPLE
+.\run-once.ps1 -CaseFeedDir C:\case-feeds -RelayDir C:\relay -ReconciliationDir C:\candidate\reconciliation -RuntimeDir C:\runtime -ObserveAssignee user-a
+#>
 param(
     [Parameter(Mandatory=$true)][string]$CaseFeedDir,
     [Parameter(Mandatory=$true)][string]$RelayDir,
@@ -5,7 +14,8 @@ param(
     [string]$RuntimeDir = (Join-Path $PSScriptRoot "runtime"),
     [int]$InventoryTimeoutSeconds = 180,
     [int]$ExecutorFreshSeconds = 150,
-    [int]$PollIntervalSeconds = 2
+    [int]$PollIntervalSeconds = 2,
+    [ValidateNotNullOrEmpty()][string]$ObserveAssignee
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,12 +75,44 @@ function Get-RelayHeaders {
     return @{ "X-Relay-Token" = $token }
 }
 
+function Test-ReconciliationComponent([string]$File, [string]$Option) {
+    if (-not (Test-Path -LiteralPath $File -PathType Leaf)) { return $false }
+    try {
+        $helpText = & python -B $File --help 2>&1
+        return $LASTEXITCODE -eq 0 -and (($helpText -join "`n").Contains($Option))
+    } catch {
+        return $false
+    }
+}
+
+$observationLock = $null
 try {
+    if ($PSBoundParameters.ContainsKey("ObserveAssignee")) {
+        if ([string]::IsNullOrWhiteSpace($ObserveAssignee)) { throw "Empty observation assignee" }
+        New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+        $RuntimeDir = (Resolve-Path -LiteralPath $RuntimeDir).ProviderPath
+        $lockPath = Join-Path $RuntimeDir "uuid-observation.lock"
+        # Serialize the read and publication together so an older scan cannot replace a newer baseline.
+        $observationLock = [IO.File]::Open($lockPath, "OpenOrCreate", "ReadWrite", "None")
+    }
     $caseFeed = Get-ValidCaseFeed -Directory $CaseFeedDir
     if ($null -eq $caseFeed) {
         Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_WAIT_BIGCIRCLE" -Fields @{
             reason = "NO_VALID_CASE_FEED"
         }
+    }
+
+    # A previously installed reconciliation directory may not support this candidate's CLI.
+    # Detect that before reading from the relay or publishing any inventory.
+    $component = if ($null -ne $observationLock) { "observe_inventory.py" } else { "reconcile.py" }
+    $option = if ($null -ne $observationLock) { "--state-dir" } else { "--validate-only" }
+    $componentPath = Join-Path $ReconciliationDir $component
+    if (-not (Test-ReconciliationComponent $componentPath $option)) {
+        Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_BLOCKED" -Fields @{
+            reason = "RECONCILIATION_COMPONENT_MISMATCH"
+            requiredFile = $component
+            requiredOption = $option
+        } -ExitCode 2
     }
 
     $caseSha = (Get-FileHash -LiteralPath $caseFeed.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -210,6 +252,7 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+    $RuntimeDir = (Resolve-Path -LiteralPath $RuntimeDir).ProviderPath
     $inventoryDir = Join-Path $RuntimeDir "inventory"
     $stateDir = Join-Path $RuntimeDir "reconciliation-state"
     $outputDir = Join-Path $RuntimeDir "reconciliation-output"
@@ -218,8 +261,39 @@ try {
     New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
     $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ")
-    $inventoryPath = Join-Path $inventoryDir ("ones-inventory-" + $stamp + ".json")
-    $inventory | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $inventoryPath -Encoding UTF8
+    $captureId = [Guid]::NewGuid().ToString("N")
+    $inventoryPath = Join-Path $inventoryDir ("ones-inventory-" + $stamp + "-" + $captureId + ".json")
+    $candidatePath = Join-Path $RuntimeDir ($captureId + ".pending")
+    try {
+        $inventory | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $candidatePath -Encoding UTF8
+        if ($null -ne $observationLock) {
+            $observer = Join-Path $ReconciliationDir "observe_inventory.py"
+            $json = & python -B $observer --inventory $candidatePath --assignee $ObserveAssignee --state-dir $RuntimeDir
+            if ($LASTEXITCODE -ne 0) { throw "Scoped observation failed" }
+            $result = $json | ConvertFrom-Json
+            Write-ResultAndExit -Status "READONLY_UUID_OBSERVATION" -Fields @{
+                baseline = $result.baseline
+                newTaskUuids = $result.newTaskUuids
+                pageCount = $inventory.pageCount
+                observationFile = (Join-Path $RuntimeDir "uuid-observation.json")
+            }
+        }
+        $validator = Join-Path $ReconciliationDir "reconcile.py"
+        if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
+            throw "Inventory validator unavailable"
+        }
+        & python -B $validator --inventory $candidatePath --validate-only
+        if ($LASTEXITCODE -ne 0) {
+            Write-ResultAndExit -Status "PERIODIC_ALIGNMENT_WAIT_ONES" -Fields @{
+                reason = "INVENTORY_NOT_VERIFIED"
+                relayJobId = $jobId
+                caseFeedSha256 = $caseSha
+            }
+        }
+        [IO.File]::Move($candidatePath, $inventoryPath)
+    } finally {
+        [IO.File]::Delete($candidatePath)
+    }
     $inventorySha = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
     $runStage = Join-Path $ReconciliationDir "run-stage.ps1"
@@ -289,4 +363,6 @@ try {
         reason = "UNHANDLED_ERROR"
         detail = $_.Exception.Message
     } -ExitCode 2
+} finally {
+    if ($null -ne $observationLock) { $observationLock.Dispose() }
 }

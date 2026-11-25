@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from reconcile import IMPLEMENTATION_VERSION, load_json, reconcile
+from reconcile import IMPLEMENTATION_VERSION, load_json, reconcile, validate_inventory
 
 PIPELINE_SCHEMA_VERSION = "ones.bigcircle-reconciliation-pipeline/v1alpha1"
 CHECKPOINT_SCHEMA_VERSION = "ones.bigcircle-reconciliation-checkpoint/v1alpha1"
@@ -100,7 +100,12 @@ def run_pipeline(cases_path, inventory_path, state_dir, output_dir, people=None,
     latest_path = output_dir / "reconciliation-latest.json"
     checkpoint = load_checkpoint(checkpoint_path)
 
+    inventory = load_json(inventory_path)
     if not force and checkpoint and checkpoint.get("runKey") == run_key and checkpoint_report_is_valid(checkpoint, latest_path):
+        # Checkpoints from older versions may have accepted incomplete page or UUID evidence.
+        errors, _, _ = validate_inventory(inventory)
+        if errors:
+            raise ValueError("inventory gate failed: " + "; ".join(errors))
         return {
             "status": "RECONCILIATION_NOOP_VERIFIED",
             "runKey": run_key,
@@ -110,7 +115,6 @@ def run_pipeline(cases_path, inventory_path, state_dir, output_dir, people=None,
             "uniqueMissingSourceTicketKeyCount": checkpoint.get("uniqueMissingSourceTicketKeyCount"),
         }
 
-    inventory = load_json(inventory_path)
     cases_doc = load_json(cases_path)
     report = reconcile(inventory, cases_doc, normalized_people)
 
